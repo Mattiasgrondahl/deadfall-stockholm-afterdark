@@ -199,7 +199,7 @@ export class Weapon {
 }
 
 /** Nearest forward ray-sphere hit parameter, or null if no hit. */
-function raySphere(origin, dir, center, radius) {
+export function raySphere(origin, dir, center, radius) {
   const ox = origin.x - center.x
   const oy = origin.y - center.y
   const oz = origin.z - center.z
