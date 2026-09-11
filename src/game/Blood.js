@@ -21,7 +21,7 @@ export class Blood {
   constructor(scene) {
     this.scene = scene || null
     this._seed = SEED
-    this._rng = () => (this._seed = Math.imul(this._seed, 48271) % 65537) / 65537
+    this._rng = () => (this._seed = (Math.imul(this._seed, 48271) >>> 0) % 65537) / 65537
     // Pool: preallocated flat arrays; `count` live droplets (slots 0..count-1).
     this.count = 0
     this._pos = []

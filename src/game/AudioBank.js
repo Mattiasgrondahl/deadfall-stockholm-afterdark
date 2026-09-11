@@ -201,9 +201,10 @@ export class AudioBank {
   // distance-falloff, capped at GROAN_MAX_VOICES concurrent voices.
   // -----------------------------------------------------------------
 
-  /** Seeded LCG in [0, 1) — independent of the noise-buffer LCG. */
+  /** Seeded LCG in [0, 1) — independent of the noise-buffer LCG. >>> 0 keeps
+   * Math.imul's signed 32-bit result non-negative before the mod. */
   _groanRand() {
-    this._groanSeed = Math.imul(this._groanSeed, 48271) % 65537
+    this._groanSeed = (Math.imul(this._groanSeed, 48271) >>> 0) % 65537
     return this._groanSeed / 65537
   }
 

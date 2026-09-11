@@ -29,9 +29,11 @@ export class AmmoDrops {
     })
   }
 
-  /** Seeded LCG in [0, 1). Deterministic for a fixed call order. */
+  /** Seeded LCG in [0, 1). Deterministic for a fixed call order. The >>> 0
+   * keeps Math.imul's signed 32-bit result non-negative before the mod, so
+   * the roll is always in [0, 1). */
   _rand() {
-    this._seed = Math.imul(this._seed, 48271) % 65537
+    this._seed = (Math.imul(this._seed, 48271) >>> 0) % 65537
     return this._seed / 65537
   }
 
