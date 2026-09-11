@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -131,15 +131,46 @@ test('shared geometry/materials; dispose detaches only the group', () => {
   const scene = new THREE.Scene()
   const a = new Zombie(scene, 'walker', 0, 0, 1)
   const b = new Zombie(scene, 'walker', 2, 0, 1)
-  assert.equal(a.group.children.length, 4)
-  assert.equal(a.group.children[0].geometry, b.group.children[0].geometry)
-  assert.equal(a.group.children[0].material, b.group.children[0].material)
+  assert.equal(a.group.children.length, 6) // torso, head, armL, armR, legL, legR
+  for (let i = 0; i < 6; i++) {
+    assert.equal(a.group.children[i].geometry, b.group.children[i].geometry)
+    assert.equal(a.group.children[i].material, b.group.children[i].material)
+  }
   assert.equal(scene.children.length, 2) // two groups, no per-zombie geo
   a.dispose()
   assert.equal(scene.children.length, 1)
   b.dispose()
   assert.equal(scene.children.length, 0)
   a.dispose() // never throws, even when called twice
+})
+
+test('per-type bodies and anchors', () => {
+  for (const type of ['walker', 'shambler', 'screamer']) {
+    const { zombie } = makeZombie(type, 1, 1, 1)
+    const parts = zombie.group.children
+    assert.ok(parts.length >= 6, `${type} has ${parts.length} meshes`)
+    assert.ok(Math.abs(parts[0].position.y - 1.2) < 1e-6, `${type} torso center y`)
+    assert.ok(Math.abs(parts[1].position.y - 1.8) < 1e-6, `${type} head center y`)
+  }
+  const { zombie: sh } = makeZombie('shambler', 1, 1, 1)
+  assert.ok(sh.group.children[0].rotation.x > 0.4, 'shambler torso hunched forward')
+  const { zombie: sc } = makeZombie('screamer', 1, 1, 1)
+  assert.ok(sc.group.children[2].rotation.x < -2, 'screamer arms raised')
+})
+
+test('hit flash swaps to HITMAT then restores type material', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  zombie.damage(10) // non-fatal
+  for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
+  for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
+  for (const m of zombie.group.children) assert.equal(m.material, MAT2.walker)
+})
+
+test('fatal hit switches every part to DEADMAT', () => {
+  const { zombie } = makeZombie('shambler', 0, 0, 1)
+  zombie.damage(zombie.maxHealth + 10)
+  assert.ok(zombie.isDead)
+  for (const m of zombie.group.children) assert.equal(m.material, DEADMAT)
 })
 
 test('L-pocket: walker touching two boxes slides out and keeps moving', () => {

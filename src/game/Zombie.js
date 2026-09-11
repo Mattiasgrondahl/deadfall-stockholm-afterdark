@@ -3,24 +3,31 @@ import * as THREE from 'three'
 /**
  * Zombie — boxy humanoid pursuer with chase / attack / corpse states.
  *
- * Shared resources: GEO and MAT are module-level and shared by every
- * zombie instance, so spawning allocates no per-zombie geometry or
- * materials. dispose() detaches only the per-zombie group; it must never
- * dispose the shared GEO/MAT entries, which back every other live zombie.
- * Zombies never use Math.random.
+ * Shared resources: GEO2/MAT2/HITMAT/DEADMAT are module-level and shared by
+ * every zombie instance, so spawning allocates no per-zombie geometry or
+ * materials. Hit flashes and deaths swap shared material references;
+ * dispose() detaches only the per-zombie group and must never dispose the
+ * shared entries, which back every other live zombie.
+ * Zombies never use Math.random; per-zombie phase comes from a fixed-seed LCG.
  */
 
-const GEO = {
+const GEO2 = {
   torso: new THREE.BoxGeometry(0.5, 1.0, 0.4),
   head: new THREE.BoxGeometry(0.3, 0.3, 0.3),
-  arm: new THREE.BoxGeometry(0.12, 0.55, 0.12)
+  arm: new THREE.BoxGeometry(0.12, 0.55, 0.12),
+  leg: new THREE.BoxGeometry(0.14, 0.9, 0.14)
 }
 
-const MAT = {
+const MAT2 = {
   walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
   shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9 })
+  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
 }
+
+// Shared flash/death materials: non-fatal hit = 0.15 s red swap; death =
+// dull desaturated swap. Swapped by reference only — never disposed.
+const HITMAT = new THREE.MeshStandardMaterial({ color: 0x8a1f2a, emissive: 0x661111, roughness: 0.8 })
+const DEADMAT = new THREE.MeshStandardMaterial({ color: 0x3a3129, roughness: 1 })
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. */
 const TABLE = {
@@ -29,7 +36,21 @@ const TABLE = {
   screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 }
 }
 
-export { TABLE, GEO, MAT }
+const ORDER = ['walker', 'shambler', 'screamer']
+
+/**
+ * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
+ * the torso mesh center stays exactly at (0, 1.2, 0) and the head center
+ * exactly at (0, 1.8, 0) for every type; scale and rotation are applied
+ * around those centers, so the anchors never move.
+ */
+const POSE2 = {
+  walker: { torsoS: [1, 1, 1], torsoR: 0, headS: [1, 1, 1], headR: 0, armRest: -0.35, legS: [1, 1, 1] },
+  shambler: { torsoS: [1.15, 0.85, 1.1], torsoR: 0.45, headS: [0.9, 0.9, 0.9], headR: 0.35, armRest: 0.2, legS: [0.85, 0.85, 0.85] },
+  screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] }
+}
+
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT }
 
 const ATTACK_RANGE = 1.3
 const SEPARATION_DIST = 0.9
@@ -94,21 +115,47 @@ export class Zombie {
     this._clearDist = 0
     this._blockedT = 0
     this._flips = 0
+    // Deterministic per-zombie phase (fixed-seed LCG from spawn coords + type).
+    // Stored here for later tasks (walk animation, groan scheduling). Math.imul
+    // keeps the LCG exact: later iterations exceed 2^53 under plain '*'.
+    let seed = Math.floor((x + 200) * 100 + (z + 200) * 37 + ORDER.indexOf(type) * 101)
+    for (let i = 0; i < 3; i++) seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff
+    this._phase = (seed / 0x7fffffff) * 2 * Math.PI
+
+    // Body: torso, head, two arms, two legs — all from the shared GEO2 pool,
+    // posed per type. Child order is fixed: torso, head, armL, armR, legL, legR.
     this.group = new THREE.Group()
-    const mat = MAT[type]
-    const torso = new THREE.Mesh(GEO.torso, mat)
+    const mat = MAT2[type]
+    const pose = POSE2[type]
+    const parts = []
+    const torso = new THREE.Mesh(GEO2.torso, mat)
     torso.position.set(0, 1.2, 0)
-    const head = new THREE.Mesh(GEO.head, mat)
+    torso.scale.set(pose.torsoS[0], pose.torsoS[1], pose.torsoS[2])
+    torso.rotation.x = pose.torsoR
+    parts.push(torso)
+    const head = new THREE.Mesh(GEO2.head, mat)
     head.position.set(0, 1.8, 0)
-    const armL = new THREE.Mesh(GEO.arm, mat)
-    armL.position.set(-0.33, 1.25, 0.12)
-    armL.rotation.x = -1.1 // reaching forward
-    const armR = new THREE.Mesh(GEO.arm, mat)
-    armR.position.set(0.33, 1.25, 0.12)
-    armR.rotation.x = -1.1
-    this.group.add(torso, head, armL, armR)
+    head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
+    head.rotation.x = pose.headR
+    parts.push(head)
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(GEO2.arm, mat)
+      arm.position.set(0.33 * side, 1.45, 0.12)
+      arm.rotation.x = pose.armRest
+      parts.push(arm)
+    }
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(GEO2.leg, mat)
+      leg.position.set(0.15 * side, 0.45, 0)
+      leg.scale.set(pose.legS[0], pose.legS[1], pose.legS[2])
+      parts.push(leg)
+    }
+    this.group.add(...parts)
     this.group.position.copy(this.position)
     scene.add(this.group)
+    this._parts = parts
+    this._restMats = parts.map(() => mat)
+    this._flashT = 0
   }
 
   /** State update. No randomness. `audio` may be null (headless). */
@@ -119,6 +166,14 @@ export class Zombie {
       this.group.rotation.x = -Math.min(this.deathTimer / 1.5, 1) * 1.2 // fall over
       this.group.position.copy(this.position)
       return
+    }
+    // Hit-flash decay: runs on every live frame (including the attack branch,
+    // which returns before _time advances), so a flash fades in real time.
+    if (this._flashT > 0) {
+      this._flashT -= dt
+      if (this._flashT <= 0) {
+        for (let i = 0; i < this._parts.length; i++) this._parts[i].material = this._restMats[i]
+      }
     }
     if (!player || player.isDead) return
     const dx = player.position.x - this.position.x
@@ -238,7 +293,8 @@ export class Zombie {
     ]
   }
 
-  /** Contract signature; `dir` is accepted and ignored. */
+  /** Contract signature; `dir` is accepted and ignored.
+   *  Non-fatal hits flash HITMAT for 0.15 s; a fatal hit swaps to DEADMAT. */
   damage(amount, dir = null) {
     if (this.isDead) return
     this.health -= amount
@@ -246,6 +302,11 @@ export class Zombie {
       this.health = 0
       this.isDead = true
       this.deathTimer = 0
+      this._flashT = 0
+      for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
+    } else {
+      this._flashT = 0.15
+      for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
     }
   }
 
