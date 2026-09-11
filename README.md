@@ -79,6 +79,23 @@ docs/                  architecture + research notes
 - Performance: instanced/Points snow, bounded zombie count, light pooling,
   no per-frame allocations in hot loops, delta-time movement.
 
+## Agent code navigation (dev tooling)
+
+Two local, key-free indexers are wired into this repo for coding agents (see
+`AGENTS.md` for usage guidance):
+
+- **graft** — deterministic tree-sitter code graph, no model, no network:
+  `npm run graft -- ask "..."`, `npm run graft -- skeleton src/game/Zombie.js`,
+  `npm run graft -- callers setState`, `npm run graft -- grep "requestLock"`,
+  `npm run graft-map`. Sub-second on this repo; refresh with `npm run graft-build`.
+- **zg** (zvec-grep) — semantic search over code and docs using a local
+  embedding model (16M params, CPU): `npm run zg -- query "how do zombies
+  steer around obstacles"`; reindex with `npm run zg-index` (~10 s, model
+  cached in git-ignored `.zvec-home/`).
+
+Both index caches (`graft/`, `.zvec-grep/`, `.zvec-home/`) are git-ignored
+and regenerable; they are never part of the game build.
+
 ## Verification
 
 - `npm test` — unit tests for the pure game logic (collision, input, player,

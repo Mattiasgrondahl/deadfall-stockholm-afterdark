@@ -30,3 +30,12 @@ TASKS.md
 
 # internal per-task implementation specs
 docs/spec-*.md
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+# graft-managed ripgrep companion for graft/
+.ignore
+
+# zvec-grep local index + embedding model cache — regenerable, not committed
+.zvec-grep/
+.zvec-home/
