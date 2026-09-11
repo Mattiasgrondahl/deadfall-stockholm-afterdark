@@ -56,6 +56,18 @@ export class WeaponBank {
     return true
   }
 
+  /** Fire the current weapon once (debug/harness convenience; live game input
+   * routes through inputState.fire in update()). Returns whether it fired. */
+  shoot() {
+    return this.current === this.axe ? this.axe.swing() : this.shotgun.shoot()
+  }
+
+  /** Reload the current weapon (harness/debug entry; live input uses the
+   * reload edge). The axe has no magazine: reload is a no-op success. */
+  reload() {
+    return this.current === this.axe ? true : this.shotgun.reload()
+  }
+
   update(dt, player = null) {
     if (this._swapT > 0) this._swapT = Math.max(0, this._swapT - dt)
     const st = this._inputState

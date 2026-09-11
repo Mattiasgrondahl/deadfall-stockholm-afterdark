@@ -5,6 +5,7 @@ import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { WeaponBank } from './WeaponBank.js'
+import { AmmoDrops } from './AmmoDrops.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -225,6 +226,8 @@ export class Game {
     this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
     this.weapon.getZombies = () => this.zombies
     this.weapon.inputState = this.inputState
+    // WIRING:DROPS (V6)
+    this.drops = new AmmoDrops(this.scene, this.audio)
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w) },
@@ -260,6 +263,7 @@ export class Game {
     for (const z of this.zombies) z.dispose()
     this.zombies = []
     this.kills = 0
+    if (this.drops) this.drops.clear()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -305,7 +309,7 @@ export class Game {
     // remove finished corpses
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const z = this.zombies[i]
-      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++ }
+      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.drops) this.drops.maybeSpawn(z.position.x, z.position.z) }
       if (z.deadAndGone) {
         this.zombies.splice(i, 1)
         z.dispose()
@@ -313,6 +317,11 @@ export class Game {
         z.deadAndGone = true
       }
     }
+    // WIRING:DROPS
+    if (this.drops) this.drops.update(dt, this.player, () => {
+      if (this.weapon) this.weapon.shotgun.reserve += AmmoDrops.SHELLS_PER_DROP
+      if (this.audio) this.audio.pickup?.()
+    })
     // WIRING:WAVES
     if (this.waveManager) this.waveManager.update(dt, this)
     // WIRING:LIGHTING

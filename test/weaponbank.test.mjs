@@ -119,6 +119,36 @@ test('reset restores shotgun and clears both weapons', () => {
   bank.dispose()
 })
 
+test('shoot() delegates to the current weapon', () => {
+  const zombies = [new Zombie(new THREE.Scene(), 'walker', 0, -5, 1)]
+  const { bank, audio } = makeBank(fakePlayer(0, 0, 0), zombies)
+  assert.equal(bank.shoot(), true)
+  assert.equal(audio.counts.shoot, 1)
+  assert.equal(bank.shotgun.ammo, 4)
+  bank.switchTo('axe')
+  assert.equal(bank.shoot(), true)
+  assert.equal(audio.counts.axeSwing, 1)
+  assert.equal(audio.counts.shoot, 1) // shotgun untouched
+  bank.dispose()
+})
+
+test('reload() delegates to the current weapon; axe is a no-op', () => {
+  const player = fakePlayer(0, 0, 0)
+  const { bank } = makeBank(player, [])
+  assert.equal(bank.reload(), false) // shotgun, full mag: nothing to reload
+  for (let i = 0; i < 5; i++) { bank.shotgun.shoot(); bank.update(1, player) }
+  assert.equal(bank.shotgun.ammo, 0)
+  bank.reload() // auto-reload already started on the last shot
+  assert.equal(bank.shotgun.isReloading, true)
+  bank.update(1.5, player) // > 1.4 s
+  assert.equal(bank.shotgun.ammo, 5)
+  assert.equal(bank.shotgun.isReloading, false)
+  bank.update(0.3, player) // clear the switch lockout
+  bank.switchTo('axe')
+  assert.equal(bank.reload(), true) // axe has no magazine: no-op success
+  bank.dispose()
+})
+
 test('dispose detaches both view models; double-safe', () => {
   const { bank, camera } = makeBank(fakePlayer(0, 0), [])
   assert.equal(camera.children.length, 2) // axe view + shotgun view
