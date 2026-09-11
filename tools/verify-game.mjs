@@ -8,7 +8,9 @@
  * exit 0 as long as nothing FAILs; final acceptance requires zero FAILs
  * and zero SKIPPED stages.
  */
+import * as THREE from 'three'
 import { Game, GameState } from '../src/game/Game.js'
+import { AmmoDrops, SHELLS_PER_DROP } from '../src/game/AmmoDrops.js'
 
 const DT = 1 / 60
 const g = new Game({ headless: true })
@@ -360,6 +362,85 @@ stage('S8 scene sanity (budgets + renderer)', () => true, () => {
     const p = pos()
     ok('player position finite', Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z))
   }
+})
+
+// ------------------------------------------- S9 ammo drops (deterministic)
+stage('S9 ammo drops: deterministic spawns + headless pickup', () => !!g.drops, () => {
+  // A: Determinism — two fresh pools given identical kill sequences must
+  // produce identical drop layouts (seeded LCG, no Math.random).
+  const s1 = new THREE.Scene(), s2 = new THREE.Scene()
+  const a = new AmmoDrops(s1), b = new AmmoDrops(s2)
+  const kills = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9], [10, 10]]
+  for (const [x, z] of kills) { a.maybeSpawn(x, z); b.maybeSpawn(x, z) }
+  ok('identical kill sequences -> identical drop layouts',
+    a.count === b.count && a._drops.every((d, i) => d.x === b._drops[i].x && d.z === b._drops[i].z),
+    `pool A ${a.count}, pool B ${b.count}`)
+  ok('drop roll fires (~55% per kill)', a.count >= 5, `spawns ${a.count}/10`)
+  a.dispose(); b.dispose()
+
+  // B: In-game pickup — a drop under the player is collected on the next
+  // update and refills the shotgun reserve by SHELLS_PER_DROP (+8).
+  g.debug.killAllZombies(); g.zombies = []; g.kills = 0
+  g.debug.resetRun()
+  const p = pos()
+  const reserveBefore = g.debug.reserve()
+  const mesh = new THREE.Mesh(g.drops._geo, g.drops._mat)
+  mesh.position.set(p.x, 0.1, p.z)
+  g.scene.add(mesh)
+  g.drops._drops.push({ x: p.x, z: p.z, t: 0, mesh })
+  ok('drop spawned under player', g.drops.count === 1, `count ${g.drops.count}`)
+  g.step(DT)
+  ok('pickup removes the drop within one frame', g.drops.count === 0, `count ${g.drops.count}`)
+  ok('pickup refills reserve by +8', g.debug.reserve() === reserveBefore + SHELLS_PER_DROP,
+    `reserve ${reserveBefore} -> ${g.debug.reserve()}`)
+})
+
+// -------------------------------------- S10 flashlight + score (deterministic)
+stage('S10 flashlight toggle/battery + score increments', () => !!g.flashlight && !!g.score, () => {
+  g.debug.killAllZombies(); g.zombies = []; g.kills = 0
+  g.debug.resetRun()
+
+  // A: Flashlight — F edge toggles, battery drains only while on,
+  // holds while off, reset restores full state.
+  ok('starts off with full battery', g.flashlight.on === false && g.flashlight.battery === 1,
+    `on ${g.flashlight.on} battery ${g.flashlight.battery}`)
+  g.inputState.flashlight = true
+  g.step(DT)
+  ok('F edge turns it on and is consumed', g.flashlight.on === true && g.inputState.flashlight === false,
+    `on ${g.flashlight.on} edge ${g.inputState.flashlight}`)
+  ok('intensity up while on', g.flashlight.spot.intensity > 0, `intensity ${g.flashlight.spot.intensity}`)
+  const b0 = g.flashlight.battery
+  step(60)
+  ok('battery drains while on (~1/120 per second)',
+    Math.abs((b0 - g.flashlight.battery) - 1 / 120) < 0.001,
+    `${b0.toFixed(4)} -> ${g.flashlight.battery.toFixed(4)}`)
+  g.inputState.flashlight = true
+  g.step(DT)
+  ok('F edge turns it off (intensity 0)', g.flashlight.on === false && g.flashlight.spot.intensity === 0,
+    `on ${g.flashlight.on} intensity ${g.flashlight.spot.intensity}`)
+  const b1 = g.flashlight.battery
+  step(60)
+  ok('battery holds while off', Math.abs(g.flashlight.battery - b1) < 1e-9,
+    `${b1.toFixed(4)} -> ${g.flashlight.battery.toFixed(4)}`)
+  g.flashlight.reset()
+  ok('reset restores off + full battery', g.flashlight.on === false && g.flashlight.battery === 1,
+    `on ${g.flashlight.on} battery ${g.flashlight.battery}`)
+
+  // B: Score — a wave-1 walker kill is worth 10 + 50×1 = 60 points.
+  // Fresh reset first (Part A's 2 s let wave 1 spawn shamblers/walkers);
+  // spawn exactly one walker, force-kill it immediately (before the wave
+  // spawner can add more), then let the kill hook process.
+  g.debug.killAllZombies(); g.zombies = []; g.kills = 0
+  g.debug.resetRun()
+  ok('score starts at 0 after reset', g.score.value === 0, `score ${g.score.value}`)
+  const z = g.debug.spawnZombie('walker', 30, 12)
+  ok('walker spawned', z !== null && g.debug.zombiesAlive() === 1, `alive ${g.debug.zombiesAlive()}`)
+  const s0 = g.score.value
+  g.debug.killAllZombies() // synchronous; the only live zombie is this walker
+  step(30) // death + kill hook processing
+  ok('kill increments score', z.isDead && g.score.value > s0, `${s0} -> ${g.score.value}`)
+  ok('wave-1 walker is worth 60 (10 + 50×1)', g.score.value === s0 + 60, `score ${g.score.value}`)
+  ok('kill counter agrees', g.debug.kills() === 1, `kills ${g.debug.kills()}`)
 })
 
 // ---------------------------------------------------------------- summary

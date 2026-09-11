@@ -5,7 +5,7 @@ import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { WeaponBank } from './WeaponBank.js'
-import { AmmoDrops } from './AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
@@ -347,7 +347,7 @@ export class Game {
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position)
     // WIRING:DROPS
     if (this.drops) this.drops.update(dt, this.player, () => {
-      if (this.weapon) this.weapon.shotgun.reserve += AmmoDrops.SHELLS_PER_DROP
+      if (this.weapon) this.weapon.shotgun.reserve += SHELLS_PER_DROP
       if (this.audio) this.audio.pickup?.()
     })
     // WIRING:WAVES
