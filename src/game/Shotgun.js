@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { raySphere } from './Weapon.js'
+import { raySphere } from './ray.js'
 
 // Shotgun: pump-action; one trigger pull = 6-pellet blast, each pellet an
 // independent ray (own jitter, wall occlusion, nearest-zombie hit).

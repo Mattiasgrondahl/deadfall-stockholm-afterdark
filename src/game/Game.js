@@ -4,7 +4,7 @@ import { Player } from './Player.js'
 import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
-import { Weapon } from './Weapon.js'
+import { WeaponBank } from './WeaponBank.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -222,7 +222,7 @@ export class Game {
     if (this.player) this.player.audio = this.audio
     if (this.input) this.input.on('mute', () => this.audio.toggleMuted())
     // WIRING:WEAPON
-    this.weapon = new Weapon(this.scene, this.camera, this.collision, this.audio)
+    this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
     this.weapon.getZombies = () => this.zombies
     this.weapon.inputState = this.inputState
     // WIRING:WAVES
