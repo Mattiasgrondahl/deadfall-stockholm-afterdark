@@ -316,7 +316,7 @@ export class Game {
     // remove finished corpses
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const z = this.zombies[i]
-      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.drops) this.drops.maybeSpawn(z.position.x, z.position.z) }
+      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
       if (z.deadAndGone) {
         this.zombies.splice(i, 1)
         z.dispose()
@@ -324,6 +324,8 @@ export class Game {
         z.deadAndGone = true
       }
     }
+    // WIRING:GROANS (V8)
+    if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position)
     // WIRING:DROPS
     if (this.drops) this.drops.update(dt, this.player, () => {
       if (this.weapon) this.weapon.shotgun.reserve += AmmoDrops.SHELLS_PER_DROP
