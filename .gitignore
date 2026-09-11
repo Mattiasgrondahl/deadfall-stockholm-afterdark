@@ -1,0 +1,32 @@
+# dependencies / build output
+node_modules/
+.npm-cache/
+dist/
+
+# Playwright browser downloads (used only by tools/e2e-browser.mjs)
+.browsers/
+
+# logs & debug artifacts
+*.log
+.debug/
+.npm-verbose.txt
+.verify-log.txt
+
+# sandbox fake $HOME
+.fxhome/
+
+# one-off debug / probe scripts (not part of the game)
+tools/debug-*.mjs
+tools/probe-*.mjs
+tools/micro-shot*.mjs
+tools/sweep-streets.mjs
+tools/count-sweep.mjs
+_geom-check.mjs
+.probe-wave.mjs
+
+# internal AI-orchestration docs (not part of the game)
+AGENTS.md
+TASKS.md
+
+# internal per-task implementation specs
+docs/spec-*.md
