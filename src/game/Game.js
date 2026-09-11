@@ -6,6 +6,7 @@ import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops } from './AmmoDrops.js'
+import { Flashlight } from './Flashlight.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -228,6 +229,8 @@ export class Game {
     this.weapon.inputState = this.inputState
     // WIRING:DROPS (V6)
     this.drops = new AmmoDrops(this.scene, this.audio)
+    // WIRING:FLASH (V7)
+    this.flashlight = new Flashlight(this.camera, this.audio)
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w) },
@@ -238,6 +241,7 @@ export class Game {
     if (this.env.document) {
       this.hud = new HUD(this.env.document.getElementById('hud-root'), this.env.document.getElementById('fx-root'))
       this.screens = new Screens(this.env.document.getElementById('screens-root'), this)
+      if (this.flashlight) this.hud.flashlight = this.flashlight // V7: reveals the battery box
     }
   }
 
@@ -264,6 +268,7 @@ export class Game {
     this.zombies = []
     this.kills = 0
     if (this.drops) this.drops.clear()
+    if (this.flashlight) this.flashlight.reset()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -304,6 +309,8 @@ export class Game {
     // WIRING:UPDATE
     if (this.player && !this.player.isDead) this.player.update(dt)
     if (this.weapon) this.weapon.update(dt, this.player)
+    // WIRING:FLASH (V7)
+    if (this.flashlight) this.flashlight.update(dt, this.inputState)
     // WIRING:ZOMBIES
     for (const z of this.zombies) z.update(dt, this.player, this.zombies, this.collision, this.audio)
     // remove finished corpses
