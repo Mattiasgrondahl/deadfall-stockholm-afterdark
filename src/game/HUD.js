@@ -1,5 +1,5 @@
-// HUD.js — in-game heads-up display (health, stamina, wave, ammo, reload,
-// crosshair) plus damage vignette / low-health pulse FX. Browser-only: headless
+// HUD.js — in-game heads-up display (health, stamina, wave, weapons, battery,
+// score, crosshair) plus damage vignette / low-health pulse FX. Browser-only: headless
 // runs never construct it (Game.js guards with `if (this.env.document)`).
 // All DOM is created once in the constructor via document.createElement
 // (no innerHTML); update() only mutates style/text and toggles classes, so
@@ -14,6 +14,8 @@ export class HUD {
     this._lastHealth = null
     this._vignetteT = 0
     this._lastNow = this._now()
+    this.flashlight = null // set by Game wiring (V7); battery bar hidden until then
+    this.score = null      // set by Game wiring (V9); score box hidden until then
     this._build()
   }
 
@@ -52,15 +54,53 @@ export class HUD {
     this._threat = d.createElement('div'); this._threat.className = 'hud-threat'; this._threat.textContent = 'left: 0'
     this._hudRoot.appendChild(this._threat)
 
-    // Ammo + reload (bottom-right)
-    const ammo = d.createElement('div'); ammo.className = 'hud-ammo'
+    // Weapons (bottom-right, v2): one slot per bank weapon with name, ammo,
+    // and reload indicator; the active slot is highlighted. A legacy
+    // single-weapon slot is kept for non-bank weapons. Battery (flashlight)
+    // and score are revealed only when Game wires those systems.
+    const weapons = d.createElement('div'); weapons.className = 'hud-weapons'
+    const slot = (label) => {
+      const box = d.createElement('div'); box.className = 'weapon-slot hidden'
+      const n = d.createElement('div'); n.className = 'weapon-name'; n.textContent = label
+      const a = d.createElement('div'); a.className = 'weapon-ammo'; a.textContent = '0 / 0'
+      const reload = d.createElement('div'); reload.className = 'weapon-reload'
+      const bar = d.createElement('div'); bar.className = 'bar'
+      const rf = d.createElement('div'); rf.className = 'bar-fill'
+      bar.appendChild(rf); reload.appendChild(bar)
+      box.appendChild(n); box.appendChild(a); box.appendChild(reload)
+      return { box, name: n, ammo: a }
+    }
+    this._slotA = slot('AXE')
+    this._slotB = slot('SHOTGUN')
+    weapons.appendChild(this._slotA.box); weapons.appendChild(this._slotB.box)
+    this._legacyAmmo = d.createElement('div'); this._legacyAmmo.className = 'hud-ammo hidden'
     this._ammoValue = d.createElement('div'); this._ammoValue.className = 'hud-value'; this._ammoValue.textContent = '0 / 0'
     const reload = d.createElement('div'); reload.className = 'hud-reload'
     this._reloadText = d.createElement('span'); this._reloadText.textContent = 'RELOADING…'
     reload.appendChild(this._reloadText)
-    ammo.appendChild(this._ammoValue); ammo.appendChild(reload)
-    this._ammoBox = ammo
-    this._hudRoot.appendChild(ammo)
+    this._legacyAmmo.appendChild(this._ammoValue); this._legacyAmmo.appendChild(reload)
+    weapons.appendChild(this._legacyAmmo)
+    this._ammoBox = this._legacyAmmo
+    this._weaponsRoot = weapons
+    this._hudRoot.appendChild(weapons)
+
+    // Battery (bottom-left, above health); revealed when a flashlight is wired.
+    const battery = d.createElement('div'); battery.className = 'hud-battery hidden'
+    const bLabel = d.createElement('div'); bLabel.className = 'hud-label'; bLabel.textContent = 'Battery'
+    const bBar = d.createElement('div'); bBar.className = 'bar'
+    this._batteryFill = d.createElement('div'); this._batteryFill.className = 'bar-fill'
+    bBar.appendChild(this._batteryFill)
+    battery.appendChild(bLabel); battery.appendChild(bBar)
+    this._batteryBox = battery
+    this._hudRoot.appendChild(battery)
+
+    // Score (top-right); revealed when a score tracker is wired.
+    const scoreBox = d.createElement('div'); scoreBox.className = 'hud-score hidden'
+    const scLabel = d.createElement('div'); scLabel.className = 'hud-label'; scLabel.textContent = 'Score'
+    this._scoreValue = d.createElement('div'); this._scoreValue.className = 'hud-value'; this._scoreValue.textContent = '0'
+    scoreBox.appendChild(scLabel); scoreBox.appendChild(this._scoreValue)
+    this._scoreBox = scoreBox
+    this._hudRoot.appendChild(scoreBox)
 
     // Crosshair (static; spread FX deferred)
     const ch = d.createElement('div'); ch.className = 'crosshair'
@@ -105,14 +145,44 @@ export class HUD {
     }
 
     if (weapon) {
-      this._ammoValue.textContent = weapon.ammo + ' / ' + weapon.reserve
-      this._ammoBox.classList.toggle('reloading', !!weapon.isReloading)
-      this._ammoBox.classList.toggle('empty', weapon.ammo === 0)
+      if (weapon.axe && weapon.shotgun) {
+        // WeaponBank: two slots, active one highlighted.
+        this._slotA.box.classList.remove('hidden')
+        this._slotB.box.classList.remove('hidden')
+        this._legacyAmmo.classList.add('hidden')
+        for (const [w, s] of [[weapon.axe, this._slotA], [weapon.shotgun, this._slotB]]) {
+          s.name.textContent = w.name || 'weapon'
+          s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+          s.box.classList.toggle('active', w === weapon.current)
+          s.box.classList.toggle('reloading', !!w.isReloading)
+          s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
+        }
+      } else {
+        // Legacy single weapon (pre-bank compatibility).
+        this._slotA.box.classList.add('hidden')
+        this._slotB.box.classList.add('hidden')
+        this._legacyAmmo.classList.remove('hidden')
+        this._ammoValue.textContent = weapon.ammo + ' / ' + weapon.reserve
+        this._ammoBox.classList.toggle('reloading', !!weapon.isReloading)
+        this._ammoBox.classList.toggle('empty', weapon.ammo === 0)
+      }
     }
 
     if (waveManager) {
       this._waveValue.textContent = 'WAVE ' + (waveManager.wave || 1)
       this._threat.textContent = 'left: ' + (waveManager.remaining !== undefined ? waveManager.remaining : 0)
+    }
+
+    // Battery + score: shown only when their systems are wired in.
+    this._batteryBox.classList.toggle('hidden', !this.flashlight)
+    if (this.flashlight) {
+      const pct = Math.max(0, Math.min(1, this.flashlight.battery !== undefined ? this.flashlight.battery : 1))
+      this._batteryFill.style.width = (pct * 100) + '%'
+      this._batteryBox.classList.toggle('low', pct < 0.25)
+    }
+    this._scoreBox.classList.toggle('hidden', !this.score)
+    if (this.score) {
+      this._scoreValue.textContent = String(this.score.value !== undefined ? this.score.value : this.score)
     }
   }
 
