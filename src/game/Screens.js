@@ -32,7 +32,7 @@ export class Screens {
     for (const [k, a] of [
       ['W A S D', 'Move'], ['Mouse', 'Look'], ['LMB', 'Fire'],
       ['R', 'Reload'], ['Shift', 'Sprint'], ['F', 'Flashlight'],
-      ['1 / 2', 'Switch weapon'], ['P / Esc', 'Pause']
+      ['1 / 2', 'Switch weapon (1 = axe, 2 = shotgun)'], ['P / Esc', 'Pause']
     ]) {
       const row = d.createElement('div'); row.className = 'ctrl-row'
       const key = d.createElement('span'); key.className = 'key'; key.textContent = k

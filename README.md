@@ -44,18 +44,31 @@ node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run wit
 | W A S D | Move |
 | Mouse | Look (pointer lock) |
 | Shift | Sprint (drains stamina) |
-| Left mouse | Fire |
-| R | Reload |
+| Left mouse | Fire (current weapon) |
+| R | Reload (shotgun; axe needs no reload) |
+| 1 | Switch to the axe |
+| 2 | Switch to the shotgun |
+| F | Flashlight on/off (battery drains, flickers when low) |
 | P / Esc | Pause / resume (Esc releases pointer lock) |
 | M | Mute / unmute |
 
 ## Gameplay
 
 - Survive escalating waves of three zombie types: walkers, shamblers, screamers.
-- Headshots deal double damage. The magazine holds 12 rounds; reserve holds 60.
-- Waves get tougher and more numerous (health scales, count grows). A cleared
-  wave triggers a brief respite before the next one.
-- When your health hits zero, the run ends — restart and go again.
+  Each type has its own idle groan, falling off with distance. Waves get
+  tougher and more numerous; a cleared wave triggers a brief respite.
+- Two weapons, switched with **1 / 2**: a **shotgun** (5-round magazine, 30
+  reserve, spread blast) and a **hand axe** (melee arc, unlimited swings,
+  cooldown only). Headshots deal double damage with either weapon.
+- Killing a zombie has a ~55% chance to drop a shell box; walk over it to gain
+  **+8** reserve. Drops blink and expire after 30 s.
+- Kill scoring: walker 10, shambler 15, screamer 25, plus a wave bonus of
+  50 × wave. Your best score persists in `localStorage`.
+- The flashlight follows your view; its battery lasts ~2 minutes of continuous
+  use and flickers as it runs low.
+- Blood sprays from every hit.
+- When your health hits zero, the run ends — your score and wave are shown on
+  the game-over screen — restart and go again.
 
 ## Project layout
 
@@ -63,8 +76,10 @@ node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run wit
 index.html
 src/main.js            entry point
 src/styles.css         UI styling
-src/game/              Game (loop/state), Input, Player, Weapon, Zombie,
-                       WaveManager, CollisionWorld, Audio, HUD, Screens
+src/game/              Game (loop/state), Input, Player, Zombie,
+                       WaveManager, CollisionWorld, HUD, Screens,
+                       WeaponBank, Axe, Shotgun, AmmoDrops, Flashlight,
+                       AudioBank, Blood, Score
 src/world/             City (procedural environment), Lighting
 test/                  node:test logic tests + headless playthrough (verify-game.mjs)
 docs/                  architecture + research notes
@@ -101,10 +116,11 @@ and regenerable; they are never part of the game build.
 - `npm test` — unit tests for the pure game logic (collision, input, player,
   weapon, zombie steering, waves, city, lighting, HUD/Screens, audio).
 - `npm run verify` — a headless playthrough of the **real** `Game` and its
-  subsystems in Node (S1–S8: state machine, movement/collision, death/restart,
-  weapon, zombie AI, wave cadence/scaling, a full 3-wave clear, scene budgets).
-  It exercises the game logic end-to-end but uses a stub renderer, so it does
-  **not** test real WebGL rendering or pointer-lock aiming.
+  subsystems in Node (S1–S10: state machine, movement/collision, death/restart,
+  weapons, zombie AI, wave cadence/scaling, a full 3-wave clear, scene budgets,
+  deterministic ammo drops + pickup, flashlight toggle/battery + score
+  increments). It exercises the game logic end-to-end but uses a stub renderer,
+  so it does **not** test real WebGL rendering or pointer-lock aiming.
 - `npm run build` — production build; confirms every module resolves and bundles.
 - Real browser: open `http://localhost:5173` and click **START**. WebGL
   rendering, pointer-lock mouse aiming, and generated audio all require a

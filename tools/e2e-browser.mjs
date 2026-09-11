@@ -78,6 +78,101 @@ try {
     }
   })
 
+  // ------------------------------------------------------------- v2 features
+  // 4b) Weapon switch: 1 -> axe, 2 -> shotgun (matches HUD slot order)
+  await page.keyboard.press('Digit1')
+  await page.waitForTimeout(500)
+  out.switchAxe = await page.evaluate(() => {
+    const g = window.__game
+    return { currentIsAxe: g?.weapon?.current === g?.weapon?.axe }
+  })
+  await page.keyboard.press('Digit2')
+  await page.waitForTimeout(500)
+  out.switchShotgun = await page.evaluate(() => {
+    const g = window.__game
+    return {
+      currentIsShotgun: g?.weapon?.current === g?.weapon?.shotgun,
+      ammo: g?.weapon?.ammo ?? null,
+      reserve: g?.weapon?.reserve ?? null
+    }
+  })
+
+  // 4c) Shoot -> kill -> blood -> score (spawn a walker 1.5 m east, close
+  // enough that the full pellet spread lands; aim directly via yaw/pitch)
+  out.combat = await page.evaluate(async () => {
+    const g = window.__game
+    const sleep = ms => new Promise(r => setTimeout(r, ms))
+    const p = g.player.position
+    const zx = p.x + 1.5, zz = p.z
+    const z = g.spawnZombie('walker', zx, zz)
+    let shots = 0
+    let bloodSeen = 0
+    while (!z.isDead && shots < 5 && g.state === 'playing') {
+      const dx = z.position.x - p.x, dz = z.position.z - p.z
+      const d = Math.hypot(dx, dz)
+      g.player.yaw = Math.atan2(-dx, -dz)
+      g.player.pitch = Math.atan2(p.y - 1.55, Math.max(d, 0.5))
+      await sleep(60) // let one game frame sync the camera from yaw/pitch
+      if (g.weapon.shoot()) {
+        shots++
+        await sleep(120) // hit processed; droplets live 0.8 s, read promptly
+        bloodSeen = Math.max(bloodSeen, g.blood ? g.blood.activeCount : 0)
+        if (z.isDead) break
+        await sleep(800) // clear the 0.9 s burst interval before next shot
+      } else {
+        await sleep(300)
+      }
+    }
+    await sleep(100)
+    return {
+      shots,
+      dead: z.isDead,
+      kills: g.kills,
+      score: g.score ? g.score.value : -1,
+      blood: bloodSeen,
+      ammo: g.weapon?.ammo ?? null
+    }
+  })
+
+  // 4d) Pickup: clear drops, spawn one under the player, confirm +8 reserve
+  out.pickup = await page.evaluate(async () => {
+    const g = window.__game
+    const sleep = ms => new Promise(r => setTimeout(r, ms))
+    const reserveBefore = g.weapon.shotgun.reserve
+    g.drops.clear()
+    const p = g.player.position
+    // LCG roll sequence is fixed, so a drop appears within a few rolls.
+    let tries = 0
+    while (g.drops.count === 0 && tries < 40) {
+      if (g.drops.maybeSpawn(p.x, p.z)) break
+      tries++
+    }
+    const spawned = g.drops.count
+    await sleep(400) // let an update run -> pickup
+    const reserveAfter = g.weapon.shotgun.reserve
+    return { tries, spawned, pickedUp: g.drops.count === 0, reserveBefore, reserveAfter, gained: reserveAfter - reserveBefore }
+  })
+
+  // 4e) Flashlight: F toggles on, battery drains while on, F toggles off
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(500)
+  const flOn = await page.evaluate(() => {
+    const f = window.__game?.flashlight
+    return { on: f?.on ?? false, battery: f?.battery ?? -1, intensity: f?.spot?.intensity ?? -1 }
+  })
+  await page.waitForTimeout(4000) // ~4 s of use -> battery drops ~0.033
+  const flDrained = await page.evaluate(() => {
+    const f = window.__game?.flashlight
+    return { on: f?.on ?? false, battery: f?.battery ?? -1 }
+  })
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(500)
+  const flOff = await page.evaluate(() => {
+    const f = window.__game?.flashlight
+    return { on: f?.on ?? false, intensity: f?.spot?.intensity ?? -1, battery: f?.battery ?? -1 }
+  })
+  out.flashlight = { on: flOn, drained: flDrained, off: flOff }
+
   // 5) Pause via Escape
   await page.keyboard.press('Escape')
   await page.waitForTimeout(800)
@@ -131,6 +226,7 @@ try {
       wave: g?.waveManager?.wave ?? null,
       kills: g?.kills ?? null,
       zombies: g?.zombies?.length ?? 0,
+      score: g?.score?.value ?? null,
       hudVisible: document.getElementById('hud-root')?.classList.contains('visible') ?? false
     }
   })
@@ -143,17 +239,26 @@ out.pageErrors = pageErrors
 
 // --- Verdict ---
 const g = out.gameplay || {}, p = out.pause || {}, r = out.resume || {},
-      go = out.gameover || {}, ar = out.afterRestart || {}, t = out.title || {}
+      go = out.gameover || {}, ar = out.afterRestart || {}, t = out.title || {},
+      sa = out.switchAxe || {}, ss = out.switchShotgun || {},
+      cb = out.combat || {}, pk = out.pickup || {}, fl = out.flashlight || {}
 const checks = {
   'page loaded + WebGL canvas': !!(out.webgl?.canvas && out.webgl.w > 0),
   'title screen shown': t.hasTitle && t.startBtn,
   'START clicked': out.startClicked === true,
   'gameplay running (playing + HUD)': g.state === 'playing' && g.hudVisible,
   'zombies spawned': (g.zombiesAlive ?? 0) > 0,
+  'weapon switch works (axe then shotgun)': sa.currentIsAxe === true && ss.currentIsShotgun === true,
+  'shot kills a zombie': cb.dead === true && cb.kills >= 1,
+  'blood particles on hit': cb.blood > 0,
+  'score increments on kill (walker=60)': cb.score === 60,
+  'pickup restores ammo (+8)': pk.pickedUp === true && pk.gained === 8,
+  'flashlight toggles + drains battery': fl.on?.on === true && fl.drained?.battery < fl.on?.battery && fl.off?.on === false,
   'pause works (Esc -> paused overlay)': p.state === 'paused' && p.pausedVisible,
   'resume works (P -> playing)': r.state === 'playing',
   'game over (death -> YOU DIED)': go.state === 'gameover' && go.gameoverVisible,
-  'restart works (-> playing, wave 1, kills 0)': ar.state === 'playing' && ar.wave === 1 && ar.kills === 0,
+  'game over shows score': /60\s*pts/.test(go.stat || ''),
+  'restart works (-> playing, wave 1, kills 0, score 0)': ar.state === 'playing' && ar.wave === 1 && ar.kills === 0 && ar.score === 0,
   'no console errors': consoleErrors.length === 0,
   'no page errors': pageErrors.length === 0
 }
