@@ -21,6 +21,7 @@ export class Axe {
     this.scene = scene
     this.camera = camera
     this.audio = audio
+    this.blood = null
     this.getZombies = null
     this.inputState = null
     this.player = null
@@ -91,7 +92,9 @@ export class Axe {
         const hdist = Math.hypot(dx, dz)
         if (hdist < 1e-6 || hdist > this.range) continue
         if ((dx / hdist) * fx + (dz / hdist) * fz < cosArc) continue
-        z.damage(this.dmg * (hdist <= this.headRange ? this.headMultiplier : 1), null)
+        const head = hdist <= this.headRange
+        z.damage(this.dmg * (head ? this.headMultiplier : 1), null)
+        this.blood?.burst(z.position.x, z.position.y + (head ? 1.8 : 1.2), z.position.z, this.dmg * (head ? this.headMultiplier : 1), head)
         hitSet.push(z)
       }
       for (const z of hitSet) this.audio?.hitZombie?.()

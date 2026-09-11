@@ -18,6 +18,7 @@ export class Shotgun {
     this.camera = camera
     this.collision = collision
     this.audio = audio
+    this.blood = null
     this.getZombies = null
     this.inputState = null
     this.player = null
@@ -46,6 +47,7 @@ export class Shotgun {
     this._right = new THREE.Vector3()
     this._up = new THREE.Vector3()
     this._pellet = new THREE.Vector3()
+    this._hitP = new THREE.Vector3()
 
     // View model: receiver, barrel, pump, stock — camera-attached.
     this.view = new THREE.Group()
@@ -141,6 +143,8 @@ export class Shotgun {
         }
       }
       if (hitZ) {
+        this._hitP.copy(o).addScaledVector(this._pellet, bestT)
+        this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, this.damage * (head ? this.headMultiplier : 1), head)
         hitZ.damage(this.damage * (head ? this.headMultiplier : 1), this._pellet)
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
       }

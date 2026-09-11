@@ -8,6 +8,7 @@ import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
+import { Blood } from './Blood.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -240,6 +241,9 @@ export class Game {
     })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
+    // WIRING:BLOOD (V10)
+    this.blood = new Blood(this.scene)
+    if (this.weapon) { this.weapon.shotgun.blood = this.blood; this.weapon.axe.blood = this.blood }
     // WIRING:UI (browser only; headless keeps hud/screens null)
     if (this.env.document) {
       this.hud = new HUD(this.env.document.getElementById('hud-root'), this.env.document.getElementById('fx-root'))
@@ -274,6 +278,7 @@ export class Game {
     if (this.drops) this.drops.clear()
     if (this.flashlight) this.flashlight.reset()
     if (this.score) this.score.reset()
+    if (this.blood) this.blood.clear()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -321,6 +326,8 @@ export class Game {
     // WIRING:UPDATE
     if (this.player && !this.player.isDead) this.player.update(dt)
     if (this.weapon) this.weapon.update(dt, this.player)
+    // WIRING:BLOOD (V10)
+    if (this.blood) this.blood.update(dt)
     // WIRING:FLASH (V7)
     if (this.flashlight) this.flashlight.update(dt, this.inputState)
     // WIRING:ZOMBIES
