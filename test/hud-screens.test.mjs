@@ -200,7 +200,7 @@ function makeGame(doc, hud) {
   assert(title.classList.contains('visible'))
   assert(find(title, 'game-title'))
   assert(find(title, 'tagline'))
-  assert.strictEqual(find(title, 'controls-grid').children.length, 6)
+  assert.strictEqual(find(title, 'controls-grid').children.length, 8) // v2 adds F + 1/2 rows
   assert.strictEqual(find(title, 'btn').textContent, 'START')
   // other screens are hidden
   assert(!screenWithText(screensRoot, 'PAUSED').classList.contains('visible'))
@@ -234,7 +234,7 @@ function makeGame(doc, hud) {
   screens.showGameOver({ wave: 4, kills: 12 })
   const over = screenWithText(screensRoot, 'YOU DIED')
   assert(over.classList.contains('visible'))
-  assert.strictEqual(find(over, 'stat').textContent, 'Wave 4 — 12 kills')
+  assert.strictEqual(find(over, 'stat').textContent, 'Wave 4 — 12 kills — 0 pts')
   screens.dispose()
 }
 {
@@ -288,6 +288,26 @@ function makeGame(doc, hud) {
   game.state = 'title';  doc.emit('keydown', { key: 'Enter' }); assert(starts === 1)
   game.state = 'playing'; doc.emit('keydown', { key: 'Enter' }); assert(starts === 1) // ignored
   game.state = 'gameover'; doc.emit('keydown', { key: 'Enter' }); assert(starts === 2)
+  screens.dispose()
+}
+
+{
+  // V9: title shows the stored high score; game-over shows score + record line
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  game.score = { value: 235, best: 235 }
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  assert.strictEqual(find(title, 'highscore').textContent, 'HIGH SCORE: 235')
+  screens.showGameOver({ wave: 3, kills: 9, score: 235, best: 235, record: true })
+  const over = screenWithText(screensRoot, 'YOU DIED')
+  assert.strictEqual(find(over, 'stat').textContent, 'Wave 3 — 9 kills — 235 pts')
+  assert.strictEqual(find(over, 'record').textContent, 'NEW HIGH SCORE — 235')
+  // no record -> line stays empty
+  screens.showGameOver({ wave: 3, kills: 5, score: 100, best: 235, record: false })
+  assert.strictEqual(find(over, 'record').textContent, '')
   screens.dispose()
 }
 

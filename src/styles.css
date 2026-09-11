@@ -203,6 +203,24 @@ html, body {
 }
 .hud-score .hud-value { font-size: 20px; }
 
+/* high score (title screen) */
+.highscore {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--warn);
+}
+
+/* new-record line (game-over screen) */
+.record {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--danger);
+}
+
 /* wave + threat */
 .hud-wave {
   position: absolute;

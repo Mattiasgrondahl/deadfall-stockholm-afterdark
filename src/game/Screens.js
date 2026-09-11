@@ -27,10 +27,12 @@ export class Screens {
     const titleEl = d.createElement('div'); titleEl.className = 'game-title'; titleEl.textContent = 'DEADFALL'
     const sub = d.createElement('div'); sub.className = 'game-title sub'; sub.textContent = 'Stockholm Afterdark'
     const tag = d.createElement('div'); tag.className = 'tagline'; tag.textContent = 'The city fell at midnight.'
+    const hs = d.createElement('div'); hs.className = 'highscore'; this._highScoreText = hs; hs.textContent = 'HIGH SCORE: 0'
     const grid = d.createElement('div'); grid.className = 'controls-grid'
     for (const [k, a] of [
       ['W A S D', 'Move'], ['Mouse', 'Look'], ['LMB', 'Fire'],
-      ['R', 'Reload'], ['Shift', 'Sprint'], ['P / Esc', 'Pause']
+      ['R', 'Reload'], ['Shift', 'Sprint'], ['F', 'Flashlight'],
+      ['1 / 2', 'Switch weapon'], ['P / Esc', 'Pause']
     ]) {
       const row = d.createElement('div'); row.className = 'ctrl-row'
       const key = d.createElement('span'); key.className = 'key'; key.textContent = k
@@ -40,7 +42,7 @@ export class Screens {
     }
     const startBtn = d.createElement('button'); startBtn.className = 'btn primary'; startBtn.textContent = 'START'
     startBtn.addEventListener('click', () => this._game.startGame())
-    panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag)
+    panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs)
     panelT.appendChild(grid); panelT.appendChild(startBtn)
     this._title.appendChild(panelT)
     this._root.appendChild(this._title)
@@ -66,7 +68,8 @@ export class Screens {
     stats.appendChild(stat)
     const restartBtn = d.createElement('button'); restartBtn.className = 'btn primary'; restartBtn.textContent = 'RESTART'
     restartBtn.addEventListener('click', () => this._game.startGame())
-    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(restartBtn)
+    const recordEl = d.createElement('div'); recordEl.className = 'record'; this._recordText = recordEl; recordEl.textContent = ''
+    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(recordEl); panelO.appendChild(restartBtn)
     this._over.appendChild(panelO)
     this._root.appendChild(this._over)
 
@@ -113,7 +116,11 @@ export class Screens {
     if (this._game.hud) this._game.hud.hide()
   }
 
-  showTitle() { this._hideAll(); this._title.classList.add('visible') }
+  showTitle() {
+    this._hideAll()
+    if (this._game.score) this._highScoreText.textContent = 'HIGH SCORE: ' + this._game.score.best
+    this._title.classList.add('visible')
+  }
 
   showPause() { this._hideAll(); this._pause.classList.add('visible') }
 
@@ -122,9 +129,10 @@ export class Screens {
     if (this._game.hud) this._game.hud.show()
   }
 
-  showGameOver({ wave, kills }) {
+  showGameOver({ wave, kills, score = 0, best = 0, record = false }) {
     this._hideAll()
-    this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills'
+    this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
+    this._recordText.textContent = record ? 'NEW HIGH SCORE — ' + best : ''
     this._over.classList.add('visible')
   }
 

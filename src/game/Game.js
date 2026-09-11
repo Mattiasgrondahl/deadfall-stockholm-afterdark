@@ -7,6 +7,7 @@ import { Lighting } from '../world/Lighting.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
+import { Score } from './Score.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -237,11 +238,14 @@ export class Game {
       onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED') },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z)
     })
+    // WIRING:SCORE (V9)
+    this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
     // WIRING:UI (browser only; headless keeps hud/screens null)
     if (this.env.document) {
       this.hud = new HUD(this.env.document.getElementById('hud-root'), this.env.document.getElementById('fx-root'))
       this.screens = new Screens(this.env.document.getElementById('screens-root'), this)
       if (this.flashlight) this.hud.flashlight = this.flashlight // V7: reveals the battery box
+      if (this.score) this.hud.score = this.score // V9: reveals the score box
     }
   }
 
@@ -269,6 +273,7 @@ export class Game {
     this.kills = 0
     if (this.drops) this.drops.clear()
     if (this.flashlight) this.flashlight.reset()
+    if (this.score) this.score.reset()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -301,7 +306,14 @@ export class Game {
     this.setState(GameState.GAMEOVER)
     if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
     if (this.audio) this.audio.stopAmbient()
-    if (this.screens) this.screens.showGameOver({ wave: this.waveManager ? this.waveManager.wave : 0, kills: this.kills })
+    const record = this.score ? this.score.newRecord() : false
+    if (this.screens) this.screens.showGameOver({
+      wave: this.waveManager ? this.waveManager.wave : 0,
+      kills: this.kills,
+      score: this.score ? this.score.value : 0,
+      best: this.score ? this.score.best : 0,
+      record
+    })
   }
 
   /** Per-frame update, only while playing. dt is clamped. */
@@ -316,7 +328,7 @@ export class Game {
     // remove finished corpses
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const z = this.zombies[i]
-      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
+      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1); if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
       if (z.deadAndGone) {
         this.zombies.splice(i, 1)
         z.dispose()
