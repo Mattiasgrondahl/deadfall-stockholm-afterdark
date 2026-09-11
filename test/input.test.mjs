@@ -4,7 +4,8 @@ import { Input } from '../src/game/Input.js'
 
 const freshState = () => ({
   forward: false, back: false, left: false, right: false, sprint: false,
-  turnX: 0, turnY: 0, fire: false, reload: false, pause: false
+  turnX: 0, turnY: 0, fire: false, reload: false, pause: false,
+  switch1: false, switch2: false, flashlight: false
 })
 
 function makeEnv() {
@@ -129,6 +130,26 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.off('mute', cb)
   key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 2) // unsubscribed
   input.dispose()
+}
+
+// --- v2 edges: flashlight toggle, weapon switch 1/2, repeat suppression, stale clear
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  key(env, 'KeyF', 'keydown'); assert.strictEqual(st.flashlight, true)
+  st.flashlight = false // consumer (Flashlight) acted
+  key(env, 'KeyF', 'keydown', true); assert.strictEqual(st.flashlight, false) // repeat suppressed
+  key(env, 'KeyF', 'keyup'); assert.strictEqual(st.flashlight, false)
+  key(env, 'Digit1', 'keydown'); assert.strictEqual(st.switch1, true)
+  st.switch1 = false // consumer (WeaponBank) acted
+  key(env, 'Digit1', 'keydown', true); assert.strictEqual(st.switch1, false) // repeat suppressed
+  key(env, 'Digit1', 'keyup'); assert.strictEqual(st.switch1, false)
+  key(env, 'Digit1', 'keydown'); assert.strictEqual(st.switch1, true) // new press edge
+  key(env, 'Digit1', 'keyup'); assert.strictEqual(st.switch1, false)
+  key(env, 'Digit2', 'keydown'); assert.strictEqual(st.switch2, true)
+  key(env, 'Digit2', 'keyup'); assert.strictEqual(st.switch2, false)
+  input.dispose()
+  assert.strictEqual(st.switch1, false); assert.strictEqual(st.switch2, false)
+  assert.strictEqual(st.flashlight, false)
 }
 
 // --- headless safety + dispose removes listeners
