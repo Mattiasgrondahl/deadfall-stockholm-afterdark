@@ -40,3 +40,12 @@ Record important visual, audio, and architecture decisions as they are made
   Height-based fog considered and rejected: FogExp2 has no height term, and a
   custom height-fog shader adds per-pixel cost with no benefit at this city
   scale — revisit only if V6P-1 shows headroom.
+- V2P-4 moonlight & ambient: the goal is contrast, not brightness — raise the
+  key light (moon 0.8 → 1.1 lx) while lowering the fill floor (hemi 0.3 →
+  0.22, ambient 0.15 → 0.08) so shadowed alleys stay dark and moonlit surfaces
+  pop; exposure 1.2 stays fixed so the scene remains readable. Shadow bias
+  0.004 ≈ 0.2 texel (44 m frustum over 2048 px → ~0.0215 m texel) plus
+  normalBias 0.05 targets acne at grazing angles on flat ground without
+  peter-panning. mapSize / frustum / PCFSoft untouched: shadow-cost
+  measurement is V2P-6, streetlight falloff + halo is V2P-5. New values are
+  pinned in test/lighting.test.mjs so later tuning cannot regress silently.

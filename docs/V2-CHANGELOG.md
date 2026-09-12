@@ -82,3 +82,27 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   0 skipped (FULL ACCEPTANCE headless, S1–S10); npm run build green (known
   chunk-size warning only); budgets unchanged — 270 meshes / 17 lights /
   1 point (no geometry added).
+
+## V2P-4 — Moonlight & ambient (commit 45546c8, round 5)
+
+- Night-contrast retune in `src/world/Lighting.js` (GPU-1 coder, first-try
+  success, single-file spec, edit-only, 4 lines changed + 2 added):
+  - Moon key light `0.8 → 1.1 lx` (color 0x9db4ff unchanged) — raises the
+    lit-vs-shadowed ratio, i.e. night contrast.
+  - New shadow tuning on the only shadow caster: `moon.shadow.bias = 0.004`
+    (~0.2 texel of the 44 m / 2048 px map ≈ 0.0215 m texel — kills shadow acne
+    without peter-panning) and `moon.shadow.normalBias = 0.05` (lifts
+    grazing-angle acne on flat ground). mapSize 2048, frustum ±22, near/far
+    1/120, PCFSoft untouched — shadow-cost work deferred to V2P-6.
+  - Floor lowered for contrast: hemi `0.3 → 0.22` (colors 0x1a2440 /
+    0x0a0a10 unchanged), ambient `0.15 → 0.08` (color 0x141a2e unchanged);
+    exposure 1.2 unchanged, so overall brightness stays roughly balanced and
+    the scene stays readable.
+- `test/lighting.test.mjs`: moon-intensity assertion 0.8 → 1.1 + 2 new
+  assertions pinning bias 0.004 / normalBias 0.05; point-light (35 cd / 20 m /
+  decay 2), exposure, setQuality, and dispose assertions untouched.
+- Evidence: git diff = exactly 2 files (8 insertions, 4 deletions), nothing
+  else; npm test 103/103 (0 fail, 0 skipped); verify-game 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE headless, S1–S10); npm run build green (known
+  chunk-size warning only); budgets unchanged — 270 meshes / 17 lights /
+  1 point (no geometry added, no new lights).
