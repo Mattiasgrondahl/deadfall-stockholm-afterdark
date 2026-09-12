@@ -167,6 +167,7 @@ export class Shotgun {
       }
     }
     for (const z of hitSet) this.audio?.hitZombie?.()
+    if (hitSet.length) this.onHit?.() // V5P-1: HUD hit marker
     this.audio?.shoot?.()
     if (this.ammo === 0) this.reload()
     return true

@@ -283,6 +283,35 @@ html, body {
 .crosshair.spread .ch-bar.bottom { transform: translate(-50%, 16px); }
 .crosshair.spread .ch-bar.left   { transform: translate(-24px, -50%); }
 .crosshair.spread .ch-bar.right  { transform: translate(16px, -50%); }
+/* hit marker + kill confirmation (V5P-1) */
+.hit-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+}
+.hit-marker.show { opacity: 0.9; }
+.hit-marker::before,
+.hit-marker::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: #ffffff;
+}
+.hit-marker::before { transform: rotate(45deg); }
+.hit-marker::after { transform: rotate(-45deg); }
+.hit-marker.kill { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+.hit-marker.kill::before,
+.hit-marker.kill::after { background: #ff4444; width: 4px; margin-left: -2px; }
 
 /* ------------------------------------------------------------ Screens */
 #screens-root { position: absolute; inset: 0; pointer-events: none; }

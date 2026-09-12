@@ -25,8 +25,8 @@ function makeElement(ownerDoc, tag = 'div') {
     },
     set textContent(v) { this._ownText = v },
     classList: {
-      add(c) { el._classes.add(c) },
-      remove(c) { el._classes.delete(c) },
+      add(...cs) { for (const c of cs) el._classes.add(c) },
+      remove(...cs) { for (const c of cs) el._classes.delete(c) },
       toggle(c, force) {
         const has = el._classes.has(c)
         const want = force === undefined ? !has : !!force
@@ -185,6 +185,30 @@ function makeGame(doc, hud) {
   hud.dispose()
   assert.strictEqual(hudRoot.children.length, 0)
   assert.strictEqual(fxRoot.children.length, 0)
+}
+{
+  // V5P-1: hit marker + kill confirmation
+  const { hudRoot } = makeHUDWorld()
+  const hud = new HUD(hudRoot, makeDocument().createElement('div'))
+  const marker = find(hudRoot, 'hit-marker')
+  assert(marker)
+  assert(!marker.classList.contains('show'))            // hidden at rest
+  hud.hitMarker()
+  assert(marker.classList.contains('show'))
+  assert(marker.classList.contains('hit'))
+  assert(!marker.classList.contains('kill'))
+  hud.killMarker()
+  assert(marker.classList.contains('kill'))
+  assert(!marker.classList.contains('hit'))             // kill overrides hit
+  hud.update(null, null, null)
+  hud._lastNow = hud._now() - 1000                     // simulate 1 s of frames
+  hud.update(null, null, null)
+  assert(!marker.classList.contains('show'))            // decayed out
+  hud.clearMarker()
+  hud.hitMarker()
+  assert(marker.classList.contains('show'))             // re-trigger works
+  hud.dispose()
+  assert.strictEqual(hudRoot.children.length, 0)        // marker removed on dispose
 }
 
 // ---- Screens ----------------------------------------------------------

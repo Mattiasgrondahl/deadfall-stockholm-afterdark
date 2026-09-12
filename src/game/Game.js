@@ -254,6 +254,8 @@ export class Game {
       if (this.flashlight) this.hud.flashlight = this.flashlight // V7: reveals the battery box
       if (this.score) this.hud.score = this.score // V9: reveals the score box
     }
+    // V5P-1: weapon hit -> HUD marker (no-op headless: hud is null there)
+    if (this.weapon) this.weapon.onHit = () => { if (this.hud) this.hud.hitMarker() }
   }
 
   setState(next) {
@@ -282,6 +284,7 @@ export class Game {
     if (this.flashlight) this.flashlight.reset()
     if (this.score) this.score.reset()
     if (this.blood) this.blood.clear()
+    if (this.hud) this.hud.clearMarker()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -338,7 +341,7 @@ export class Game {
     // remove finished corpses
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const z = this.zombies[i]
-      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1); if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
+      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.hud) this.hud.killMarker(); if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1); if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
       if (z.deadAndGone) {
         this.zombies.splice(i, 1)
         z.dispose()

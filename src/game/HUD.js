@@ -14,6 +14,7 @@ export class HUD {
     this._lastHealth = null
     this._vignetteT = 0
     this._lastNow = this._now()
+    this._markerT = 0 // hit/kill marker lifetime (s); decayed in update()
     this.flashlight = null // set by Game wiring (V7); battery bar hidden until then
     this.score = null      // set by Game wiring (V9); score box hidden until then
     this._build()
@@ -111,6 +112,11 @@ export class HUD {
     ch.appendChild(dot)
     this._hudRoot.appendChild(ch)
 
+    // Hit marker + kill confirmation (V5P-1): single element, class-driven look.
+    const hm = d.createElement('div'); hm.className = 'hit-marker'
+    this._marker = hm
+    this._hudRoot.appendChild(hm)
+
     // FX layer: damage vignette + low-health pulse
     this._vignette = d.createElement('div'); this._vignette.className = 'fx-damage'
     this._fxRoot.appendChild(this._vignette)
@@ -173,6 +179,10 @@ export class HUD {
       this._threat.textContent = 'left: ' + (waveManager.remaining !== undefined ? waveManager.remaining : 0)
     }
 
+    // Hit marker / kill confirmation decay (V5P-1).
+    this._markerT = Math.max(0, this._markerT - dt)
+    if (this._markerT <= 0) this._marker.classList.remove('show')
+
     // Battery + score: shown only when their systems are wired in.
     this._batteryBox.classList.toggle('hidden', !this.flashlight)
     if (this.flashlight) {
@@ -188,6 +198,23 @@ export class HUD {
 
   show() { this._hudRoot.classList.add('visible') }
   hide() { this._hudRoot.classList.remove('visible') }
+
+  hitMarker() {
+    this._markerT = 0.25
+    this._marker.classList.remove('kill')
+    this._marker.classList.add('show', 'hit')
+  }
+
+  killMarker() {
+    this._markerT = 0.6
+    this._marker.classList.remove('hit')
+    this._marker.classList.add('show', 'kill')
+  }
+
+  clearMarker() {
+    this._markerT = 0
+    this._marker.classList.remove('show', 'hit', 'kill')
+  }
 
   dispose() {
     // Consistency only (unused at runtime): remove our children from the roots.

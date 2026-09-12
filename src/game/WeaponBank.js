@@ -19,6 +19,7 @@ export class WeaponBank {
     this.shotgun.name = 'shotgun'
     this._getZombies = null
     this._inputState = null
+    this._onHit = null
     this._swapT = 0
     this.current = this.shotgun
     this.axe.view.visible = false
@@ -36,6 +37,14 @@ export class WeaponBank {
     this._inputState = st
     this.axe.inputState = st
     this.shotgun.inputState = st
+  }
+
+  // V5P-1: hit callback forwarded to both weapons; Game wires it to the HUD.
+  get onHit() { return this._onHit }
+  set onHit(fn) {
+    this._onHit = fn
+    this.axe.onHit = fn
+    this.shotgun.onHit = fn
   }
 
   // HUD-compat: the current HUD reads weapon.ammo/reserve/isReloading/magSize.

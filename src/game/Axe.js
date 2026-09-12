@@ -99,6 +99,7 @@ export class Axe {
         hitSet.push(z)
       }
       for (const z of hitSet) this.audio?.hitZombie?.()
+      if (hitSet.length) this.onHit?.() // V5P-1: HUD hit marker
     }
     this.audio?.axeSwing?.() // voice added in the audio task; null-safe no-op until then
     return true
