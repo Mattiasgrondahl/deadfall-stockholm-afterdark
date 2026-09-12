@@ -44,7 +44,7 @@ html, body {
 }
 
 /* ------------------------------------------------------------ FX */
-#fx-root { position: absolute; inset: 0; pointer-events: none; }
+#fx-root { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
 
 .fx-scanlines {
   position: absolute; inset: 0;
@@ -85,10 +85,25 @@ html, body {
 #hud-root {
   position: absolute; inset: 0;
   pointer-events: none;
+  z-index: 10;
   opacity: 0;
   transition: opacity 0.3s;
 }
 #hud-root.visible { opacity: 1; }
+
+/* V5P-3: panel backings for HUD clusters (contrast over the brighter night scene) */
+.hud-health, .hud-stamina, .hud-battery, .hud-weapons, .hud-score {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.hud-wave {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
 
 .hud-label {
   font-family: var(--mono);
@@ -105,6 +120,8 @@ html, body {
   color: var(--ink);
   line-height: 1.1;
 }
+
+.hud-value, .hud-label, .weapon-name, .weapon-ammo, .hud-threat { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85); }
 
 .bar {
   height: 10px;
@@ -124,10 +141,10 @@ html, body {
   left: 28px; bottom: 26px;
   width: 260px;
 }
-.hud-health .bar { width: 260px; }
+.hud-health .bar { width: 240px; }
 .hud-health .bar-fill { background: var(--health); }
 .hud-health.critical .bar-fill { background: var(--danger); animation: pulse 0.7s infinite; }
-.hud-health .hud-value { font-size: 18px; }
+.hud-health .hud-value { font-size: 24px; }
 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
@@ -137,7 +154,7 @@ html, body {
   left: 28px; bottom: 8px;
   width: 260px;
 }
-.hud-stamina .bar { width: 260px; height: 5px; }
+.hud-stamina .bar { width: 240px; height: 5px; }
 .hud-stamina .bar-fill { background: var(--stamina); }
 
 /* ammo */
@@ -153,7 +170,7 @@ html, body {
   display: none;
   margin-top: 6px;
 }
-.hud-reload .bar { width: 170px; height: 5px; }
+.hud-reload .bar { width: 150px; height: 5px; }
 .hud-reload .bar-fill { background: var(--warn); }
 .hud-ammo.reloading .hud-reload { display: block; }
 
@@ -192,16 +209,16 @@ html, body {
 .weapon-slot.empty .weapon-ammo { color: var(--danger); animation: pulse 0.6s infinite; }
 .weapon-reload { display: none; margin-top: 6px; }
 .weapon-slot.reloading .weapon-reload { display: block; }
-.weapon-slot .bar { width: 110px; height: 5px; }
+.weapon-slot .bar { width: 90px; height: 5px; }
 .weapon-slot .bar-fill { background: var(--warn); }
 
 /* battery (flashlight) */
 .hud-battery {
   position: absolute;
-  left: 28px; bottom: 96px;
+  left: 28px; bottom: 104px;
   width: 170px;
 }
-.hud-battery .bar { width: 170px; height: 6px; }
+.hud-battery .bar { width: 150px; height: 6px; }
 .hud-battery .bar-fill { background: var(--stamina); }
 .hud-battery.low .bar-fill { background: var(--danger); animation: pulse 0.7s infinite; }
 
@@ -211,7 +228,7 @@ html, body {
   right: 28px; top: 18px;
   text-align: right;
 }
-.hud-score .hud-value { font-size: 20px; }
+.hud-score .hud-value { font-size: 18px; }
 
 /* high score (title screen) */
 .highscore {
@@ -238,9 +255,10 @@ html, body {
   transform: translateX(-50%);
   text-align: center;
 }
+.hud-wave .hud-value { font-size: 20px; }
 .hud-threat {
   position: absolute;
-  top: 66px; left: 50%;
+  top: 78px; left: 50%;
   transform: translateX(-50%);
   text-align: center;
   font-family: var(--mono);
@@ -272,17 +290,18 @@ html, body {
   position: absolute;
   top: 50%; left: 50%;
   width: 0; height: 0;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 .crosshair .ch-dot {
   position: absolute;
-  width: 3px; height: 3px;
+  width: 4px; height: 4px;
   background: #eaf2ff;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 4px rgba(234, 242, 255, 0.9);
 }
 .crosshair .ch-bar {
   position: absolute;
-  background: rgba(234, 242, 255, 0.85);
+  background: rgba(234, 242, 255, 0.95);
   transition: transform 0.12s ease-out;
 }
 .crosshair .ch-bar.top    { width: 2px; height: 8px; transform: translate(-50%, -16px); }
@@ -324,7 +343,7 @@ html, body {
 .hit-marker.kill::after { background: #ff4444; width: 4px; margin-left: -2px; }
 
 /* ------------------------------------------------------------ Screens */
-#screens-root { position: absolute; inset: 0; pointer-events: none; }
+#screens-root { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
 
 .screen {
   position: absolute;
