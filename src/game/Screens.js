@@ -32,7 +32,7 @@ export class Screens {
     for (const [k, a] of [
       ['W A S D', 'Move'], ['Mouse', 'Look'], ['LMB', 'Fire'],
       ['R', 'Reload'], ['Shift', 'Sprint'], ['F', 'Flashlight'],
-      ['1 / 2', 'Switch weapon (1 = axe, 2 = shotgun)'], ['P / Esc', 'Pause']
+      ['1 / 2', 'Axe / Shotgun'], ['P / Esc', 'Pause']
     ]) {
       const row = d.createElement('div'); row.className = 'ctrl-row'
       const key = d.createElement('span'); key.className = 'key'; key.textContent = k
@@ -53,6 +53,8 @@ export class Screens {
     const pTitle = d.createElement('div'); pTitle.className = 'game-title'; pTitle.textContent = 'PAUSED'
     const pHint = d.createElement('div'); pHint.className = 'tagline'; pHint.textContent = 'click to resume'
     panelP.appendChild(pTitle); panelP.appendChild(pHint)
+    const pHint2 = d.createElement('div'); pHint2.className = 'tagline dim'; pHint2.textContent = 'or press Enter'
+    panelP.appendChild(pHint2)
     this._pause.appendChild(panelP)
     this._pause.addEventListener('click', () => { if (this._game.input) this._game.input.requestLock() })
     this._root.appendChild(this._pause)
@@ -69,7 +71,8 @@ export class Screens {
     const restartBtn = d.createElement('button'); restartBtn.className = 'btn primary'; restartBtn.textContent = 'RESTART'
     restartBtn.addEventListener('click', () => this._game.startGame())
     const recordEl = d.createElement('div'); recordEl.className = 'record'; this._recordText = recordEl; recordEl.textContent = ''
-    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(recordEl); panelO.appendChild(restartBtn)
+    const oHint = d.createElement('div'); oHint.className = 'tagline dim'; oHint.textContent = 'or press Enter to restart'
+    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(recordEl); panelO.appendChild(oHint); panelO.appendChild(restartBtn)
     this._over.appendChild(panelO)
     this._root.appendChild(this._over)
 
@@ -101,10 +104,13 @@ export class Screens {
     }
   }
 
-  // Enter starts (title) or restarts (game-over); ignored during play/pause.
+  // Enter starts (title) or restarts (game-over); during pause it re-locks
+  // the pointer, which the Game 'lock' handler turns back into PLAYING.
   _onKey(e) {
     if (e.key !== 'Enter') return
-    if (this._game.state === 'title' || this._game.state === 'gameover') this._game.startGame()
+    const s = this._game.state
+    if (s === 'title' || s === 'gameover') this._game.startGame()
+    else if (s === 'paused' && this._game.input) this._game.input.requestLock()
   }
 
   _hideAll() {

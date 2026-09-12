@@ -372,4 +372,41 @@ function makeGame(doc, hud) {
   hud.dispose()
 }
 
+{
+  // V5P-4: Enter resumes from pause; pause + game-over gain dim 'or press Enter' hints
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  // (1) Enter while paused re-locks the pointer (resumes gameplay)
+  let locks = 0
+  game.state = 'paused'
+  game.input = { requestLock: () => { locks++ } }
+  screens.showPause()
+  doc.emit('keydown', { key: 'Enter' })
+  assert.strictEqual(locks, 1)
+  // (2) pause screen holds exactly two tagline elements
+  const pause = screenWithText(screensRoot, 'PAUSED')
+  const tags = []
+  const collect = (el) => {
+    for (const c of el.children) {
+      if (c.classList.contains('tagline')) tags.push(c)
+      collect(c)
+    }
+  }
+  collect(pause)
+  assert.strictEqual(tags.length, 2)
+  assert.strictEqual(tags[0].textContent, 'click to resume')
+  assert.strictEqual(tags[1].textContent, 'or press Enter')
+  // (3) game-over gains the dim restart hint; stat line format is unchanged
+  screens.showGameOver({ wave: 3, kills: 5, score: 100, best: 235, record: false })
+  const over = screenWithText(screensRoot, 'YOU DIED')
+  assert.strictEqual(find(over, 'stat').textContent, 'Wave 3 — 5 kills — 100 pts')
+  const hint = find(over, 'tagline')
+  assert(hint && hint.classList.contains('dim'))
+  assert.strictEqual(hint.textContent, 'or press Enter to restart')
+  screens.dispose()
+}
+
 console.log('hud-screens OK')
