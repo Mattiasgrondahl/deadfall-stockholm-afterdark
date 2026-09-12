@@ -244,7 +244,7 @@ test('plaza halos: 22 shared amber (0xffd9a5) ground halos at plaza centers; 87 
   city.dispose()
 })
 
-test('V3P-1b: 4 red danger strips on the unlit central cross; 22 plaza signs (post + panel); 87 aabbs, 67 sprites', () => {
+test('V3P-1b: 24 red strips total; 4 central-cross danger strips at exact positions; 22 plaza signs (post + panel); 87 aabbs, 67 sprites', () => {
   const scene = new THREE.Scene()
   const collision = new CollisionWorld(180, 180)
   const city = new City(scene, collision, { canvasFactory: () => null })
@@ -258,15 +258,17 @@ test('V3P-1b: 4 red danger strips on the unlit central cross; 22 plaza signs (po
     if (o.material.emissive && o.material.emissive.getHex() === 0xffd9a5) panels.push(o)
     if (o.material.isMeshStandardMaterial && o.material.color.getHex() === 0x1a202a && Math.abs(o.position.y - 0.8) < 1e-6) posts.push(o)
   })
-  assert.equal(strips.length, 4, 'expected 4 danger strips, got ' + strips.length)
+  assert.equal(strips.length, 24, 'expected 24 red strips total (4 central-cross + 20 outer), got ' + strips.length)
+  const central = strips.filter(s => Math.max(Math.abs(s.position.x), Math.abs(s.position.z)) <= 45)
+  assert.equal(central.length, 4, 'expected 4 central-cross danger strips, got ' + central.length)
   const stripPos = [[0, 0.09, 41.25], [0, 0.09, -41.25], [42.25, 0.09, 0], [-42.25, 0.09, 0]]
-  for (const s of strips) {
+  for (const s of central) {
     const p = stripPos.find(q => Math.abs(q[0] - s.position.x) < 1e-6 && Math.abs(q[1] - s.position.y) < 1e-6 && Math.abs(q[2] - s.position.z) < 1e-6)
     assert.ok(p, 'danger strip at unexpected position ' + s.position.x + ',' + s.position.y + ',' + s.position.z)
     assert.equal(s.castShadow, false, 'strip castShadow')
   }
-  assert.equal(new Set(strips.map(s => s.material)).size, 1, 'strips share one material')
-  assert.equal(new Set(strips.map(s => s.geometry)).size, 2, 'strips share two geometries (one per orientation)')
+  assert.equal(new Set(central.map(s => s.material)).size, 1, 'danger strips share one material')
+  assert.equal(new Set(central.map(s => s.geometry)).size, 2, 'danger strips share two geometries (one per orientation)')
   assert.equal(panels.length, 22, 'expected 22 sign panels, got ' + panels.length)
   for (const p of panels) {
     assert.ok(Math.abs(p.position.y - 1.7) < 1e-6, 'panel y ' + p.position.y)
@@ -289,6 +291,37 @@ test('V3P-1b: 4 red danger strips on the unlit central cross; 22 plaza signs (po
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
   assert.ok(meshes <= 600, 'city meshes ' + meshes + ' > 600')
+  city.dispose()
+})
+
+test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs, 67 sprites', () => {
+  const scene = new THREE.Scene()
+  const collision = new CollisionWorld(180, 180)
+  const city = new City(scene, collision, { canvasFactory: () => null })
+  const strips = []
+  city.group.traverse(o => {
+    if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433 && Math.max(Math.abs(o.position.x), Math.abs(o.position.z)) === 69.75) strips.push(o)
+  })
+  assert.equal(strips.length, 20, 'expected 20 outer strips, got ' + strips.length)
+  for (const s of strips) {
+    assert.ok(Math.abs(s.position.y - 0.09) < 1e-6, 'strip y ' + s.position.y)
+    assert.equal(s.castShadow, false, 'strip castShadow')
+  }
+  assert.equal(new Set(strips.map(s => s.material)).size, 1, 'outer strips share one material')
+  const expected = []
+  for (const v of [-60, -36, -12, 12, 36]) {
+    for (const s of [-1, 1]) {
+      expected.push([v, s * 69.75])
+      expected.push([s * 69.75, v])
+    }
+  }
+  for (const [ex, ez] of expected) {
+    assert.ok(strips.some(s => Math.abs(s.position.x - ex) < 1e-6 && Math.abs(s.position.z - ez) < 1e-6), 'missing outer strip at (' + ex + ',' + ez + ')')
+  }
+  assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
+  let sprites = 0
+  city.group.traverse(o => { if (o.isSprite) sprites++ })
+  assert.equal(sprites, 67, 'expected 67 total sprites, got ' + sprites)
   city.dispose()
 })
 

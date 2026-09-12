@@ -240,3 +240,30 @@ export function addSigns(group, centers) {
     group.add(panel)
   }
 }
+
+// Task V3P-4: street directionality — mark the poleless outer end segments
+// of the ten poled street lines (beyond the last poles at |coord| = 60, out
+// to the city edge 79.5) with the same red caution language as the danger
+// cross. Shared geometry/material, no lights, no AABBs, no sprites, no
+// Math.random.
+export function addOuterStrips(group) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff4433 })
+  const geoV = new THREE.BoxGeometry(0.35, 0.05, 19.5) // runs along z
+  const geoH = new THREE.BoxGeometry(19.5, 0.05, 0.35) // runs along x
+  for (const x of STREETS) {
+    for (const s of [-1, 1]) {
+      const strip = new THREE.Mesh(geoV, mat)
+      strip.castShadow = false
+      strip.position.set(x, 0.09, s * 69.75)
+      group.add(strip)
+    }
+  }
+  for (const z of STREETS) {
+    for (const s of [-1, 1]) {
+      const strip = new THREE.Mesh(geoH, mat)
+      strip.castShadow = false
+      strip.position.set(s * 69.75, 0.09, z)
+      group.add(strip)
+    }
+  }
+}

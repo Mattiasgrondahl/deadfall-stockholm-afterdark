@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns } from './cityDressing.js'
+import { addStreetlights, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -70,6 +70,7 @@ export class City {
   addLandmarks(group)
   addPlazaHalos(group, plazas)
   addDangerStrips(group)
+  addOuterStrips(group)
   addSigns(group, plazas)
   this.plazas = plazas
   this.snow = createSnow()
