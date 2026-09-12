@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addVehicles, addBarricades } from './cityDressing.js'
+import { addStreetlights, addVehicles, addBarricades, addLandmarks } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -66,6 +66,7 @@ export class City {
     this.streetlightAnchors = addStreetlights(group)
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
+  addLandmarks(group)
   this.snow = createSnow()
   for (const p of this.snow.points) group.add(p)
     this.group = group

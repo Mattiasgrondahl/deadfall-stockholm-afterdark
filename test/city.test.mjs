@@ -71,9 +71,9 @@ test('streetlight anchors: 40, y=5.2, within bounds; total meshes <= 600', () =>
   assert.ok(meshes <= 600, `meshes ${meshes} > 600`)
 })
 
-test('streetlight halos: 40 sprites share one SpriteMaterial (0xffb066, additive, opacity 0.5)', () => {
+test('streetlight halos: 40 orange (0xffb066) sprites share one SpriteMaterial (additive, opacity 0.5)', () => {
   const sprites = []
-  city.group.traverse(o => { if (o.isSprite) sprites.push(o) })
+  city.group.traverse(o => { if (o.isSprite && o.material.color.getHex() === 0xffb066) sprites.push(o) })
   assert.equal(sprites.length, 40, `expected 40 halo sprites, got ${sprites.length}`)
   const mats = new Set(sprites.map(s => s.material))
   assert.equal(mats.size, 1, 'all sprites share one SpriteMaterial')
@@ -166,6 +166,51 @@ test('snow: deterministic gusts — twin instances identical; net drift +x, alwa
 })
 
 console.log(`city OK: ${collision.aabbs.length + 0} aabbs total, ${city.getSpawnPoints().length} spawn points`)
+
+test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs unchanged', () => {
+  const spires = []
+  const beacons = []
+  const strips = []
+  city.group.traverse(o => {
+    if (!o.isMesh) return
+    if (o.material.emissive && o.material.emissive.getHex() === 0xffc878) spires.push(o)
+    if (o.material.emissive && o.material.emissive.getHex() === 0xff4433) beacons.push(o)
+    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0x3d6fa8) strips.push(o)
+  })
+  assert.equal(spires.length, 1, `expected 1 center spire, got ${spires.length}`)
+  const spire = spires[0]
+  assert.ok(Math.abs(spire.position.x) < 1e-9 && Math.abs(spire.position.y - 12) < 1e-9 && Math.abs(spire.position.z) < 1e-9, `spire at ${spire.position}`)
+  assert.equal(spire.material.emissiveIntensity, 2.5, 'spire emissiveIntensity 2.5')
+  assert.ok(spire.castShadow, 'spire castShadow')
+  assert.equal(beacons.length, 4, `expected 4 corner beacons, got ${beacons.length}`)
+  const seen = new Set()
+  for (const b of beacons) {
+    const key = `${Math.round(b.position.x)}|${Math.round(b.position.y)}|${Math.round(b.position.z)}`
+    assert.ok(!seen.has(key), `duplicate beacon ${key}`)
+    seen.add(key)
+    assert.ok(Math.abs(Math.abs(b.position.x) - 84) < 1e-6 && Math.abs(Math.abs(b.position.z) - 84) < 1e-6 && Math.abs(b.position.y - 3.5) < 1e-6, `beacon position ${b.position}`)
+  }
+  assert.equal(strips.length, 10, `expected 10 street strips, got ${strips.length}`)
+  for (const s of strips) assert.ok(Math.abs(s.position.y - 0.03) < 1e-6, `strip y ${s.position.y}`)
+  const spireHalos = []
+  const beaconHalos = []
+  city.group.traverse(o => {
+    if (!o.isSprite) return
+    if (o.material.color.getHex() === 0xffc878) spireHalos.push(o)
+    if (o.material.color.getHex() === 0xff4433) beaconHalos.push(o)
+  })
+  assert.equal(spireHalos.length, 1, `expected 1 spire halo, got ${spireHalos.length}`)
+  assert.ok(Math.abs(spireHalos[0].position.x) < 1e-9 && Math.abs(spireHalos[0].position.y - 15) < 1e-9 && Math.abs(spireHalos[0].position.z) < 1e-9, `spire halo at ${spireHalos[0].position}`)
+  assert.equal(beaconHalos.length, 4, `expected 4 beacon halos, got ${beaconHalos.length}`)
+  const haloSeen = new Set()
+  for (const h of beaconHalos) {
+    const key = `${Math.round(h.position.x)}|${Math.round(h.position.y)}|${Math.round(h.position.z)}`
+    assert.ok(!haloSeen.has(key), `duplicate beacon halo ${key}`)
+    haloSeen.add(key)
+    assert.ok(Math.abs(Math.abs(h.position.x) - 84) < 1e-6 && Math.abs(Math.abs(h.position.z) - 84) < 1e-6 && Math.abs(h.position.y - 7) < 1e-6, `beacon halo position ${h.position}`)
+  }
+  assert.equal(collision.aabbs.length, 87, `aabbs changed: ${collision.aabbs.length}`)
+})
 
 test('dispose removes group from scene and all city aabbs', () => {
   const all = [...collision.aabbs]

@@ -7,13 +7,9 @@ const STREETS = [-60, -36, -12, 12, 36]
 const POLES = [-60, -24, 24, 60]
 const OFFSET = 4.2
 
-export function addStreetlights(group) {
-  const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
-  const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
-let haloMap = null
-if (typeof document !== 'undefined') {
+// Task V2P-9: shared glow map (64x64 white radial gradient); null in headless Node.
+export function makeGlowMap() {
+  if (typeof document === 'undefined') return null
   const c = document.createElement('canvas'); c.width = 64; c.height = 64
   const g2 = c.getContext('2d')
   const grad = g2.createRadialGradient(32, 32, 0, 32, 32, 32)
@@ -21,8 +17,15 @@ if (typeof document !== 'undefined') {
   grad.addColorStop(0.4, 'rgba(255,255,255,0.6)')
   grad.addColorStop(1, 'rgba(255,255,255,0)')
   g2.fillStyle = grad; g2.fillRect(0, 0, 64, 64)
-  haloMap = new THREE.CanvasTexture(c)
+  return new THREE.CanvasTexture(c)
 }
+
+export function addStreetlights(group) {
+  const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
+  const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
+  const haloMap = makeGlowMap()
 const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
   const anchors = []
   const place = (x, z) => {
@@ -140,4 +143,49 @@ export function addBarricades(group, collision) {
     aabbs.push(collision.aabbs[collision.aabbs.length - 1])
   }
   return aabbs
+}
+
+// Task V2P-9: landmark beacons + street directionality — pure readability.
+// Shared geometry/material, no collision AABBs, no lights, no Math.random.
+export function addLandmarks(group) {
+  const glow = makeGlowMap()
+  // Center spire: 6 m box on the center tower roof (roof y=9, top y=15).
+  const spireMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xffc878, emissiveIntensity: 2.5, roughness: 0.6, metalness: 0.1 })
+  const spire = new THREE.Mesh(new THREE.BoxGeometry(0.6, 6, 0.6), spireMat)
+  spire.castShadow = true
+  spire.position.set(0, 12, 0)
+  group.add(spire)
+  const spireHaloMat = new THREE.SpriteMaterial({ color: 0xffc878, map: glow, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
+  const spireHalo = new THREE.Sprite(spireHaloMat); spireHalo.position.set(0, 15, 0); spireHalo.scale.set(3, 3, 1); group.add(spireHalo)
+  // 4 corner beacons at (±84, ±84), marking the diagonal wave spawn zones (±85, ±85).
+  const beaconGeo = new THREE.BoxGeometry(0.6, 7, 0.6)
+  const beaconMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xff4433, emissiveIntensity: 2.0, roughness: 0.6, metalness: 0.1 })
+  const beaconHaloMat = new THREE.SpriteMaterial({ color: 0xff4433, map: glow, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const bx = sx * 84
+      const bz = sz * 84
+      const beacon = new THREE.Mesh(beaconGeo, beaconMat)
+      beacon.castShadow = true
+      beacon.position.set(bx, 3.5, bz)
+      group.add(beacon)
+      const halo = new THREE.Sprite(beaconHaloMat); halo.position.set(bx, 7, bz); halo.scale.set(2.4, 2.4, 1); group.add(halo)
+    }
+  }
+  // 10 street strips along street center lines (always walkable, no aabbs).
+  const stripMat = new THREE.MeshBasicMaterial({ color: 0x3d6fa8 })
+  const stripGeoV = new THREE.BoxGeometry(0.35, 0.05, 176)
+  const stripGeoH = new THREE.BoxGeometry(176, 0.05, 0.35)
+  for (const x of STREETS) {
+    const strip = new THREE.Mesh(stripGeoV, stripMat)
+    strip.castShadow = false
+    strip.position.set(x, 0.03, 0)
+    group.add(strip)
+  }
+  for (const z of STREETS) {
+    const strip = new THREE.Mesh(stripGeoH, stripMat)
+    strip.castShadow = false
+    strip.position.set(0, 0.03, z)
+    group.add(strip)
+  }
 }
