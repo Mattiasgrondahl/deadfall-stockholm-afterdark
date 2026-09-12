@@ -323,3 +323,39 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   green (known chunk-size warning only). Budgets: 272 meshes + 68 sprites =
   340 ≤ 600 / 17 lights ≤ 40 / 3 Points ≤ 2500 — exact delta +22 sprites,
   zero new meshes/lights/aabbs.
+
+## V3P-1b — Signage + unlit-corridor marking (commit 9cb6812, round 14)
+
+Completes V3P-1 (safe-vs-dangerous visual language): the poleless central
+cross is marked as a danger corridor, plazas are marked safe with signage.
+
+- `src/world/cityDressing.js` (+38 L): `addDangerStrips(group)` — 4 red
+  (0xff4433) MeshBasicMaterial ground strips on the unlit central cross:
+  two segments along the x=0 street (BoxGeometry(0.35,0.05,76.5) @
+  (0,0.09,±41.25), covering z∈[3,79.5] ∪ [-79.5,-3]) and two along the z=0
+  street (BoxGeometry(74.5,0.05,0.35) @ (±42.25,0.09,0), covering
+  x∈[5,79.5] ∪ [-79.5,-5]). y=0.09 (blue directional strips occupy
+  0.005..0.055, so no coplanar overlap at crossings); 1 m clearance around
+  the center tower (footprint x∈[-4,4], z∈[-2,2]); one shared material, two
+  shared geometries; castShadow=false; no aabbs/lights/sprites.
+  `addSigns(group, centers)` — one post + panel per plaza center (22):
+  post BoxGeometry(0.12,1.6,0.12) @ y=0.8 (0x1a202a, same values as the
+  streetlight pole material), panel BoxGeometry(0.9,0.6,0.1) @ y=1.7
+  (base 0x14161c, emissive 0xffd9a5 @ 2.0 — amber = safe, same as the plaza
+  halos), shared geometry/material; no halo (ground halo already present);
+  no aabbs; castShadow=false.
+- `src/world/City.js` (+2 L): import extended + `addDangerStrips(group)` /
+  `addSigns(group, plazas)` after addPlazaHalos; LCG layout untouched.
+- `test/city.test.mjs` (+48 L): +1 block (focused 17/17): 4 strips at the
+  exact positions / 1 shared material / 2 shared geometries; 22 panels @
+  y=1.7 emissive 2.0 at plaza centers, 1 shared geometry+material; 22 posts
+  @ y=0.8 at plaza centers, 1 shared material; 87 aabbs; 67 city-group
+  sprites; city meshes ≤ 600.
+- Evidence: npm test 110/110 (0 fail / 0 skipped — node:test counts each
+  test() block individually, so the new block adds 1 to the total; corrects
+  the round-10 note); verify-game 81 ok / 0 fail / 0 skipped (FULL
+  ACCEPTANCE); npm run build green (known chunk-size warning only); E2E
+  18/18 PASS, 0 console/page errors (dev :5173 + .browsers/chromium with
+  PLAYWRIGHT_BROWSERS_PATH set). Budgets: city group 272 → 320 meshes
+  (+48), +0 sprites/lights/aabbs; S8 scene stats 380 meshes + 68 sprites =
+  448 ≤ 600, 17 lights ≤ 40, 3 Points ≤ 2500.

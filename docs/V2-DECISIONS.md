@@ -149,3 +149,23 @@ Record important visual, audio, and architecture decisions as they are made
   no per-frame work: +22 sprites only (boot 272 meshes + 68 sprites = 340 ≤
   600; 17 lights, 3 points unchanged). getPlazaCenters() exposes the set for
   V3P-1b signage placement.
+- V3P-1b signage + unlit-corridor marking: the central cross (street x=0
+  running in z, street z=0 running in x) is THE unlit danger corridor —
+  both lines have no streetlight poles (0 ∉ STREETS = [-60,-36,-12,12,36])
+  and no blue directionality strips, and they run through the city center
+  past the spire. Marked BOTH legs (the cross is one connected route):
+  red = caution (0xff4433, already used for the spawn beacons) as ground
+  strips; amber = safe (0xffd9a5, the plaza-halo color) as signage at all
+  22 plaza centers (post + emissive panel). Details: strips at y=0.09 sit
+  above the blue strips' top (0.055), so the two never share faces where
+  they cross; 1 m clearance around the center tower (8×4×9, footprint
+  x∈[-4,4], z∈[-2,2]); strips extend to ±79.5 (city edge) and pass under
+  three parked cars on the axis ((0,39.2), (±39.2,0)) — hidden underneath,
+  which reads as a road line under a parked car. Signs are visual-only (no
+  AABBs, consistent with the streetlight poles) and carry no halo because
+  the plaza already has a ground halo. The outermost ±60 lines are also
+  poleless but were left out of V3P-1b (outer streets) — revisit under
+  V3P-4 (street directionality). Note correction: node:test counts each
+  test() block individually (city.test.mjs went 16 → 17 blocks), so npm
+  test totals grow by 1 per added block (109 → 110); the round-10
+  "plain script counts as one test" note was wrong.
