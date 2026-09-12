@@ -70,6 +70,40 @@ node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run wit
 - When your health hits zero, the run ends — your score and wave are shown on
   the game-over screen — restart and go again.
 
+## Audio & browser autoplay
+
+All sound is synthesized in real time by WebAudio (`AudioBank`) — oscillators,
+filtered noise bursts, and an LFO-driven ambient bed. No audio assets are
+loaded or downloaded.
+
+**Autoplay.** Browsers start a fresh `AudioContext` in the *suspended* state
+until a user gesture happens; the game relies on that rule instead of fighting
+it. The context is resumed lazily on the first sound call, and the first
+sounds only ever follow your **START** click, an **Enter** press, or a
+pointer-lock gesture. Consequences:
+
+- In a browser with strict autoplay policy you will hear nothing until you
+  click START — expected browser behaviour, not a bug. The game is fully
+  playable without audio.
+- Pausing stops the ambient bed; resuming restarts it after your gesture.
+- Headless Node (unit tests, `npm run verify`) has no `AudioContext` at all:
+  `ctx` stays `null` and every audio method is a no-op, so all logic runs
+  without a real audio device.
+
+**What you hear.** Ambient: a wind bed with LCG-scheduled gusts plus a
+distant city hum/rumble. Feedback: weapon fire, reload, dry-fire (a rejected
+shot clicks), per-type zombie groans (fall off over 30 m, at most 4 at once,
+positioned around you), zombie attack and death, player damage, wave-cleared
+chime, game-over sting, start/restart chime, ammo pickup, flashlight click,
+and weapon switch. **M** mutes everything.
+
+**Node budget.** The only persistent audio graph is the master gain, the
+soft-clip limiter, and the 10-node ambient bed. Every one-shot voice is a
+transient graph that stops itself when it ends, and the groan scheduler keeps
+at most 4 concurrent voices, so audio nodes never grow without bound. A
+soft-clip limiter after the master bends any over-driven mix (worst case
+~1.9 before it) instead of hard-clipping.
+
 ## Project layout
 
 ```
