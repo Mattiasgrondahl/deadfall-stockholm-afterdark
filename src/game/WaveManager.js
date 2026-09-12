@@ -117,7 +117,8 @@ export class WaveManager {
       }
       return
     }
-    // Per-frame: count without allocating (concurrent zombie cap is 24).
+    // Per-frame: count alive zombies without allocating; the spawn gate below
+    // compares this against the wave cap (min(8 + wave, 18), under the 24 budget).
     let alive = 0
     const zs = game.zombies
     for (let i = 0; i < zs.length; i++) if (!zs[i].isDead) alive++
@@ -143,7 +144,7 @@ export class WaveManager {
 
   /** Debug: kill every live zombie and discard the unspawned remainder. */
   forceClear(game) {
-    // Per-frame: count without allocating (concurrent zombie cap is 24).
+    // Count alive zombies without allocating (debug clear check).
     let alive = 0
     const zs = game.zombies
     for (let i = 0; i < zs.length; i++) if (!zs[i].isDead) alive++

@@ -30,7 +30,7 @@ export class AudioBank {
     // works headless; only the voice firing is gated on ctx.
     this._groanMap = new Map() // zombie -> { nextAt }
     this._groanClock = 0
-    this._groanVoices = [] // { at, panner } per active groan voice
+    this._groanVoices = [] // { at, p } per active groan voice (p = PannerNode, null headless)
     this._groanSeed = 4242
     // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
     // pure (advances with the per-frame updateGroans tick); each gust fires
@@ -400,12 +400,16 @@ export class AudioBank {
     // Expire finished voices (concurrency accounting) and release their
     // panners so per-groan PannerNodes do not accumulate on the master.
     if (this._groanVoices.length) {
-      const live = []
-      for (const e of this._groanVoices) {
-        if (e.at > t) { live.push(e); continue }
+      // In-place expiry (swap-pop): no per-frame list rebuild while groans
+      // are active; entry order carries no meaning (only length and expiry).
+      let i = 0
+      while (i < this._groanVoices.length) {
+        const e = this._groanVoices[i]
+        if (e.at > t) { i++; continue }
         if (e.p && typeof e.p.disconnect === 'function') e.p.disconnect()
+        this._groanVoices[i] = this._groanVoices[this._groanVoices.length - 1]
+        this._groanVoices.pop()
       }
-      this._groanVoices = live
     }
     const px = playerPos ? playerPos.x : 0
     const pz = playerPos ? playerPos.z : 0

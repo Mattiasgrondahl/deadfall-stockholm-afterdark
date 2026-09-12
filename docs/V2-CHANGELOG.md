@@ -538,3 +538,15 @@ The main E2E walk verifies game state by direct injection (positions, yaw/pitch,
 - Reload: one shotgun shot dropped the magazine 5→4; the reload (KeyR-equivalent input flag) refilled it to 5 and drew 1 from reserve (30→29), then cleared the reloading state.
 
 Kept `tools/e2e-mouselook2.mjs` and `tools/e2e-movement.mjs` as permanent acceptance probes (they cover input paths the state-injection E2E cannot reach headlessly); removed the superseded first probe. No game code changed.
+
+## v2.x cleanup pass — deferred reviewer should-fixes resolved (round 39)
+
+The five non-blocking hygiene items deferred at V7P-4 are now fixed; all are behavior-neutral (117/117 tests, 81/0/0 verifier, 18/18 E2E all still pass):
+
+- `HUD.js`: per-frame weapon-slot array literal unrolled into two explicit slot updates (no per-frame array allocation).
+- `AudioBank.js`: groan-voice expiry now uses in-place swap-pop instead of rebuilding the live-voice list every frame while groans are active (entries are `{at, p}` and order carries no meaning; length accounting and panner disconnects unchanged).
+- `AudioBank.js`: comment said `{ at, panner }` while the code uses `entry.p` — comment corrected.
+- `Zombie.js`: `pickTangent` now writes into the constructor-owned scratch `this._tan` (mirroring the existing `_cn` pattern) instead of allocating `[tx, tz]` on commit — commit-only allocation removed, steering behavior identical.
+- `WaveManager.js`: the per-frame count comment incorrectly attributed to "concurrent zombie cap is 24" — corrected: the spawn gate compares the count against the wave cap `min(8 + wave, 18)`, under the 24 budget; the debug `forceClear` comment corrected likewise.
+
+Evidence: npm test 117/117 (0 fail / 0 skipped); node tools/verify-game.mjs 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE); E2E 18/18 with 0 console/page errors (run before build); build green. Version 2 now has zero open code items.

@@ -174,13 +174,19 @@ export class HUD {
         this._slotA.box.classList.remove('hidden')
         this._slotB.box.classList.remove('hidden')
         this._legacyAmmo.classList.add('hidden')
-        for (const [w, s] of [[weapon.axe, this._slotA], [weapon.shotgun, this._slotB]]) {
-          s.name.textContent = w.name || 'weapon'
-          s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
-          s.box.classList.toggle('active', w === weapon.current)
-          s.box.classList.toggle('reloading', !!w.isReloading)
-          s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
-        }
+        // Unrolled (no per-frame array literal): two fixed slots.
+        let w = weapon.axe, s = this._slotA
+        s.name.textContent = w.name || 'weapon'
+        s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+        s.box.classList.toggle('active', w === weapon.current)
+        s.box.classList.toggle('reloading', !!w.isReloading)
+        s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
+        w = weapon.shotgun; s = this._slotB
+        s.name.textContent = w.name || 'weapon'
+        s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+        s.box.classList.toggle('active', w === weapon.current)
+        s.box.classList.toggle('reloading', !!w.isReloading)
+        s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
       } else {
         // Legacy single weapon (pre-bank compatibility).
         this._slotA.box.classList.add('hidden')

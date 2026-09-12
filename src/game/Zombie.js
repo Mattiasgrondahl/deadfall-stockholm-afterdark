@@ -124,6 +124,7 @@ export class Zombie {
     this._flips = 0
     // Per-frame scratch for contactNormal (avoids per-frame {x, z} allocs).
     this._cn = { x: 0, z: 0 }
+    this._tan = { x: 0, z: 0 } // scratch for pickTangent (removes its commit-only [tx,tz] allocation)
     // Deterministic per-zombie phase (fixed-seed LCG from spawn coords + type).
     // Stored here for later tasks (walk animation, groan scheduling). Math.imul
     // keeps the LCG exact: later iterations exceed 2^53 under plain '*'.
@@ -257,14 +258,15 @@ export class Zombie {
         tx = n.z; tz = -n.x
       }
       if (tx * wantX + tz * wantZ < 0) { tx = -tx; tz = -tz }
-      return [tx, tz]
+      this._tan.x = tx; this._tan.z = tz
+      return this._tan
     }
     if (this._slideX === undefined) {
       // Chasing the player.
       if (netLen < stepLen - 1e-4) {
         // Fully blocked: commit to a slide and try to get around.
-        const [tx, tz] = pickTangent()
-        this._slideX = tx; this._slideZ = tz
+        const tan = pickTangent()
+        this._slideX = tan.x; this._slideZ = tan.z
         this._slideT = 0; this._slideDist = 0; this._noProgT = 0
         this._clearDist = 0
         this._flips++
