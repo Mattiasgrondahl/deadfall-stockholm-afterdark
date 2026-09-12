@@ -80,7 +80,7 @@ export class AudioBank {
   }
 
   // Short noise burst: buffer source -> optional BiquadFilter -> gain -> master.
-  _playNoise({ duration, filterType = null, filterFreq = 0, gain, when = 0 }) {
+  _playNoise({ duration, filterType = null, filterFreq = 0, gain, when = 0, dest = null }) {
     if (!this.ctx) return
     const t = this.ctx.currentTime + when
     const src = this.ctx.createBufferSource()
@@ -94,7 +94,7 @@ export class AudioBank {
     } else {
       src.connect(g)
     }
-    g.connect(this.master)
+    g.connect(dest || this.master)
     g.gain.setValueAtTime(gain, t)
     g.gain.exponentialRampToValueAtTime(0.001, t + duration)
     src.start(t)
@@ -102,7 +102,7 @@ export class AudioBank {
   }
 
   // Short oscillator tone, optional linear pitch ramp, exponential decay.
-  _playTone({ type, freq, freqEnd = null, duration, gain, when = 0 }) {
+  _playTone({ type, freq, freqEnd = null, duration, gain, when = 0, dest = null }) {
     if (!this.ctx) return
     const t = this.ctx.currentTime + when
     const osc = this.ctx.createOscillator()
@@ -110,7 +110,7 @@ export class AudioBank {
     osc.frequency.setValueAtTime(freq, t)
     if (freqEnd !== null && freqEnd !== freq) osc.frequency.linearRampToValueAtTime(freqEnd, t + duration)
     const g = this.ctx.createGain()
-    osc.connect(g); g.connect(this.master)
+    osc.connect(g); g.connect(dest || this.master)
     g.gain.setValueAtTime(gain, t)
     g.gain.exponentialRampToValueAtTime(0.001, t + duration)
     osc.start(t)
@@ -133,11 +133,13 @@ export class AudioBank {
 
   // Zombie melee hit on the player: a low groaning thud (filtered noise + low
   // sine). Wired from Zombie.update's attack branch (null-guarded there).
-  zombieAttack() {
+  // V4P-2: when a source position is passed, the voice pans to it.
+  zombieAttack(pos = null) {
     if (!this.ctx) return
     this._resume()
-    this._playNoise({ duration: 0.12, filterType: 'lowpass', filterFreq: 500, gain: 0.35 })
-    this._playTone({ type: 'sine', freq: 70, duration: 0.14, gain: 0.3 })
+    const dest = this._pannerAt(pos)
+    this._playNoise({ duration: 0.12, filterType: 'lowpass', filterFreq: 500, gain: 0.35, dest })
+    this._playTone({ type: 'sine', freq: 70, duration: 0.14, gain: 0.3, dest })
   }
 
   reload() {
@@ -255,6 +257,47 @@ export class AudioBank {
     }
   }
 
+  /** V4P-2: direction-only PannerNode at world position pos (or the plain
+   * master when no position / headless). Distance level is already applied by
+   * the scheduler's manual falloff, so rolloffFactor is 0 — no double decay. */
+  _pannerAt(pos) {
+    if (!pos || !this.ctx) return this.master
+    const p = this.ctx.createPanner()
+    p.panningModel = 'equalpower'
+    p.distanceModel = 'linear'
+    p.refDistance = 1
+    p.rolloffFactor = 0
+    p.maxDistance = GROAN_CUTOFF
+    p.position.x.value = pos.x
+    p.position.y.value = 0.8
+    p.position.z.value = pos.z
+    p.connect(this.master)
+    return p
+  }
+
+  /** V4P-2: same voice as groan(), routed through a panner at pos. */
+  _playGroanPanned(type, distance, pos) {
+    const spec = GROAN_SPECS[type]
+    if (!this.ctx || !spec) return
+    const fall = Math.max(0, 1 - distance / GROAN_CUTOFF)
+    const gain = spec.gain * fall
+    if (gain <= 0.001) return
+    this._resume()
+    const dest = this._pannerAt(pos)
+    if (type === 'screamer') {
+      this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
+    } else {
+      this._playTone({ type: 'sine', freq: type === 'walker' ? 90 : 60, duration: spec.voice, gain, dest })
+      this._playNoise({
+        duration: spec.voice * 0.8,
+        filterType: 'lowpass',
+        filterFreq: type === 'walker' ? 300 : 180,
+        gain: gain * 0.6,
+        dest
+      })
+    }
+  }
+
   /**
    * Per-frame groan scheduler (call from Game's update, after zombies).
    * Each live zombie within GROAN_CUTOFF gets an LCG-drawn phase and a
@@ -262,7 +305,7 @@ export class AudioBank {
    * voice slot is free (otherwise it retries next frame).
    * @returns groans scheduled this frame: [{ type, distance, gain }]
    */
-  updateGroans(dt, zombies, playerPos) {
+  updateGroans(dt, zombies, playerPos, playerYaw = 0) {
     const scheduled = []
     this._groanClock += dt
     const t = this._groanClock
@@ -272,6 +315,14 @@ export class AudioBank {
     }
     const px = playerPos ? playerPos.x : 0
     const pz = playerPos ? playerPos.z : 0
+    // V4P-2: keep the listener at the player (eye height 1.7) with facing
+    // from yaw, so panned voices track the player each frame. No-op headless.
+    const L = this.ctx && this.ctx.listener
+    if (L) {
+      const sy = Math.sin(playerYaw), cy = Math.cos(playerYaw)
+      if (L.forward) { L.forward.x.value = sy; L.forward.y.value = 0; L.forward.z.value = -cy }
+      if (L.position) { L.position.x.value = px; L.position.y.value = 1.7; L.position.z.value = pz }
+    }
     for (const z of zombies) {
       if (z.isDead) { this._groanMap.delete(z); continue }
       const spec = GROAN_SPECS[z.type]
@@ -290,7 +341,7 @@ export class AudioBank {
         e.nextAt = t + spec.base * (0.6 + 0.8 * this._groanRand())
         this._groanVoices.push(t + spec.voice)
         scheduled.push({ type: z.type, distance: d, gain })
-        this.groan(z.type, d)
+        this._playGroanPanned(z.type, d, { x: z.position.x, z: z.position.z })
       }
     }
     // V4P-1a gust tick (piggybacks on this per-frame call): fire a gust when

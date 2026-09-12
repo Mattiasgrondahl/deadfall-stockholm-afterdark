@@ -80,9 +80,24 @@ function makeFakeAudioContext() {
     createOscillator() { return ctx._make(node('osc')) },
     createBiquadFilter() { return ctx._make(node('filter')) },
     createBufferSource() { return ctx._make(node('src')) },
+    createPanner() {
+      const n = node('panner')
+      n.position = { x: param(0), y: param(0), z: param(0) }
+      n.panningModel = 'HRTF'
+      n.distanceModel = 'inverse'
+      n.refDistance = 1
+      n.rolloffFactor = 1
+      n.maxDistance = 16
+      return ctx._make(n)
+    },
     createBuffer(ch, len, rate) { return { getChannelData: () => new Float32Array(len) } },
     resume() { this.state = 'running'; return Promise.resolve() },
-    close() { this.state = 'closed'; return Promise.resolve() }
+    close() { this.state = 'closed'; return Promise.resolve() },
+    listener: {
+      position: { x: param(0), y: param(0), z: param(0) },
+      forward: { x: param(0), y: param(-1), z: param(0) },
+      up: { x: param(0), y: param(1), z: param(0) }
+    }
   }
   return ctx
 }
@@ -333,6 +348,82 @@ function bankWithFakeCtx() {
   bank.stopAmbient()
   assert.strictEqual(bank._gustSrc, null, 'in-flight burst not cleared')
   assert.strictEqual(bank._ambientOn, false)
+  bank.dispose()
+}
+
+// ---- V4P-2: positional audio (PannerNode for groans + attacks) -----------
+{
+  // Panned walker groan = exactly 6 nodes; panner at source, wired to master.
+  const bank = bankWithFakeCtx()
+  const before = bank.ctx._created.length
+  bank._playGroanPanned('walker', 10, { x: 5, z: 0 })
+  assert.strictEqual(bank.ctx._created.length - before, 6)
+  const p = bank.ctx._created[bank.ctx._created.length - 6]
+  assert.strictEqual(p.name, 'panner')
+  assert.strictEqual(p.position.x.value, 5)
+  assert.strictEqual(p.position.z.value, 0)
+  assert.strictEqual(p.panningModel, 'equalpower')
+  assert.strictEqual(p.rolloffFactor, 0)
+  assert.strictEqual(p.maxDistance, 30)
+  assert.ok(p._children.includes(bank.master))
+  bank.dispose()
+}
+{
+  // Listener tracks player position and facing every scheduler frame.
+  const bank = bankWithFakeCtx()
+  bank.updateGroans(1 / 60, [], { x: 10, z: 5 }, 1.2)
+  const L = bank.ctx.listener
+  assert.strictEqual(L.position.x.value, 10)
+  assert.strictEqual(L.position.y.value, 1.7)
+  assert.strictEqual(L.position.z.value, 5)
+  assert.ok(Math.abs(L.forward.x.value - Math.sin(1.2)) < 1e-12)
+  assert.strictEqual(L.forward.y.value, 0)
+  assert.ok(Math.abs(L.forward.z.value + Math.cos(1.2)) < 1e-12)
+  bank.dispose()
+}
+{
+  // Every scheduled groan fires exactly one panner at the zombie's position;
+  // node growth is exact and bounded (fresh bank, walker voice = 6 nodes).
+  const bank = bankWithFakeCtx()
+  const z = fakeZombie('walker', 3, 0)
+  let fires = 0
+  for (let i = 0; i < 60 * 30; i++) fires += bank.updateGroans(1 / 60, [z], { x: 0, z: 0 }).length
+  const panners = bank.ctx._created.filter(n => n.name === 'panner')
+  assert.ok(fires > 2, 'too few groans: ' + fires)
+  assert.strictEqual(panners.length, fires, 'panner count != fired groans')
+  for (const p of panners) {
+    assert.strictEqual(p.position.x.value, 3)
+    assert.strictEqual(p.position.y.value, 0.8)
+    assert.strictEqual(p.position.z.value, 0)
+  }
+  // +1: the master gain node bankWithFakeCtx creates before the loop.
+  assert.strictEqual(bank.ctx._created.length, 1 + 6 * fires, 'unbounded node growth')
+  bank.dispose()
+}
+{
+  // zombieAttack pans when given a position; no-position call stays plain.
+  const bank = bankWithFakeCtx()
+  let before = bank.ctx._created.length
+  bank.zombieAttack({ x: 1.2, z: 0 })
+  assert.strictEqual(bank.ctx._created.length - before, 6)
+  const p = bank.ctx._created[bank.ctx._created.length - 6]
+  assert.strictEqual(p.name, 'panner')
+  assert.strictEqual(p.position.x.value, 1.2)
+  assert.ok(p._children.includes(bank.master))
+  before = bank.ctx._created.length
+  const pn = bank.ctx._created.filter(n => n.name === 'panner').length
+  bank.zombieAttack()
+  assert.ok(bank.ctx._created.length - before >= 5)
+  assert.strictEqual(bank.ctx._created.filter(n => n.name === 'panner').length, pn, 'panner leaked on plain attack')
+  bank.dispose()
+}
+{
+  // Headless: panned groans/attacks/listener are no-ops that never throw.
+  const bank = new AudioBank()
+  bank._playGroanPanned('walker', 5, { x: 1, z: 0 })
+  bank.zombieAttack({ x: 1, z: 0 })
+  bank.updateGroans(1 / 60, [fakeZombie('shambler', 4, 0)], { x: 0, z: 0 }, 0.5)
+  assert.strictEqual(bank.ctx, null)
   bank.dispose()
 }
 

@@ -347,7 +347,7 @@ export class Game {
       }
     }
     // WIRING:GROANS (V8)
-    if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position)
+    if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
     // WIRING:DROPS
     if (this.drops) this.drops.update(dt, this.player, () => {
       if (this.weapon) this.weapon.shotgun.reserve += SHELLS_PER_DROP
