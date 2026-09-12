@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, HITMAT, DEADMAT } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -194,4 +194,21 @@ test('L-pocket: walker touching two boxes slides out and keeps moving', () => {
   assert.ok(zombie.position.z < 40 || Math.abs(zombie.position.x) > 3.3,
     `still stuck in pocket at (${zombie.position.x.toFixed(2)}, ${zombie.position.z.toFixed(2)})`)
   assert.ok(collision.isWalkable(zombie.position.x, zombie.position.z, 0.5))
+})
+
+test('eye glow: two shared-material eyes nested under head; dimmed on death', () => {
+  for (const type of ['walker', 'shambler', 'screamer']) {
+    const { zombie } = makeZombie(type, 1, 1, 1)
+    const head = zombie.group.children[1]
+    assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
+    assert.equal(head.children.length, 2, `${type}: eye count`)
+    assert.equal(head.children[0].position.x, -0.075)
+    assert.equal(head.children[0].position.z, 0.14)
+    assert.equal(head.children[1].position.x, 0.075)
+    for (const eye of head.children) assert.equal(eye.material, EYEMAT[type])
+  }
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  assert.equal(zombie._eyes.length, 2)
+  zombie.damage(zombie.maxHealth + 10)
+  for (const e of zombie._eyes) assert.equal(e.material, DEADEYEMAT)
 })

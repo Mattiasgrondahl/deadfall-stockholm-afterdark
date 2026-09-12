@@ -28,6 +28,13 @@ const MAT2 = {
 // dull desaturated swap. Swapped by reference only — never disposed.
 const HITMAT = new THREE.MeshStandardMaterial({ color: 0x8a1f2a, emissive: 0x661111, roughness: 0.8 })
 const DEADMAT = new THREE.MeshStandardMaterial({ color: 0x3a3129, roughness: 1 })
+const EYE = new THREE.BoxGeometry(0.07, 0.07, 0.04)
+const EYEMAT = {
+  walker: new THREE.MeshBasicMaterial({ color: 0x8aff5e }),
+  shambler: new THREE.MeshBasicMaterial({ color: 0xd0ff4f }),
+  screamer: new THREE.MeshBasicMaterial({ color: 0xff3b2e })
+}
+const DEADEYEMAT = new THREE.MeshBasicMaterial({ color: 0x2a2a2a })
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. */
 const TABLE = {
@@ -50,7 +57,7 @@ const POSE2 = {
   screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT }
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT }
 
 const ATTACK_RANGE = 1.3
 const SEPARATION_DIST = 0.9
@@ -138,6 +145,17 @@ export class Zombie {
     head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
     head.rotation.x = pose.headR
     parts.push(head)
+    // Eye glow: two small unlit boxes nested under the head; local +z faces the
+    // player (group.rotation.y = atan2(dx, dz)). Shared per-type material. Eyes
+    // are NOT in _parts, so hit flash and death swaps never touch them.
+    const eMat = EYEMAT[type]
+    this._eyes = []
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(EYE, eMat)
+      eye.position.set(0.075 * side, 0.03, 0.14)
+      head.add(eye)
+      this._eyes.push(eye)
+    }
     for (const side of [-1, 1]) {
       const arm = new THREE.Mesh(GEO2.arm, mat)
       arm.position.set(0.33 * side, 1.45, 0.12)
@@ -305,6 +323,7 @@ export class Zombie {
       this.deathTimer = 0
       this._flashT = 0
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
+      for (const e of this._eyes) e.material = DEADEYEMAT
     } else {
       this._flashT = 0.15
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
