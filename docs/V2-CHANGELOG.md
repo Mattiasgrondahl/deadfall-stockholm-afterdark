@@ -249,3 +249,43 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   chunk-size warning only). Budgets: 257 meshes + 41 sprites = 298
   (≤ 600; exact delta −1 mesh / +1 sprite) / 17 lights (≤ 40) / 3 Points
   (≤ 2500), independently re-probed headless.
+
+## V2P-9 — City readability: landmark beacons + street directionality (commit 13bc3b8, round 11)
+
+- Readability composition per the plan: one primary landmark + secondary
+  landmarks + direction cues, all pure emissive/geometry — no new lights,
+  no collision AABBs, no Math.random.
+- Center spire: 0.6×6×0.6 box on the center-tower roof (position
+  (0,12,0), roof y=9 → top y=15), MeshStandardMaterial emissive 0xffc878
+  @ 2.5 (warm amber, echoing the streetlight color), castShadow, plus a
+  3 m additive halo sprite at (0,15,0). The center tower is the one
+  always-present structure in the city, so it is a reliable orientation
+  point from anywhere in the play area.
+- 4 corner beacons: 0.6×7×0.6 boxes at (±84, 3.5, ±84), emissive
+  0xff4433 @ 2.0 (red = caution), + 2.4 m halos at (±84, 7, ±84). The
+  beacons sit 1 m from the diagonal wave-spawn points (±85, ±85), so red
+  beacons at the world edge mark where waves come from. |coord| > 79.5 is
+  always free (block built extent ≤ 7.0 from block center), so placement
+  can never collide with LCG-placed buildings.
+- 10 street directionality strips: 0.35×0.05×176 boxes along the five
+  street center lines per axis ({±12, ±36, ±60}), MeshBasicMaterial
+  0x3d6fa8 (cool blue, restrained), at y=0.03 (3 cm above the ground
+  plane, no z-fighting), castShadow false. Center lines are always
+  walkable (existing "street center lines clear" test covers them); no
+  AABBs added, so collision and verifier behavior is unchanged.
+- Refactor: the inline 64×64 radial-glow canvas in addStreetlights is
+  extracted into an exported makeGlowMap() (document-guarded, null in
+  headless), shared by the streetlight, spire, and beacon halo materials.
+- City.js: 2 lines — addLandmarks added to the import, called after
+  addBarricades.
+- Tests: halo test re-scoped to sprites with material color 0xffb066
+  (still 40, one shared SpriteMaterial); new block asserting 1 spire
+  (position / intensity / castShadow), 4 beacons (exact positions, no
+  duplicates), 10 strips (y=0.03), 5 halos (positions), and aabbs still
+  exactly 87.
+- Evidence: npm test 108/108 (0 fail / 0 skipped); verify-game 81 ok /
+  0 fail / 0 skipped (FULL ACCEPTANCE S1–S10); npm run build green
+  (known chunk-size warning only). Budgets (independent headless-boot
+  probe): 272 meshes + 46 sprites = 318 ≤ 600 / 17 lights ≤ 40 / 3 Points
+  ≤ 2500 — exact delta +15 meshes / +5 sprites vs the 257/41 baseline,
+  zero new lights.

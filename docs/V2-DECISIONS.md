@@ -116,3 +116,20 @@ Record important visual, audio, and architecture decisions as they are made
   fake players in axe/weaponbank tests stay valid. Tracer deferred: it is
   optional in the plan and would add a world-space mesh pool with
   per-blast orientation; revisit after V6P-1 establishes perf headroom.
+- V2P-9 beacons as emissive geometry, not lights: readability was bought
+  with emissive materials + additive halo sprites instead of new
+  PointLights, keeping the light budget at 17/40; fog attenuates emissive
+  color the same as lit color, so distant beacons fade gracefully into
+  the night instead of punching through the fog. Color language (seeds
+  V3P-1 safe-vs-dangerous): warm amber (0xffc878) center spire = primary,
+  safe landmark; red (0xff4433) corner beacons = caution, placed 1 m from
+  the diagonal spawn points (±85,±85) so the wave origins are marked;
+  cool blue (0x3d6fa8) MeshBasicMaterial strips = neutral direction cue
+  along the street center lines. No AABBs on any beacon or strip: they
+  are purely visual, which keeps collision/verify behavior (and the exact
+  87-AABB assertion) byte-identical. Strips sit on nominal center lines
+  {±12,±36,±60}; the ±12 streets are slightly off true visual center
+  because the center block is special (8×4 building) — acceptable since
+  those lines are guaranteed walkable. Spire/beacon castShadow=true
+  extends the landmark silhouettes into the moon shadow pass (tiny
+  geometry, negligible cost per V2P-6b); strips castShadow=false.
