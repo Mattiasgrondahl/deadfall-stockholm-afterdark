@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 
 // Task 8b-1: deterministic streetlight dressing for the city group.
-// 40 poles (5 vertical streets x 4 + 5 horizontal streets x 4),
-// 8 shared resources, no collision AABBs, no Math.random.
+// 40 poles (pole + head) + 40 halo sprites sharing one material,
+// no collision AABBs, no Math.random.
 const STREETS = [-60, -36, -12, 12, 36]
 const POLES = [-60, -24, 24, 60]
 const OFFSET = 4.2
@@ -11,7 +11,19 @@ export function addStreetlights(group) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
   const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb878, emissiveIntensity: 2.5 })
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
+let haloMap = null
+if (typeof document !== 'undefined') {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64
+  const g2 = c.getContext('2d')
+  const grad = g2.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.6)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g2.fillStyle = grad; g2.fillRect(0, 0, 64, 64)
+  haloMap = new THREE.CanvasTexture(c)
+}
+const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
   const anchors = []
   const place = (x, z) => {
     const pole = new THREE.Mesh(poleGeo, poleMat)
@@ -20,6 +32,7 @@ export function addStreetlights(group) {
     const head = new THREE.Mesh(headGeo, headMat)
     head.position.set(x, 5.2, z)
     group.add(head)
+    const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(2.2, 2.2, 1); group.add(halo)
     anchors.push(new THREE.Vector3(x, 5.2, z))
   }
   for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z) // vertical streets

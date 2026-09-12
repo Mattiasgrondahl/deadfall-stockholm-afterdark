@@ -1,14 +1,14 @@
 import * as THREE from 'three'
 
 // Task 8c: night lighting, three.js r185 physical units.
-// Moon = single shadow-casting DirectionalLight (0.8 lx) that follows the
-// player; streetlight pool = 12 PointLights (35 cd) assigned to the nearest
+// Moon = single shadow-casting DirectionalLight (1.1 lx) that follows the
+// player; streetlight pool = 12 PointLights (55 cd) assigned to the nearest
 // streetlight anchors each frame; hemi + ambient backstops. No per-frame
 // allocation (scratch array reused, in-place sort).
 
 const POINTS_HIGH = 12
 const POINTS_LOW = 6
-const POLE_INTENSITY = 35 // cd
+const POLE_INTENSITY = 55 // cd
 const MOON_OFFSET = { x: -18, y: 30, z: -15 } // NW-above the player
 
 export class Lighting {
@@ -46,7 +46,7 @@ export class Lighting {
     // Streetlight pool: fixed settings; positions assigned in update().
     this.lights = []
     for (let i = 0; i < POINTS_HIGH; i++) {
-      const l = new THREE.PointLight(0xffb878, POLE_INTENSITY, 20, 2)
+      const l = new THREE.PointLight(0xffb066, POLE_INTENSITY, 14, 2)
       scene.add(l)
       this.lights.push(l)
     }

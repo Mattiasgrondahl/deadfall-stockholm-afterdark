@@ -70,6 +70,24 @@ test('streetlight anchors: 40, y=5.2, within bounds; total meshes <= 600', () =>
   assert.ok(meshes <= 600, `meshes ${meshes} > 600`)
 })
 
+test('streetlight halos: 40 sprites share one SpriteMaterial (0xffb066, additive, opacity 0.5)', () => {
+  const sprites = []
+  city.group.traverse(o => { if (o.isSprite) sprites.push(o) })
+  assert.equal(sprites.length, 40, `expected 40 halo sprites, got ${sprites.length}`)
+  const mats = new Set(sprites.map(s => s.material))
+  assert.equal(mats.size, 1, 'all sprites share one SpriteMaterial')
+  const m = sprites[0].material
+  assert.equal(m.color.getHex(), 0xffb066, 'halo color')
+  assert.equal(m.blending, THREE.AdditiveBlending, 'additive blending')
+  assert.equal(m.depthWrite, false, 'depthWrite off')
+  assert.equal(m.opacity, 0.5, 'opacity 0.5')
+  let headOk = false
+  city.group.traverse(o => {
+    if (o.isMesh && o.material.emissive && o.material.emissive.getHex() === 0xffb066 && o.material.emissiveIntensity === 3.2) headOk = true
+  })
+  assert.ok(headOk, 'no head mesh with emissive 0xffb066 / intensity 3.2')
+})
+
 test('city aabbs: 87 total, bounds, key points walkable', () => {
   assert.equal(collision.aabbs.length, 87, `expected 87 aabbs, got ${collision.aabbs.length}`)
   for (const a of collision.aabbs) {
