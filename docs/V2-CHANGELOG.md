@@ -63,3 +63,22 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   npm run build green (known chunk-size warning only); budgets unchanged —
   270 meshes / 17 lights / 1 point at headless boot (diff adds no geometry;
   S8 budget checks pass).
+
+## V2P-3 — Fog & atmosphere (commit b4f565f, round 4)
+
+- Fog retune in `src/game/Game.js` L187 (`setupScene()`) — GPU-1 coder,
+  first-try success, single-line spec: `FogExp2(0x0b1020, 0.032)` →
+  `FogExp2(0x0b1020, 0.022)`. FogExp2 visibility = exp(−(d·ρ)²): at 0.032 a
+  zombie at 30 m had ~0.40 visibility (hazy inside streetlight/flashlight
+  range); at 0.022: 30 m ~0.65 (readable), 50 m ~0.30, 80 m ~0.045 (city
+  depth cue preserved). Fog color kept at 0x0b1020; sky dome and silhouettes
+  are fog:false, so they are unaffected by density.
+- New `test/fog.test.mjs` (26 lines, 2 blocks): headless `Game({headless:true})`
+  + `start()` asserts FogExp2 type, density 0.022, color 0x0b1020; second
+  block pins the gates — 30 m visibility ≥ 0.60 (targets readable) and
+  80 m < 0.15 (depth cue) — so future fog tuning cannot silently regress
+  readability. Headless-safe, no Math.random.
+- Evidence: npm test 103/103 (0 fail, 0 skipped); verify-game 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE headless, S1–S10); npm run build green (known
+  chunk-size warning only); budgets unchanged — 270 meshes / 17 lights /
+  1 point (no geometry added).

@@ -30,3 +30,13 @@ Record important visual, audio, and architecture decisions as they are made
   0.5–0.65 / 0.2–0.35) so streetlights + moonlight produce visible specular
   response instead of flat matte surfaces. Streetlight head emissive left
   as-is: falloff curve + warm halo belong to V2P-5.
+- V2P-3 fog: FogExp2 density lowered 0.032 → 0.022 in Game.js setupScene() —
+  a single-parameter change; fog color (0x0b1020) and the sky's fog:false
+  dome/silhouettes untouched. Rationale: at 0.032, exp(−(dρ)²) left 30 m
+  targets at ~40% visibility (unplayable haze inside streetlight/flashlight
+  range); 0.022 keeps 30 m at ~0.65, 50 m ~0.30, 80 m ~0.045 — depth cue
+  preserved without hiding targets. The gates (30 m ≥ 0.60, 80 m < 0.15) are
+  pinned in test/fog.test.mjs so later tuning cannot regress readability.
+  Height-based fog considered and rejected: FogExp2 has no height term, and a
+  custom height-fog shader adds per-pixel cost with no benefit at this city
+  scale — revisit only if V6P-1 shows headroom.
