@@ -27,18 +27,20 @@ export class Lighting {
     }
 
     // Moon: the only shadow caster; light + target follow the player.
-    this.moon = new THREE.DirectionalLight(0x9db4ff, 0.8)
+    this.moon = new THREE.DirectionalLight(0x9db4ff, 1.1)
     this.moon.castShadow = true
     this.moon.shadow.mapSize.set(2048, 2048)
+    this.moon.shadow.bias = 0.004
+    this.moon.shadow.normalBias = 0.05
     const sc = this.moon.shadow.camera
     sc.left = -22; sc.right = 22; sc.top = 22; sc.bottom = -22
     sc.near = 1; sc.far = 120
     scene.add(this.moon)
     scene.add(this.moon.target) // target must be in the scene graph
 
-    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.3)
+    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.22)
     scene.add(this.hemi)
-    this.ambient = new THREE.AmbientLight(0x141a2e, 0.15)
+    this.ambient = new THREE.AmbientLight(0x141a2e, 0.08)
     scene.add(this.ambient)
 
     // Streetlight pool: fixed settings; positions assigned in update().
