@@ -36,3 +36,30 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   1 point).
 - Note: three r185's EventDispatcher exposes addEventListener (not .on); dispose
   verification uses it.
+
+## V2P-2 — Night palette & materials (commit 0d74f83, round 3)
+
+- Unified night palette across the city (GPU-1 coder, first-try success;
+  single-subsystem spec, edit-only, 13 lines changed total):
+  - `src/world/City.js`: building palette retuned to cooler, darker blue-grays
+    `[0x232d3f, 0x2b364d, 0x33415c, 0x273246]`; new per-zone tint
+    `TINTS = [1.12, 1.0, 0.9, 0.78]` applied by zone = max(|i−3|, |j−3|)
+    (center block brightest → outskirts darkest) via
+    `new THREE.Color(base).multiplyScalar(tint)`; buildings now roughness 0.88,
+    metalness 0.05 (slight specular to catch streetlights); ground snow
+    `0xdde4ee → 0x93a9c2` (dimmed pale blue-gray, still readable, still rough
+    0.95).
+  - `src/world/cityDressing.js`: pole `0x1a202c / 0.6 / 0.3` (metal glints),
+    vehicle body `0x333b46 / 0.6 / 0.25`, cabin `0x3d4656 / 0.65 / 0.2`,
+    wheels `0x121418 / 0.5 / 0.35`, barricade planks `0x5f4734 / 0.85 / 0`
+    (weathered wood). Streetlight head emissive (`0xffb878 @ 2.5`) deliberately
+    untouched — light falloff/halo is V2P-5 scope.
+- Design invariant: LCG seed and call order untouched (zone computation consumes
+  no `rnd()`), so city layout, plaza/quadrant pattern, and palette indices are
+  byte-identical to before — only colors changed. No geometry, no AABBs, no
+  new lights, no new imports; headless-safe (pure `THREE.Color` math).
+- Evidence: git diff = exactly the specified hunks; npm test 101/101 (0 fail,
+  0 skipped); verify-game 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE headless);
+  npm run build green (known chunk-size warning only); budgets unchanged —
+  270 meshes / 17 lights / 1 point at headless boot (diff adds no geometry;
+  S8 budget checks pass).

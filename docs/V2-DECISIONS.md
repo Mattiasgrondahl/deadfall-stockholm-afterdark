@@ -21,3 +21,12 @@ Record important visual, audio, and architecture decisions as they are made
   density ~0.032 fully hides 360–400 m objects; silhouette layout uses a
   glibc-style LCG (s=(s*48271)%65537, seed 9137) — always non-negative, same
   family already accepted in the V13 review.
+- V2P-2 palette & materials: night look achieved by retuning material parameters
+  only, never geometry or layout — LCG seed/call order untouched so city layout
+  stays byte-identical. Per-zone tint = multiplicative scalar on the LCG-picked
+  base color (center ×1.12 → outskirts ×0.78) to give the city a subtle
+  brightness gradient at near-zero cost (no new materials, no new meshes).
+  Roughness/metalness retuned (buildings 0.88/0.05; metal dressing
+  0.5–0.65 / 0.2–0.35) so streetlights + moonlight produce visible specular
+  response instead of flat matte surfaces. Streetlight head emissive left
+  as-is: falloff curve + warm halo belong to V2P-5.
