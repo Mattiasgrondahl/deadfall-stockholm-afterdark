@@ -518,7 +518,7 @@ cross is marked as a danger corridor, plazas are marked safe with signage.
 - Housekeeping: deleted the 4 untracked temp probes (tools/e2e-probe2.mjs, tools/e2e-step-probe.mjs, tools/e2e-bloom-diff.mjs, .debug-bloom-shot.png) after the suite passed cleanly, per V7P-1 should-fix (6); git tree fully clean.
 - Status: every V2-PLAN build/test/verify/E2E acceptance item re-verified in one final pass; remaining = V7P-4 final docs (+ 5 non-blocking code-hygiene items from V7P-1, optional).
 
-## V7P-4 — Final documentation pass; Version 2 complete (commit TBD, round 37)
+## V7P-4 — Final documentation pass; Version 2 complete (commit 9bef156, round 37)
 
 - Docs-only round; no code, test, or build changes. Final accuracy pass per V2-PLAN Phase 7 (V7P-4):
   - README.md: project layout corrected — it predated the phase 2–4 files, so it now lists `PostFX` + `ray` in src/game and `cityDressing`, `sky`, `snow` in src/world; Technical notes gains one line describing the optional restrained bloom pass (strength 0.25, ~1 ms/frame, auto-disabled headless, budgets intact). All other sections (setup, commands, controls, gameplay, audio & autoplay, verification) were re-checked against the code and were already accurate.
