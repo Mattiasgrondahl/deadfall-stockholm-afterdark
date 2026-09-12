@@ -90,6 +90,7 @@ function makeFakeAudioContext() {
       n.maxDistance = 16
       return ctx._make(n)
     },
+    createWaveShaper() { return ctx._make(node('shaper')) },
     createBuffer(ch, len, rate) { return { getChannelData: () => new Float32Array(len) } },
     resume() { this.state = 'running'; return Promise.resolve() },
     close() { this.state = 'closed'; return Promise.resolve() },
@@ -106,7 +107,10 @@ function bankWithFakeCtx() {
   const bank = new AudioBank()
   bank.ctx = makeFakeAudioContext()
   bank.master = bank.ctx.createGain()
-  bank.master.connect(bank.ctx.destination)
+  bank.shaper = bank.ctx.createWaveShaper()
+  bank.shaper.curve = bank._makeLimiterCurve()
+  bank.master.connect(bank.shaper)
+  bank.shaper.connect(bank.ctx.destination)
   bank._noiseBuffer = bank.ctx.createBuffer(1, bank.ctx.sampleRate, bank.ctx.sampleRate)
   const d = bank._noiseBuffer.getChannelData(0)
   for (let i = 0; i < d.length; i++) d[i] = 0.5
@@ -396,8 +400,8 @@ function bankWithFakeCtx() {
     assert.strictEqual(p.position.y.value, 0.8)
     assert.strictEqual(p.position.z.value, 0)
   }
-  // +1: the master gain node bankWithFakeCtx creates before the loop.
-  assert.strictEqual(bank.ctx._created.length, 1 + 6 * fires, 'unbounded node growth')
+  // +2: master + limiter created by bankWithFakeCtx before the loop.
+  assert.strictEqual(bank.ctx._created.length, 2 + 6 * fires, 'unbounded node growth')
   bank.dispose()
 }
 {
@@ -448,6 +452,33 @@ function bankWithFakeCtx() {
   before = bank.ctx._created.length
   bank.playStart()
   assert.strictEqual(bank.ctx._created.length - before, 6)
+  bank.dispose()
+}
+{
+  // V4P-4: limiter chain wired master -> shaper -> destination; curve is
+  // antisymmetric, strictly |y| < 1 past the knee, and covers the
+  // worst-case pre-limiter input (~1.92 = 3.2 peak mix x 0.6 master).
+  const bank = bankWithFakeCtx()
+  const c = bank.shaper.curve
+  assert.ok(c instanceof Float32Array)
+  assert.ok(c.length >= 2000, 'curve too short: ' + c.length)
+  assert.strictEqual(c[0], -c[c.length - 1], 'curve not antisymmetric')
+  let maxTail = 0
+  for (let i = 0; i < c.length; i++) {
+    const a = Math.abs(c[i])
+    if (a > 0.8) maxTail = Math.max(maxTail, a)
+  }
+  assert.ok(maxTail > 0, 'no samples past the knee')
+  assert.ok(maxTail < 1, 'limiter output reaches 1: ' + maxTail)
+  assert.ok(maxTail > 0.9, 'limiter too soft at the end: ' + maxTail)
+  assert.ok(bank.master._children.includes(bank.shaper), 'master not wired to shaper')
+  assert.ok(bank.shaper._children.includes(bank.ctx.destination), 'shaper not wired to destination')
+  // Persistent nodes per bank = master + shaper; the bed still adds exactly 10.
+  const before = bank.ctx._created.length
+  assert.strictEqual(before, 2, 'persistent chain is master + shaper')
+  bank.startAmbient()
+  assert.strictEqual(bank.ctx._created.length - before, 10, 'bed size changed')
+  bank.stopAmbient()
   bank.dispose()
 }
 

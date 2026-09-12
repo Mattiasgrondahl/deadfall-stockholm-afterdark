@@ -43,6 +43,7 @@ export class AudioBank {
     this._gustGainNode = null
     this._gustSrc = null
     this._humNodes = null
+    this.shaper = null
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -50,7 +51,13 @@ export class AudioBank {
           this.ctx = new Ctx()
           this.master = this.ctx.createGain()
           this.master.gain.value = 0.6
-          this.master.connect(this.ctx.destination)
+          // V4P-4: soft-clip limiter after the master so an over-driven mix
+          // (worst case ~1.9 pre-limiter) bends instead of hard-clipping.
+          this.shaper = this.ctx.createWaveShaper()
+          this.shaper.curve = this._makeLimiterCurve()
+          this.shaper.oversample = 'none'
+          this.master.connect(this.shaper)
+          this.shaper.connect(this.ctx.destination)
           this._noiseBuffer = this._makeNoiseBuffer(1.0)
         } catch (err) {
           this.ctx = null // construction failed -> treat as headless
@@ -72,6 +79,24 @@ export class AudioBank {
       d[i] = (seed / 0x7fffffff) * 2 - 1
     }
     return buf
+  }
+
+  // V4P-4 soft-clip curve for the master limiter: linear up to the knee,
+  // then asymptotic toward 1 (|y| < 1 for every input), so any over-driven
+  // mix bends smoothly instead of hard-clipping. Sampled over [-2, 2];
+  // WaveShaper clamps inputs beyond the curve ends.
+  _makeLimiterCurve() {
+    const N = 2048
+    const k = 0.8
+    const tau = 0.5
+    const c = new Float32Array(N)
+    for (let i = 0; i < N; i++) {
+      const x = (2 * i / (N - 1) - 1) * 2
+      const a = Math.abs(x)
+      const y = a <= k ? a : 1 - (1 - k) * Math.exp(-(a - k) / tau)
+      c[i] = Math.sign(x) * y
+    }
+    return c
   }
 
   // Resume a suspended context (fire-and-forget; first sound follows a gesture).
@@ -503,6 +528,7 @@ export class AudioBank {
     this._gustSrc = null
     this._gustGainNode = null
     this._humNodes = null
+    this.shaper = null
     if (this.ctx) {
       try { this.ctx.close() } catch (err) {}
       this.ctx = null
