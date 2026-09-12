@@ -244,4 +244,52 @@ test('plaza halos: 22 shared amber (0xffd9a5) ground halos at plaza centers; 87 
   city.dispose()
 })
 
+test('V3P-1b: 4 red danger strips on the unlit central cross; 22 plaza signs (post + panel); 87 aabbs, 67 sprites', () => {
+  const scene = new THREE.Scene()
+  const collision = new CollisionWorld(180, 180)
+  const city = new City(scene, collision, { canvasFactory: () => null })
+  const centers = city.getPlazaCenters()
+  const strips = []
+  const panels = []
+  const posts = []
+  city.group.traverse(o => {
+    if (!o.isMesh) return
+    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) strips.push(o)
+    if (o.material.emissive && o.material.emissive.getHex() === 0xffd9a5) panels.push(o)
+    if (o.material.isMeshStandardMaterial && o.material.color.getHex() === 0x1a202a && Math.abs(o.position.y - 0.8) < 1e-6) posts.push(o)
+  })
+  assert.equal(strips.length, 4, 'expected 4 danger strips, got ' + strips.length)
+  const stripPos = [[0, 0.09, 41.25], [0, 0.09, -41.25], [42.25, 0.09, 0], [-42.25, 0.09, 0]]
+  for (const s of strips) {
+    const p = stripPos.find(q => Math.abs(q[0] - s.position.x) < 1e-6 && Math.abs(q[1] - s.position.y) < 1e-6 && Math.abs(q[2] - s.position.z) < 1e-6)
+    assert.ok(p, 'danger strip at unexpected position ' + s.position.x + ',' + s.position.y + ',' + s.position.z)
+    assert.equal(s.castShadow, false, 'strip castShadow')
+  }
+  assert.equal(new Set(strips.map(s => s.material)).size, 1, 'strips share one material')
+  assert.equal(new Set(strips.map(s => s.geometry)).size, 2, 'strips share two geometries (one per orientation)')
+  assert.equal(panels.length, 22, 'expected 22 sign panels, got ' + panels.length)
+  for (const p of panels) {
+    assert.ok(Math.abs(p.position.y - 1.7) < 1e-6, 'panel y ' + p.position.y)
+    assert.equal(p.material.emissiveIntensity, 2.0, 'panel emissiveIntensity')
+    assert.equal(p.castShadow, false, 'panel castShadow')
+    assert.ok(centers.some(c => Math.abs(c.x - p.position.x) < 1e-6 && Math.abs(c.z - p.position.z) < 1e-6), 'panel (' + p.position.x + ',' + p.position.z + ') not a plaza center')
+  }
+  assert.equal(new Set(panels.map(p => p.material)).size, 1, 'panels share one material')
+  assert.equal(new Set(panels.map(p => p.geometry)).size, 1, 'panels share one geometry')
+  assert.equal(posts.length, 22, 'expected 22 sign posts, got ' + posts.length)
+  for (const p of posts) {
+    assert.ok(centers.some(c => Math.abs(c.x - p.position.x) < 1e-6 && Math.abs(c.z - p.position.z) < 1e-6), 'post (' + p.position.x + ',' + p.position.z + ') not a plaza center')
+    assert.equal(p.castShadow, false, 'post castShadow')
+  }
+  assert.equal(new Set(posts.map(p => p.material)).size, 1, 'posts share one material')
+  assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
+  let sprites = 0
+  city.group.traverse(o => { if (o.isSprite) sprites++ })
+  assert.equal(sprites, 67, 'expected 67 total sprites, got ' + sprites)
+  let meshes = 0
+  city.group.traverse(o => { if (o.isMesh) meshes++ })
+  assert.ok(meshes <= 600, 'city meshes ' + meshes + ' > 600')
+  city.dispose()
+})
+
 

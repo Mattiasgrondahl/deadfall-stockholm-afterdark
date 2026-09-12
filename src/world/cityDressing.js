@@ -202,3 +202,41 @@ export function addPlazaHalos(group, centers) {
     group.add(halo)
   }
 }
+
+// Task V3P-1b: mark the unlit central cross (streets x=0 / z=0 have no
+// streetlight poles) as a danger corridor with ground-level red strips.
+// Red = caution (same 0xff4433 as the spawn beacons). y=0.09 keeps the
+// strips clear of the blue directional strips (y 0.005..0.055) at crossings.
+// No lights, no aabbs, no sprites, no Math.random.
+export function addDangerStrips(group) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff4433 })
+  const geoZ = new THREE.BoxGeometry(0.35, 0.05, 76.5) // along z at x=0
+  const geoX = new THREE.BoxGeometry(74.5, 0.05, 0.35) // along x at z=0
+  const pos = [[0, 0.09, 41.25, geoZ], [0, 0.09, -41.25, geoZ], [42.25, 0.09, 0, geoX], [-42.25, 0.09, 0, geoX]]
+  for (const [x, y, z, geo] of pos) {
+    const strip = new THREE.Mesh(geo, mat)
+    strip.castShadow = false
+    strip.position.set(x, y, z)
+    group.add(strip)
+  }
+}
+
+// Task V3P-1b: safe-zone signage - one post + emissive amber panel per plaza
+// center, complementing the V3P-1a ground halos. Amber = safe (0xffd9a5).
+// No lights, no aabbs, no Math.random.
+export function addSigns(group, centers) {
+  const postGeo = new THREE.BoxGeometry(0.12, 1.6, 0.12)
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
+  const panelGeo = new THREE.BoxGeometry(0.9, 0.6, 0.1)
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xffd9a5, emissiveIntensity: 2.0, roughness: 0.6, metalness: 0.1 })
+  for (const c of centers) {
+    const post = new THREE.Mesh(postGeo, postMat)
+    post.castShadow = false
+    post.position.set(c.x, 0.8, c.z)
+    group.add(post)
+    const panel = new THREE.Mesh(panelGeo, panelMat)
+    panel.castShadow = false
+    panel.position.set(c.x, 1.7, c.z)
+    group.add(panel)
+  }
+}
