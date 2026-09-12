@@ -426,5 +426,29 @@ function bankWithFakeCtx() {
   assert.strictEqual(bank.ctx, null)
   bank.dispose()
 }
+{
+  // V4P-3: new one-shots are no-ops on a headless bank (ctx null).
+  const bank = new AudioBank()
+  bank.dryFire(); bank.hitPlayer(); bank.playWaveCleared(3); bank.playStart()
+  bank.dispose()
+}
+{
+  // V4P-3: one-shots build exact transient graphs under the fake ctx.
+  // _playNoise with a filter = 3 nodes; _playTone = 2 nodes.
+  const bank = bankWithFakeCtx()
+  let before = bank.ctx._created.length
+  bank.dryFire()
+  assert.strictEqual(bank.ctx._created.length - before, 5)
+  before = bank.ctx._created.length
+  bank.hitPlayer()
+  assert.strictEqual(bank.ctx._created.length - before, 5)
+  before = bank.ctx._created.length
+  bank.playWaveCleared(3)
+  assert.strictEqual(bank.ctx._created.length - before, 4)
+  before = bank.ctx._created.length
+  bank.playStart()
+  assert.strictEqual(bank.ctx._created.length - before, 6)
+  bank.dispose()
+}
 
 console.log('audio OK')

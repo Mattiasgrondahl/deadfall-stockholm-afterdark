@@ -239,7 +239,7 @@ export class Game {
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w) },
-      onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED') },
+      onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED'); if (this.audio) this.audio.playWaveCleared?.(w) },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z)
     })
     // WIRING:SCORE (V9)
@@ -286,7 +286,7 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) this.audio.startAmbient()
+    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
     if (this.screens) this.screens.showGameplay()
   }
 

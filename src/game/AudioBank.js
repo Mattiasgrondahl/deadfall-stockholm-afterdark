@@ -210,6 +210,47 @@ export class AudioBank {
   }
 
   // -----------------------------------------------------------------
+  // V4P-3 one-shots. All transient (auto-stopped), no persistent nodes,
+  // no RNG, no panners. Call sites are null-guarded.
+  // -----------------------------------------------------------------
+
+  // Dry fire: empty-chamber mechanical click (rejected shotgun shot).
+  dryFire() {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.02, filterType: 'highpass', filterFreq: 2500, gain: 0.25 })
+    this._playTone({ type: 'sine', freq: 900, duration: 0.03, gain: 0.15, when: 0.01 })
+  }
+
+  // Player takes a hit (non-fatal): dull thud with a low ring. Fatal hits
+  // use playDeath() instead (already wired in Player.damage).
+  hitPlayer() {
+    if (!this.ctx) return
+    this._resume()
+    this._playTone({ type: 'sine', freq: 90, freqEnd: 45, duration: 0.25, gain: 0.4 })
+    this._playNoise({ duration: 0.10, filterType: 'lowpass', filterFreq: 300, gain: 0.25, when: 0.02 })
+  }
+
+  // Wave cleared: ascending two-tone chime, pitched below the wave-start
+  // chime (playWave uses base 220+15n; this uses base 180+15n).
+  playWaveCleared(n) {
+    if (!this.ctx) return
+    this._resume()
+    const base = 180 + 15 * Math.min(Number(n) || 1, 8)
+    this._playTone({ type: 'triangle', freq: base, duration: 0.25, gain: 0.3, when: 0 })
+    this._playTone({ type: 'triangle', freq: base * 1.25, duration: 0.25, gain: 0.3, when: 0.15 })
+  }
+
+  // Run start / restart: rising three-note chime.
+  playStart() {
+    if (!this.ctx) return
+    this._resume()
+    this._playTone({ type: 'triangle', freq: 220, duration: 0.15, gain: 0.25, when: 0 })
+    this._playTone({ type: 'triangle', freq: 330, duration: 0.15, gain: 0.25, when: 0.12 })
+    this._playTone({ type: 'triangle', freq: 440, duration: 0.15, gain: 0.25, when: 0.24 })
+  }
+
+  // -----------------------------------------------------------------
   // V8 zombie groans: per-type idle vocalization, LCG-scheduled,
   // distance-falloff, capped at GROAN_MAX_VOICES concurrent voices.
   // -----------------------------------------------------------------

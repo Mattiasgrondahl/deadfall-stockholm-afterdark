@@ -123,7 +123,7 @@ export class Shotgun {
 
   /** One 6-pellet blast; returns false if not fired (reloading, empty, interval). */
   shoot() {
-    if (this.isReloading || this.ammo <= 0 || this._time < this._fireT) return false
+    if (this.isReloading || this.ammo <= 0 || this._time < this._fireT) { this.audio?.dryFire?.(); return false }
     this.ammo--
     this._fireT = this._time + FIRE_INTERVAL
     this._recoil = RECOIL_KICK
