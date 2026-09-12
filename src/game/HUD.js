@@ -15,6 +15,10 @@ export class HUD {
     this._vignetteT = 0
     this._lastNow = this._now()
     this._markerT = 0 // hit/kill marker lifetime (s); decayed in update()
+    this._vignettePeak = 0 // V5P-2: current vignette peak opacity
+    this._dmgEdgeT = 0 // V5P-2: edge-glow lifetime (s), decayed in update()
+    this._dmgHitPending = false // V5P-2: hook already accounted for this drop
+    this._player = null // V5P-2: last player seen by update()
     this.flashlight = null // set by Game wiring (V7); battery bar hidden until then
     this.score = null      // set by Game wiring (V9); score box hidden until then
     this._build()
@@ -120,6 +124,11 @@ export class HUD {
     // FX layer: damage vignette + low-health pulse
     this._vignette = d.createElement('div'); this._vignette.className = 'fx-damage'
     this._fxRoot.appendChild(this._vignette)
+    // Directional damage edge glow (V5P-2): full-screen layer, glow band at top
+    // edge, rotated about screen center to point at the attacker.
+    const de = d.createElement('div'); de.className = 'fx-dmg-edge'
+    this._dmgEdge = de
+    this._fxRoot.appendChild(de)
     this._lowHealth = d.createElement('div'); this._lowHealth.className = 'fx-lowhealth'
     this._fxRoot.appendChild(this._lowHealth)
   }
@@ -130,16 +139,25 @@ export class HUD {
     this._lastNow = this._now()
 
     if (player) {
+      this._player = player
       const maxH = player.maxHealth || 1
       const pct = Math.max(0, Math.min(1, player.health / maxH))
       this._healthFill.style.width = (pct * 100) + '%'
       this._healthValue.textContent = String(Math.max(0, Math.ceil(player.health)))
-      // Damage vignette: trigger on a health drop, then fade over 0.3 s.
-      if (this._lastHealth !== null && player.health < this._lastHealth) this._vignetteT = 0.3
+      // Damage vignette (V5P-2): hook-driven peak with a health-drop fallback;
+      // fades over 0.45 s.
+      if (this._lastHealth !== null && player.health < this._lastHealth && !this._dmgHitPending) {
+        this._vignettePeak = 0.35
+        this._vignetteT = 0.45
+      }
+      this._dmgHitPending = false
       this._lastHealth = player.health
       this._vignetteT = Math.max(0, this._vignetteT - dt)
+      this._dmgEdgeT = Math.max(0, this._dmgEdgeT - dt)
       this._vignette.style.opacity = this._vignetteT > 0
-        ? String(0.5 * (this._vignetteT / 0.3)) : '0'
+        ? String(this._vignettePeak * (this._vignetteT / 0.45)) : '0'
+      this._dmgEdge.style.opacity = this._dmgEdgeT > 0
+        ? String(0.7 * (this._dmgEdgeT / 0.5)) : '0'
       // Low-health pulse.
       const low = pct < 0.3
       if (low) { this._lowHealth.classList.add('on'); this._healthBox.classList.add('critical') }
@@ -214,6 +232,26 @@ export class HUD {
   clearMarker() {
     this._markerT = 0
     this._marker.classList.remove('show', 'hit', 'kill')
+  }
+
+  dmgFeedback(amount, source) {
+    // Vignette: peak scales with damage (0.25 + 0.02/pt, cap 0.6), 0.45 s fade.
+    this._vignettePeak = Math.min(0.6, 0.25 + 0.02 * amount)
+    this._vignetteT = 0.45
+    this._dmgHitPending = true
+    this._dmgEdgeT = 0.5
+    // Directional edge glow: angle from screen-forward to the attacker.
+    // 0 = in front, +90 = right, -90 = left, 180 = behind.
+    const p = this._player
+    const sp = source && source.position
+    if (p && p.position && sp && typeof sp.x === 'number' && typeof sp.z === 'number') {
+      const dx = sp.x - p.position.x
+      const dz = sp.z - p.position.z
+      const fwd = dx * Math.sin(p.yaw) - dz * Math.cos(p.yaw)
+      const right = dx * Math.cos(p.yaw) + dz * Math.sin(p.yaw)
+      const ang = Math.atan2(right, fwd) * (180 / Math.PI)
+      this._dmgEdge.style.transform = 'rotate(' + ang.toFixed(1) + 'deg)'
+    }
   }
 
   dispose() {

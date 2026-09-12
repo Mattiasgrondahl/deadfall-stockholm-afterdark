@@ -143,4 +143,18 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.strictEqual(camera.rotation.x, 0)
 }
 
+{ // V5P-2: _onDamaged hook fires with (amount, source) on every hit; no hook is safe
+  const { player } = makePlayer()
+  let got = null
+  player._onDamaged = (amount, source) => { got = [amount, source] }
+  const src = { x: 1, z: 2 }
+  player.damage(15, src)
+  assert.strictEqual(got[0], 15)
+  assert.strictEqual(got[1], src)
+  player._onDamaged = null
+  player.damage(10, 'zombie') // no hook -> no throw
+  assert.strictEqual(player.health, 75)
+  player.dispose()
+}
+
 console.log('player OK')

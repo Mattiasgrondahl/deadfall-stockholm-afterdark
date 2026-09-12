@@ -98,6 +98,7 @@ export class Player {
   damage(amount, source) {
     if (this.isDead) return
     this.health -= amount
+    if (this._onDamaged) this._onDamaged(amount, source)
     if (this.health > 0) this.audio?.hitPlayer?.()
     if (this.health <= 0) {
       this.health = 0

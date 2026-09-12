@@ -203,7 +203,7 @@ export class Zombie {
       this._attackT += dt
       if (this._attackT >= TABLE[this.type].cooldown) {
         this._attackT = 0
-        player.damage(TABLE[this.type].melee, 'zombie')
+        player.damage(TABLE[this.type].melee, this)
         if (audio && audio.zombieAttack) audio.zombieAttack(this.position) // null-guarded; V4P-2 positional
       }
       return

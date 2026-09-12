@@ -256,6 +256,8 @@ export class Game {
     }
     // V5P-1: weapon hit -> HUD marker (no-op headless: hud is null there)
     if (this.weapon) this.weapon.onHit = () => { if (this.hud) this.hud.hitMarker() }
+    // V5P-2: player damage -> HUD directional feedback (no-op headless: hud is null there)
+    if (this.player) this.player._onDamaged = (n, s) => { if (this.hud) this.hud.dmgFeedback(n, s) }
   }
 
   setState(next) {

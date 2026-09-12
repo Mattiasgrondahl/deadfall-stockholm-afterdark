@@ -335,4 +335,41 @@ function makeGame(doc, hud) {
   screens.dispose()
 }
 
+{
+  // V5P-2: directional damage edge glow + amount-scaled vignette
+  const { hudRoot, fxRoot } = makeHUDWorld()
+  const hud = new HUD(hudRoot, fxRoot)
+  const vig = find(fxRoot, 'fx-damage')
+  const edge = find(fxRoot, 'fx-dmg-edge')
+  const player = { health: 100, maxHealth: 100, stamina: 100, position: { x: 0, z: 0 }, yaw: 0 }
+  const weapon = { ammo: 5, reserve: 30, isReloading: false }
+  const wave = { wave: 1, remaining: 5 }
+  let now = 0
+  hud._now = () => now // fake clock, 16 ms per step
+  const step = () => { now += 16; hud.update(player, weapon, wave) }
+  step() // baseline, no damage yet
+  hud.dmgFeedback(10, { position: { x: 0, z: -5 } }) // in front (yaw 0 faces -Z)
+  step()
+  assert.strictEqual(edge.style.transform, 'rotate(0.0deg)')
+  assert(parseFloat(vig.style.opacity) > 0, 'vignette fires on hit')
+  const opFront = parseFloat(vig.style.opacity)
+  hud.dmgFeedback(30, { position: { x: 0, z: -5 } }) // bigger hit -> stronger
+  step()
+  assert(parseFloat(vig.style.opacity) > opFront, 'peak scales with damage')
+  hud.dmgFeedback(10, { position: { x: 5, z: 0 } }) // from the right
+  step()
+  assert.strictEqual(edge.style.transform, 'rotate(90.0deg)')
+  hud.dmgFeedback(10, { position: { x: 0, z: 5 } }) // from behind
+  step()
+  assert.strictEqual(edge.style.transform, 'rotate(180.0deg)')
+  hud.dmgFeedback(10, 'zombie') // position-less source: no rotation change
+  step()
+  assert.strictEqual(edge.style.transform, 'rotate(180.0deg)')
+  assert(parseFloat(vig.style.opacity) > 0)
+  for (let i = 0; i < 60; i++) { player.health = 100; step() } // decay to rest
+  assert.strictEqual(vig.style.opacity, '0')
+  assert.strictEqual(edge.style.opacity, '0')
+  hud.dispose()
+}
+
 console.log('hud-screens OK')
