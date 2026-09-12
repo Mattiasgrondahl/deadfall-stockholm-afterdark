@@ -48,6 +48,31 @@ Per-run means: A 0.903 / 0.953 / 0.808 · B 0.773 / 0.860 / 0.745 · C 0.722 / 0
    re-measured before any mapSize/frustum tier decision.
 
 V6P-1 citation: at 1280×720, 2048² PCFSoft, frustum ±22 m, player pinned at
-(12, y, 0): measured shadow-only cost 0.095 ms/frame, full-fallback saving
-0.165 ms/frame — the shadow pass is idle (no casters in the scene) and is not
-a frame-budget concern in this build.
+(12, y, 0): V2P-6a measured the idle shadow pass at 0.095 ms/frame (no casters
+in the scene); V2P-6b enabled real casters and re-measured — see the
+"V2P-6b re-measurement" section below for the current numbers.
+
+## V2P-6b re-measurement — real casters enabled (round 8)
+
+Cast enabled (commit 566e555): all city building boxes (`City.js` factory),
+streetlight poles (`cityDressing.js`), and all six body meshes per zombie
+(`Zombie.js`); ground `receiveShadow = true`. Moon light settings unchanged
+(2048² PCFSoft, frustum ±22 m, near 1 / far 120, bias 0.004 / normalBias
+0.05). Same probe, same pin (player (12, y, 0)); numbers below are the
+orchestrator's independent re-run (the child's run agreed within run-to-run
+noise).
+
+| Condition | mean | p95 | calls | tris |
+|---|---|---|---|---|
+| A high (shadow ON, casters live) | 0.994 | 1.2 | 134 | 5044 |
+| B no-shadow (shadow OFF, casters live) | 0.808 | 1.0 | 106 | 4128 |
+| C low (shadow OFF, 6 pt lights, 750 snow) | 0.737 | 0.9 | 106 | 4128 |
+
+- Shadow-only real-caster cost (A−B): **0.186 ms/frame** (child's run: 0.18;
+  idle pass in V2P-6a: 0.095 — live casters roughly double the shadow-pass
+  cost, still ~1.1% of a 16.7 ms frame budget).
+- Full-fallback saving (A−C): 0.257 here, but C ≈ B within 0.07 ms in the other
+  two runs, so the non-shadow part of low quality saves ~0–0.07 ms/frame.
+- The shadow pass now does real work: +28 draw calls / +916 triangles vs B
+  (casters inside the ±22 m frustum: building boxes, poles, zombie bodies).
+- Zero console/page errors; state 'playing' throughout; probe exit 0.

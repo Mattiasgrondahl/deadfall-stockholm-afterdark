@@ -79,3 +79,13 @@ Record important visual, audio, and architecture decisions as they are made
   `receiveShadow`) because the measured idle cost shows ample headroom, then
   RE-MEASURE with tools/shadow-cost.mjs before any tier decision. Numbers
   recorded in docs/shadow-cost.md for V6P-1.
+- V2P-6b real-caster shadow cost: with casters enabled (all city building
+  boxes, streetlight poles, and all six body meshes per zombie cast; ground
+  receives), the shadow pass is no longer idle: measured A−B = 0.186
+  ms/frame (stable across 3 independent probe runs; the idle pass was 0.095),
+  and the shadow pass adds +28 draw calls / +916 triangles (A: 134 calls /
+  5044 tris). DECISION: shadows ON at high quality remain justified — 0.186
+  ms/frame ≈ 1.1% of a 16.7 ms frame budget, ample headroom; a 1024 mapSize
+  tier or frustum shrink is still not justified by the data. Revisit only if
+  V6P-1 shows frame-time pressure or the caster population grows materially
+  (more concurrent zombies near the player). Numbers in docs/shadow-cost.md.

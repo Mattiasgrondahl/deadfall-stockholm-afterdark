@@ -168,3 +168,30 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
 - Evidence: npm test 105/105 (0 fail, 0 skipped); verify-game 81 ok / 0 fail /
   0 skipped (FULL ACCEPTANCE); budgets unchanged (298 meshes / 17 lights /
   1 point). Committed 7b3e4f2.
+
+## V2P-6b — Shadows: real casters enabled + re-measured (commit 566e555, round 8)
+
+- Casters enabled (4 added lines across 3 files, single GPU-1 coder, first try):
+  - `src/world/City.js`: `ground.receiveShadow = true` after the ground rotation;
+    `mesh.castShadow = true` inside the building factory (covers every city box).
+  - `src/world/cityDressing.js`: `pole.castShadow = true` on the streetlight pole
+    (lamp head / halos / vehicles / barricades untouched).
+  - `src/game/Zombie.js`: `for (const p of parts) p.castShadow = true` — all six
+    body meshes per zombie.
+- Re-measured with `tools/shadow-cost.mjs` (child run + independent orchestrator
+  re-run; 180 effective samples/condition, player pinned at (12, y, 0)):
+  A (shadow ON) mean 0.994 / p95 1.2, 134 calls / 5044 tris;
+  B (no shadow) 0.808 / 1.0, 106 / 4128; C (low) 0.737 / 0.9, 106 / 4128.
+- Shadow-only real-caster cost (A−B): **0.186 ms/frame** (child's run 0.18 —
+  stable across 3 independent runs; the idle pass measured in V2P-6a was 0.095).
+  The shadow pass now does real work: +28 draw calls / +916 triangles.
+- Full-fallback saving (A−C): 0.257 in the orchestrator re-run, but C ≈ B within
+  0.07 ms in the other two runs — the non-shadow part of low quality saves
+  ~0–0.07 ms/frame.
+- 0 console/page errors; state 'playing' throughout; probe exit 0. No new
+  meshes or lights; budgets unchanged (298 meshes / 17 lights / 1 point).
+- Evidence: npm test 105/105 (0 fail / 0 skipped); verify-game 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE); npm run build green (known chunk-size warning
+  only).
+- Decision: shadows stay ON at high quality (0.186 ms ≈ 1.1% of a 16.7 ms frame
+  budget); no mapSize/frustum tier yet — see V2-DECISIONS.md.
