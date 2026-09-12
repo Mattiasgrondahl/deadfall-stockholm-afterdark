@@ -28,6 +28,7 @@ export class City {
       new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.95 })
     )
     ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
     group.add(ground)
 
     const building = (x, z, w, d, h, zone) => {
@@ -36,6 +37,7 @@ export class City {
         new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE[Math.floor(rnd() * 4)]).multiplyScalar(TINTS[zone]), roughness: 0.88, metalness: 0.05 })
       )
       mesh.position.set(x, h / 2, z)
+      mesh.castShadow = true
       group.add(mesh)
       collision.addAABB(x - w / 2 - 0.5, z - d / 2 - 0.5, x + w / 2 + 0.5, z + d / 2 + 0.5, h)
       this._aabbs.push(collision.aabbs[collision.aabbs.length - 1])

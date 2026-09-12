@@ -27,6 +27,7 @@ const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transp
   const anchors = []
   const place = (x, z) => {
     const pole = new THREE.Mesh(poleGeo, poleMat)
+    pole.castShadow = true
     pole.position.set(x, 2.5, z)
     group.add(pole)
     const head = new THREE.Mesh(headGeo, headMat)

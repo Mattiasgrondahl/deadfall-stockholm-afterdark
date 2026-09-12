@@ -154,6 +154,7 @@ export class Zombie {
     this.group.position.copy(this.position)
     scene.add(this.group)
     this._parts = parts
+    for (const p of parts) p.castShadow = true
     this._restMats = parts.map(() => mat)
     this._flashT = 0
   }
