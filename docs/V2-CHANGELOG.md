@@ -106,3 +106,39 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   0 skipped (FULL ACCEPTANCE headless, S1–S10); npm run build green (known
   chunk-size warning only); budgets unchanged — 270 meshes / 17 lights /
   1 point (no geometry added, no new lights).
+
+## V2P-5 — Streetlights: falloff + warm color + halos (commit b371d25, round 6)
+
+- Streetlight retune + cheap glow in `src/world/Lighting.js` +
+  `src/world/cityDressing.js` (GPU-1 coder, first-try success,
+  single-deliverable spec, edit-only, 4 files, 56 insertions / 12 deletions):
+  - PointLight pool: `35 cd → 55 cd`, reach `20 m → 14 m`, color
+    `0xffb878 → 0xffb066` (warmer sodium amber); decay 2 (inverse square)
+    and the 12/6 nearest-anchor pool logic untouched. Pool is now hotter and
+    tighter: ~13.8 at 2 m, ~1.1 at 7 m, hard cutoff at 14 m instead of
+    bleeding light out to 20 m.
+  - Head emissive matches the new lamp color: `0xffb878 @ 2.5 → 0xffb066 @ 3.2`
+    so fixture, light, and glow read as one warm source.
+  - 40 halo sprites (one per lamp head, y=5.2): one shared SpriteMaterial —
+    64×64 procedural radial-gradient CanvasTexture (white → transparent,
+    `document`-guarded so headless gets map=null), color 0xffb066,
+    AdditiveBlending, opacity 0.5, depthWrite false, scale 2.2 m. Sprites
+    billboard for free; static (no per-frame update), zero new lights, one
+    material shared by all 40.
+- Tests: `test/lighting.test.mjs` — existing 35 cd / 20 m assertions updated
+  to 55 / 14 (same strict form; the child caught these — they predated the
+  spec) + new block pinning all 12 pooled lights (0xffb066, 55 cd, 14 m,
+  decay 2). `test/city.test.mjs` — new block: exactly 40 sprites sharing one
+  SpriteMaterial (color/blending/depthWrite/opacity) and a head mesh with
+  emissive 0xffb066 @ 3.2; existing assertions untouched.
+- Evidence: npm test 105/105 (0 fail, 0 skipped); verify-game 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE headless, S1–S10); npm run build green (known
+  chunk-size warning only); budgets: sceneStats 258 → 298 meshes (258 real
+  meshes + 40 sprites counted via isMesh||isSprite) ≤ 600, 17 lights ≤ 40,
+  1 point ≤ 2500; no new lights, no per-frame allocation.
+- Baseline correction: a worktree probe of commit 608946f (pre-change) shows
+  clean headless boot = 258 meshes / 17 lights / 1 point — the "270 meshes"
+  recorded in rounds 1–5 was a stale over-count. Future counts use the
+  corrected 258 baseline (+40 here = 298).
+- Also synced a stale Lighting.js header comment (moon "0.8 lx" → "1.1 lx",
+  leftover from V2P-4).

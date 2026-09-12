@@ -49,3 +49,21 @@ Record important visual, audio, and architecture decisions as they are made
   peter-panning. mapSize / frustum / PCFSoft untouched: shadow-cost
   measurement is V2P-6, streetlight falloff + halo is V2P-5. New values are
   pinned in test/lighting.test.mjs so later tuning cannot regress silently.
+- V2P-5 streetlights: the goal was a punchier falloff + warmer color without
+  adding lights (17/40 in use; more PointLights = more per-pixel cost, and
+  V2P-6 will measure shadow/light cost before any additions). Choice: hotter,
+  tighter pool (55 cd / 14 m, decay 2 unchanged) + warm sodium amber 0xffb066
+  shared by the lamp light, the head emissive (now 3.2), and the halos — one
+  warm source everywhere. The glow is carried by 40 additive halo sprites
+  (one shared SpriteMaterial + procedural 64×64 radial canvas texture):
+  sprites billboard for free, are static (no per-frame work), add zero lights
+  and zero per-frame allocation, and cost only 40 scene objects (298/600
+  mesh-equivalent budget). Sprite over billboarded mesh: no per-frame lookAt
+  cost. Deliberate asymmetry: all 40 fixtures glow (fixture language) while
+  only the 12 nearest (6 on low quality) actually cast light — the same
+  asymmetry v1's emissive heads already had; halos reinforce "this street is
+  lit" even where the pooled light hasn't reached. Muzzle-flash color
+  (0xffb878 in Shotgun.js) intentionally untouched — V2P-8 territory.
+  Baseline correction discovered here: pre-change clean boot is 258 meshes,
+  not the 270 recorded in earlier rounds (worktree probe @ 608946f); the
+  corrected baseline is recorded in TASKS.md.
