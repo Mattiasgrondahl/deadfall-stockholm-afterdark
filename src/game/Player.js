@@ -28,6 +28,7 @@ export class Player {
     this.velocity = new THREE.Vector3()
     this.yaw = 0           // 0 = facing -Z (city center)
     this.pitch = 0
+    this._pitchKick = 0
     this.health = 100
     this.maxHealth = 100
     this.stamina = 100
@@ -39,6 +40,9 @@ export class Player {
   }
 
   setOnDeath(cb) { this._onDeath = cb }
+
+  /** Additive recoil pitch kick; decays in update(); capped. */
+  addPitchKick(a) { this._pitchKick = Math.min(0.03, this._pitchKick + a) }
 
   update(dt) {
     const st = this.inputState
@@ -87,7 +91,8 @@ export class Player {
     }
     const bobY = Math.sin(this._bobPhase) * 0.05 * this._bobAmp
     this.camera.position.set(this.position.x, this.position.y + bobY, this.position.z)
-    this.camera.rotation.set(this.pitch, this.yaw, 0)
+    this._pitchKick = Math.max(0, this._pitchKick - dt * 0.15)
+    this.camera.rotation.set(this.pitch + this._pitchKick, this.yaw, 0)
   }
 
   damage(amount, source) {
@@ -113,6 +118,7 @@ export class Player {
     this.velocity.set(0, 0, 0)
     this.yaw = 0
     this.pitch = 0
+    this._pitchKick = 0
     this.health = this.maxHealth
     this.stamina = 100
     this.isDead = false

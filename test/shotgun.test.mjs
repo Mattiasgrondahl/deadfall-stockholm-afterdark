@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
 import { Shotgun } from '../src/game/Shotgun.js'
+import { Player } from '../src/game/Player.js'
 
 function makeShotgun() {
   const scene = new THREE.Scene()
@@ -123,4 +124,21 @@ test('view model + dispose: 4 weapon meshes; detach from camera; double-safe', (
   s.dispose()
   assert.ok(!camera.children.includes(s.view), 'view detached from camera')
   s.dispose() // never throws when called twice
+})
+
+test('muzzle flash fades; camera kick via player', () => {
+  const { camera, collision, shotgun: s } = makeShotgun()
+  const player = new Player(camera, { turnX: 0, turnY: 0, forward: false, back: false, left: false, right: false, sprint: false }, collision, null)
+  s.update(0, player)   // binds player
+  s.shoot()
+  assert.ok(s.flash.visible)
+  assert.ok(s.flash instanceof THREE.Sprite)
+  assert.equal(s.flash.material.blending, THREE.AdditiveBlending)
+  assert.ok(s.flashLight.intensity > 0)
+  assert.equal(player._pitchKick, 0.018)
+  s.update(0.07, player)
+  assert.ok(!s.flash.visible); assert.equal(s.flashLight.intensity, 0); assert.equal(s.flash.material.opacity, 0)
+  player.update(0.5)    // kick decay lives in Player.update, not Shotgun.update
+  assert.equal(player._pitchKick, 0)
+  assert.equal(s.flash.material.map, null)  // headless: no document -> no texture
 })

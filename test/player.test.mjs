@@ -128,4 +128,19 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.strictEqual(camera.position.y, 1.7) // bob settles when at rest
 }
 
+{ // pitch kick applies, decays, caps, and resets
+  const { player, st, camera } = makePlayer()
+  player.addPitchKick(0.02); player.update(0)
+  assert.ok(Math.abs(camera.rotation.x - 0.02) < 1e-6, `kick ${camera.rotation.x}`)
+  player.update(0.1)
+  assert.ok(camera.rotation.x > 0 && camera.rotation.x < 0.02, `decaying ${camera.rotation.x.toFixed(4)}`)
+  player.update(0.5)
+  assert.strictEqual(camera.rotation.x, 0, 'kick fully decayed')
+  player.addPitchKick(0.05)
+  assert.strictEqual(player._pitchKick, 0.03, 'kick caps at 0.03')
+  player.reset()
+  assert.strictEqual(player._pitchKick, 0, 'reset clears kick')
+  assert.strictEqual(camera.rotation.x, 0)
+}
+
 console.log('player OK')

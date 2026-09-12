@@ -9,7 +9,8 @@ import { raySphere } from './ray.js'
 const MAG = 5, RESERVE = 30, DMG = 22, PELLETS = 6
 const HEAD_MULT = 2, RANGE = 18, SPREAD = 0.16
 const RELOAD_TIME = 1.4, FIRE_INTERVAL = 0.9
-const FLASH_TIME = 0.05, RECOIL_KICK = 0.09, RECOIL_DECAY = 0.15
+const FLASH_TIME = 0.07, RECOIL_KICK = 0.09, RECOIL_DECAY = 0.15
+const KICK = 0.018
 const UP = new THREE.Vector3(0, 1, 0)
 
 export class Shotgun {
@@ -64,12 +65,21 @@ export class Shotgun {
     stock.position.set(0, -0.02, 0.28)
     this.view.add(receiver, barrel, pump, stock)
 
-    // Muzzle flash: billboard quad + short-lived point light at barrel tip.
-    this.flash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.3, 0.3),
-      new THREE.MeshBasicMaterial({ color: 0xffcf8a, transparent: true, opacity: 0.9 })
-    )
+    // Muzzle flash: fading additive sprite + short-lived point light at barrel tip.
+    let flashMap = null
+    if (typeof document !== 'undefined') {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64
+      const g = c.getContext('2d')
+      const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30)
+      grad.addColorStop(0, 'rgba(255, 220, 160, 1)')
+      grad.addColorStop(0.4, 'rgba(255, 190, 120, 0.7)')
+      grad.addColorStop(1, 'rgba(255, 170, 90, 0)')
+      g.fillStyle = grad; g.fillRect(0, 0, 64, 64)
+      flashMap = new THREE.CanvasTexture(c)
+    }
+    this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffcf8a, map: flashMap, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }))
     this.flash.position.set(0, 0.02, -0.5)
+    this.flash.scale.setScalar(0.3)
     this.flash.visible = false
     this.view.add(this.flash)
     this.flashLight = new THREE.PointLight(0xffb878, 0, 8, 2)
@@ -90,7 +100,11 @@ export class Shotgun {
     this.view.position.set(0.26, -0.26 + bob, -0.55 + this._recoil)
     if (this._flashT > 0) {
       this._flashT -= dt
-      if (this._flashT <= 0) { this.flash.visible = false; this.flashLight.intensity = 0 }
+      const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
+      this.flash.material.opacity = 0.9 * f
+      this.flash.scale.setScalar(0.1 + 0.2 * f)
+      this.flashLight.intensity = 500 * f
+      if (this._flashT <= 0) this.flash.visible = false
     }
     if (this.isReloading) {
       this._reloadT -= dt
@@ -113,7 +127,10 @@ export class Shotgun {
     this.ammo--
     this._fireT = this._time + FIRE_INTERVAL
     this._recoil = RECOIL_KICK
+    if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
+    this.flash.material.opacity = 0.9
+    this.flash.scale.setScalar(0.3)
     this.flash.visible = true
     this.flashLight.intensity = 500
     this.camera.getWorldDirection(this._dir)
@@ -169,6 +186,8 @@ export class Shotgun {
     this.reserve = RESERVE
     this.isReloading = false
     this._flashT = 0
+    this.flash.material.opacity = 0.9
+    this.flash.scale.setScalar(0.3)
     this.flash.visible = false
     this.flashLight.intensity = 0
     this._recoil = 0
@@ -183,6 +202,11 @@ export class Shotgun {
         m.geometry.dispose()
         m.material.dispose()
       }
+    }
+    // Sprite has no .geometry, so the child loop above skips it: dispose explicitly.
+    if (this.flash.material) {
+      if (this.flash.material.map) this.flash.material.map.dispose()
+      this.flash.material.dispose()
     }
     this.flashLight.dispose()
   }
