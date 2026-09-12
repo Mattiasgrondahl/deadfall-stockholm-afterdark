@@ -67,3 +67,15 @@ Record important visual, audio, and architecture decisions as they are made
   Baseline correction discovered here: pre-change clean boot is 258 meshes,
   not the 270 recorded in earlier rounds (worktree probe @ 608946f); the
   corrected baseline is recorded in TASKS.md.
+- V2P-6a shadow cost: measured in a real browser (Playwright headless
+  Chromium, SwiftShader, 1280×720, 180 effective samples/condition):
+  shadow-only 0.095 ms/frame, full low-quality fallback 0.165 ms/frame.
+  Structural finding: the shadow pass is currently idle — no mesh in the
+  scene has `castShadow = true` (only the moon light, Lighting.js:31), so
+  the 2048² PCFSoft pass draws nothing every frame, and mapSize/frustum
+  tuning is moot until casters exist. DECISION: defer any quality-tier
+  decision (1024 mapSize, smaller frustum); instead V2P-6b enables real
+  casters (city buildings, zombies, streetlight poles + ground
+  `receiveShadow`) because the measured idle cost shows ample headroom, then
+  RE-MEASURE with tools/shadow-cost.mjs before any tier decision. Numbers
+  recorded in docs/shadow-cost.md for V6P-1.

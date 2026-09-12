@@ -142,3 +142,29 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   corrected 258 baseline (+40 here = 298).
 - Also synced a stale Lighting.js header comment (moon "0.8 lx" → "1.1 lx",
   leftover from V2P-4).
+
+## V2P-6a — Shadows: cost measurement (R7)
+
+- Method: real browser (Playwright headless Chromium, SwiftShader, 1280×720)
+  against the running dev server; player pinned at open street (12, y, 0),
+  health pinned; per-frame cost measured inside `renderer.render` via a
+  one-time wrapper (vsync-independent); 3 conditions × 3 runs, first 20
+  samples/run discarded (80 frames/run, 180 effective samples/condition).
+- Conditions: A = high (shadow ON, 12 point lights, 1500 snow);
+  B = high with `renderer.shadowMap.enabled = false` (isolates shadow cost);
+  C = `setQuality('low')` (shadow off, 6 lights, 750 snow).
+- Results (render-call ms/frame, mean / median / p95):
+  A 0.888 / 0.80 / 1.1 · B 0.793 / 0.70 / 1.0 · C 0.723 / 0.70 / 0.9;
+  `render.calls` 106 and `render.triangles` 4128 identical in all 9 runs.
+- Derived: shadow-only cost (A−B) = **0.095 ms/frame**;
+  full-fallback saving (A−C) = **0.165 ms/frame**.
+- KEY FINDING: the shadow pass is currently an *idle* pass — the only
+  `castShadow = true` in src/ is the moon light itself (Lighting.js:31); no
+  mesh ever casts, so the 2048² PCFSoft map renders nothing. Neither a 1024
+  mapSize tier nor a smaller frustum changes the measured cost today.
+  These numbers are a lower bound for a build that enables casters.
+- Files: `tools/shadow-cost.mjs` (149 L probe), `docs/shadow-cost.md`
+  (53 L findings + V6P-1 citation). No src/ changes.
+- Evidence: npm test 105/105 (0 fail, 0 skipped); verify-game 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE); budgets unchanged (298 meshes / 17 lights /
+  1 point). Committed 7b3e4f2.
