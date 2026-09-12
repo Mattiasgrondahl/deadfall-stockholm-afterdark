@@ -184,7 +184,7 @@ export class Game {
   setupScene() {
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(0x060912)
-    this.scene.fog = new THREE.FogExp2(0x0b1020, 0.032)
+    this.scene.fog = new THREE.FogExp2(0x0b1020, 0.022)
     this.camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 400)
     this.camera.position.set(0, 1.7, 12)
   }
