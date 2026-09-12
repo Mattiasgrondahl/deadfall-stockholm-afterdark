@@ -527,3 +527,14 @@ cross is marked as a danger corridor, plazas are marked safe with signage.
 - Final verification re-run (docs cannot affect code; recorded for the acceptance trail): npm test 117/117 (0 fail / 0 skipped); node tools/verify-game.mjs 81 ok / 0 fail / 0 skipped — FULL ACCEPTANCE S1–S10. npm run build green (known chunk-size warning only) and E2E 18/18 PASS with 0 console/page errors stand from V7P-3 (run before the build, per the dist-write full-reload caution).
 - Final budgets: clean boot 340 meshes + 68 sprites = 408 ≤ 600; worst case 24 concurrent zombies = 564 meshes ≤ 600; 17 ≤ 40 lights; 1500 snow points (+ blood pool ≤ 300 instances, 1 draw call) ≤ 2500; groan voices ≤ 4; concurrent zombies ≤ 18 cap ≤ 24 budget.
 - Acceptance audit: every docs/V2-PLAN.md L72–95 criterion now has concrete evidence in TASKS.md — build/tests/verify/E2E green, core gameplay regression-free, V2 visuals visible in the browser (night lighting, snow, landmarks, safe-vs-danger legibility, HUD), audio safe after user gesture with all listed feedbacks, zero reviewer must-fix defects, docs final. Version 2 is COMPLETE on branch v2.
+
+## Round 38 — Final acceptance probes (pointer lock, mouse look, movement, reload)
+
+The main E2E walk verifies game state by direct injection (positions, yaw/pitch, damage), so three additional headless-browser probes were run to verify the real input paths it cannot exercise:
+
+- Pointer lock: acquires on the START gesture and stays locked through play (`document.pointerLockElement === canvas`), zero console errors.
+- Mouse look: a `mousemove` event with `movementX = 100` dispatched inside the page produced a yaw delta of exactly `-0.22 rad = 100 × 0.0022` (`LOOK_SENS`) — the Input.js pointermove → turnX/turnY → Player.update → camera pipeline works at the intended sensitivity. Note: CDP-synthesized mouse movement (`page.mouse.move`) delivers zero movement deltas while pointer-locked in headless Chromium — a test-harness artifact, not a game defect; in-page-dispatched events exercise the real handler path.
+- Movement: holding W for 1.2 s moved the player 2.04 m; Shift+W for 1.2 s moved 3.48 m (1.7× walk speed, as designed).
+- Reload: one shotgun shot dropped the magazine 5→4; the reload (KeyR-equivalent input flag) refilled it to 5 and drew 1 from reserve (30→29), then cleared the reloading state.
+
+Kept `tools/e2e-mouselook2.mjs` and `tools/e2e-movement.mjs` as permanent acceptance probes (they cover input paths the state-injection E2E cannot reach headlessly); removed the superseded first probe. No game code changed.
