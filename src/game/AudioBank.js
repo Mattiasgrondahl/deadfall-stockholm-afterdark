@@ -30,7 +30,7 @@ export class AudioBank {
     // works headless; only the voice firing is gated on ctx.
     this._groanMap = new Map() // zombie -> { nextAt }
     this._groanClock = 0
-    this._groanVoices = [] // expiration times of active groan voices
+    this._groanVoices = [] // { at, panner } per active groan voice
     this._groanSeed = 4242
     // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
     // pure (advances with the per-frame updateGroans tick); each gust fires
@@ -323,6 +323,20 @@ export class AudioBank {
     }
   }
 
+  /** Write 3D coords onto the first spatial API shape in `list` that exists:
+   * a coord dict with plain numbers (c.x = ...), a coord dict of AudioParams
+   * (c.x.value = ...), or an AudioParam triad { x, y, z }. Returns true when
+   * written, false when no holder matches. */
+  _set3(list, x, y, z) {
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i]
+      if (!c) continue
+      if (typeof c.x === 'number') { c.x = x; c.y = y; c.z = z; return true }
+      if (c.x && typeof c.x.value === 'number') { c.x.value = x; c.y.value = y; c.z.value = z; return true }
+    }
+    return false
+  }
+
   /** V4P-2: direction-only PannerNode at world position pos (or the plain
    * master when no position / headless). Distance level is already applied by
    * the scheduler's manual falloff, so rolloffFactor is 0 — no double decay. */
@@ -334,15 +348,22 @@ export class AudioBank {
     p.refDistance = 1
     p.rolloffFactor = 0
     p.maxDistance = GROAN_CUTOFF
-    p.position.x.value = pos.x
-    p.position.y.value = 0.8
-    p.position.z.value = pos.z
+    // Position eras: modern positionX/Y/Z AudioParams, legacy setPosition(),
+    // or a `position` coord dict — no single shape exists in every engine, so
+    // fall back to unpanned master output when none match (never throws).
+    const triad = p.positionX ? { x: p.positionX, y: p.positionY, z: p.positionZ } : null
+    if (!this._set3([p.position, triad], pos.x, 0.8, pos.z)) {
+      if (typeof p.setPosition !== 'function') { p.disconnect(); return this.master }
+      p.setPosition(pos.x, 0.8, pos.z)
+    }
     p.connect(this.master)
     return p
   }
 
-  /** V4P-2: same voice as groan(), routed through a panner at pos. */
-  _playGroanPanned(type, distance, pos) {
+  /** V4P-2: same voice as groan(), routed through a panner at pos. `entry`
+   * (a { at, panner } slot owned by the scheduler) records the panner so
+   * updateGroans can disconnect it when the voice expires. */
+  _playGroanPanned(type, distance, pos, entry = null) {
     const spec = GROAN_SPECS[type]
     if (!this.ctx || !spec) return
     const fall = Math.max(0, 1 - distance / GROAN_CUTOFF)
@@ -350,6 +371,7 @@ export class AudioBank {
     if (gain <= 0.001) return
     this._resume()
     const dest = this._pannerAt(pos)
+    if (entry) entry.p = dest === this.master ? null : dest
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
     } else {
@@ -375,9 +397,15 @@ export class AudioBank {
     const scheduled = []
     this._groanClock += dt
     const t = this._groanClock
-    // Expire finished voices (concurrency accounting).
+    // Expire finished voices (concurrency accounting) and release their
+    // panners so per-groan PannerNodes do not accumulate on the master.
     if (this._groanVoices.length) {
-      this._groanVoices = this._groanVoices.filter(e => e > t)
+      const live = []
+      for (const e of this._groanVoices) {
+        if (e.at > t) { live.push(e); continue }
+        if (e.p && typeof e.p.disconnect === 'function') e.p.disconnect()
+      }
+      this._groanVoices = live
     }
     const px = playerPos ? playerPos.x : 0
     const pz = playerPos ? playerPos.z : 0
@@ -386,8 +414,13 @@ export class AudioBank {
     const L = this.ctx && this.ctx.listener
     if (L) {
       const sy = Math.sin(playerYaw), cy = Math.cos(playerYaw)
-      if (L.forward) { L.forward.x.value = sy; L.forward.y.value = 0; L.forward.z.value = -cy }
-      if (L.position) { L.position.x.value = px; L.position.y.value = 1.7; L.position.z.value = pz }
+      // Same era tolerance as _pannerAt: modern positionX/forwardX
+      // AudioParams, coord dicts elsewhere; silent no-op when the engine
+      // exposes neither shape (no throw).
+      const ft = L.forwardX ? { x: L.forwardX, y: L.forwardY, z: L.forwardZ } : null
+      const pt = L.positionX ? { x: L.positionX, y: L.positionY, z: L.positionZ } : null
+      this._set3([L.forward, ft], sy, 0, -cy)
+      this._set3([L.position, pt], px, 1.7, pz)
     }
     for (const z of zombies) {
       if (z.isDead) { this._groanMap.delete(z); continue }
@@ -405,9 +438,10 @@ export class AudioBank {
       if (t >= e.nextAt && this._groanVoices.length < GROAN_MAX_VOICES) {
         const gain = spec.gain * Math.max(0, 1 - d / GROAN_CUTOFF)
         e.nextAt = t + spec.base * (0.6 + 0.8 * this._groanRand())
-        this._groanVoices.push(t + spec.voice)
+        const entry = { at: t + spec.voice, p: null }
+        this._groanVoices.push(entry)
         scheduled.push({ type: z.type, distance: d, gain })
-        this._playGroanPanned(z.type, d, { x: z.position.x, z: z.position.z })
+        this._playGroanPanned(z.type, d, { x: z.position.x, z: z.position.z }, entry)
       }
     }
     // V4P-1a gust tick (piggybacks on this per-frame call): fire a gust when
