@@ -67,7 +67,7 @@ export class City {
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
   this.snow = createSnow()
-  group.add(this.snow.points)
+  for (const p of this.snow.points) group.add(p)
     this.group = group
     scene.add(group)
   }

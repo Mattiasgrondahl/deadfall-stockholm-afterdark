@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
 import { City } from '../src/world/City.js'
+import { createSnow } from '../src/world/snow.js'
 
 const scene = new THREE.Scene()
 const collision = new CollisionWorld(180, 180)
@@ -103,26 +104,65 @@ test('barricades: 8 in empty plazas, key points walkable', () => {
   assert.ok(collision.isWalkable(30, 12, 0.4), 'zombie spawn (30,12) blocked')
 })
 
-test('snow: 1500 flakes, update falls, setSnowCount changes drawRange', () => {
-  const pts = city.snow.points
-  assert.ok(pts.isPoints, 'snow is a THREE.Points')
-  const pos = pts.geometry.attributes.position
-  assert.equal(pos.count, 1500, '1500 flakes')
-  for (let i = 0; i < pos.count; i += 100) {
-    assert.ok(pos.getX(i) >= -30 && pos.getX(i) <= 30, 'x in box')
-    assert.ok(pos.getY(i) >= 0 && pos.getY(i) <= 60, 'y in box')
-    assert.ok(pos.getZ(i) >= -30 && pos.getZ(i) <= 30, 'z in box')
+test('snow: 3 depth layers, 1500 flakes, falls + drifts, setSnowCount scales layers', () => {
+  const layers = city.snow.points
+  assert.equal(layers.length, 3, '3 depth layers')
+  for (const pts of layers) assert.ok(pts.isPoints, 'layer is a THREE.Points')
+  let total = 0
+  for (const pts of layers) total += pts.geometry.attributes.position.count
+  assert.equal(total, 1500, '1500 flakes total')
+  for (const pts of layers) {
+    const pos = pts.geometry.attributes.position
+    for (let i = 0; i < pos.count; i += 100) {
+      assert.ok(pos.getX(i) >= -30 && pos.getX(i) <= 30, 'x in box')
+      assert.ok(pos.getY(i) >= 0 && pos.getY(i) <= 60, 'y in box')
+      assert.ok(pos.getZ(i) >= -30 && pos.getZ(i) <= 30, 'z in box')
+    }
   }
   city.update(new THREE.Vector3(5, 0, 5), 1)
-  assert.equal(pts.position.x, 5, 'points follow player x')
-  assert.equal(pts.position.z, 5, 'points follow player z')
-  for (let i = 0; i < pos.count; i += 100) {
-    assert.ok(pos.getY(i) >= 0 && pos.getY(i) < 60, 'y recycles after fall')
+  for (const pts of layers) {
+    assert.equal(pts.position.x, 5, 'layer follows player x')
+    assert.equal(pts.position.z, 5, 'layer follows player z')
+    const pos = pts.geometry.attributes.position
+    for (let i = 0; i < pos.count; i += 100) {
+      assert.ok(pos.getY(i) >= 0 && pos.getY(i) < 60, 'y recycles after fall')
+    }
   }
+  let range = 0
   city.setSnowCount(750)
-  assert.equal(pts.geometry.drawRange.count, 750, 'setSnowCount(750)')
+  for (const pts of layers) range += pts.geometry.drawRange.count
+  assert.equal(range, 750, 'setSnowCount(750) halves all layers')
   city.setSnowCount(1500)
-  assert.equal(pts.geometry.drawRange.count, 1500, 'setSnowCount(1500)')
+  range = 0
+  for (const pts of layers) range += pts.geometry.drawRange.count
+  assert.equal(range, 1500, 'setSnowCount(1500) restores all layers')
+})
+
+test('snow: deterministic gusts — twin instances identical; net drift +x, always falling', () => {
+  const a = createSnow()
+  const b = createSnow()
+  for (let f = 0; f < 30; f++) {
+    a.update(new THREE.Vector3(0, 0, 0), 0.5)
+    b.update(new THREE.Vector3(0, 0, 0), 0.5)
+  }
+  for (let l = 0; l < 3; l++) {
+    const pa = a.points[l].geometry.attributes.position.array
+    const pb = b.points[l].geometry.attributes.position.array
+    for (let i = 0; i < pa.length; i++) assert.equal(pa[i], pb[i], 'layer ' + l + ' flake ' + i + ' differs between twins')
+  }
+  const c = createSnow()
+  const near = c.points[0].geometry.attributes.position.array
+  let idx = -1
+  for (let i = 0; i < near.length / 3; i++) {
+    if (near[i * 3 + 1] > 2 && near[i * 3 + 1] < 58 && near[i * 3] < 27) { idx = i; break }
+  }
+  assert.ok(idx >= 0, 'reference near-layer flake exists (y in (2,58), x < 27)')
+  const x0 = near[idx * 3]
+  const y0 = near[idx * 3 + 1]
+  c.update(new THREE.Vector3(0, 0, 0), 0.5)
+  assert.ok(near[idx * 3 + 1] < y0 && near[idx * 3 + 1] >= 0, 'flake falls (no wrap for dt 0.5 from y>2)')
+  assert.ok(near[idx * 3] > x0, 'flake drifts toward +x (no wrap from x<27 over 0.5 s)')
+  a.dispose(); b.dispose(); c.dispose()
 })
 
 console.log(`city OK: ${collision.aabbs.length + 0} aabbs total, ${city.getSpawnPoints().length} spawn points`)

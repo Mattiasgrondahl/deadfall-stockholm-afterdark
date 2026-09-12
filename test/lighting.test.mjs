@@ -71,11 +71,11 @@ test('setQuality low: 6 lights, shadows off, snow halved; high restores', () => 
   li.setQuality('low')
   assert.equal(li.lights.filter(l => l.intensity === 55).length, 6)
   assert.equal(renderer.shadowMap.enabled, false)
-  assert.equal(city.snow.points.geometry.drawRange.count, 750, 'snow halved')
+  assert.equal(city.snow.points.reduce((n, p) => n + p.geometry.drawRange.count, 0), 750, 'snow halved')
   li.setQuality('high')
   assert.equal(li.lights.filter(l => l.intensity === 55).length, 12)
   assert.ok(renderer.shadowMap.enabled)
-  assert.equal(city.snow.points.geometry.drawRange.count, 1500, 'snow restored')
+  assert.equal(city.snow.points.reduce((n, p) => n + p.geometry.drawRange.count, 0), 1500, 'snow restored')
   li.dispose()
 })
 
