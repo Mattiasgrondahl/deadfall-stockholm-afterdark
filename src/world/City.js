@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { addStreetlights, addVehicles, addBarricades } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
-const PALETTE = [0x2a3546, 0x33405a, 0x3d4d6b, 0x2f3a4d]
+const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
+const TINTS = [1.12, 1.0, 0.9, 0.78]
 const SPAWNS = [
   [-85, 0], [85, 0], [0, -85], [0, 85],
   [-85, -85], [85, -85], [-85, 85], [85, 85],
@@ -24,15 +25,15 @@ export class City {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
-      new THREE.MeshStandardMaterial({ color: 0xdde4ee, roughness: 0.95 })
+      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.95 })
     )
     ground.rotation.x = -Math.PI / 2
     group.add(ground)
 
-    const building = (x, z, w, d, h) => {
+    const building = (x, z, w, d, h, zone) => {
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color: PALETTE[Math.floor(rnd() * 4)], roughness: 0.9 })
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE[Math.floor(rnd() * 4)]).multiplyScalar(TINTS[zone]), roughness: 0.88, metalness: 0.05 })
       )
       mesh.position.set(x, h / 2, z)
       group.add(mesh)
@@ -41,7 +42,7 @@ export class City {
     }
 
     // Center block (0,0): one 8x4x9 building; registered first -> collision.aabbs[0].
-    building(0, 0, 8, 4, 9)
+    building(0, 0, 8, 4, 9, 0)
 
     // 7x7 blocks (pitch 24, size 15): plaza or 4 quadrant buildings (2 m alleys).
     for (let i = 0; i < 7; i++) {
@@ -49,12 +50,13 @@ export class City {
         if (i === 3 && j === 3) continue
         const bx = (i - 3) * 24
         const bz = (j - 3) * 24
+        const zone = Math.max(Math.abs(i - 3), Math.abs(j - 3))
         if (rnd() < 0.4) continue // plaza: no buildings
         for (let q = 0; q < 4; q++) {
           if (rnd() >= 0.6) continue
           const qx = bx + (q & 1 ? 4.25 : -4.25)
           const qz = bz + (q & 2 ? 4.25 : -4.25)
-          building(qx, qz, 5.5, 5.5, 5 + Math.floor(rnd() * 18))
+          building(qx, qz, 5.5, 5.5, 5 + Math.floor(rnd() * 18), zone)
         }
       }
     }

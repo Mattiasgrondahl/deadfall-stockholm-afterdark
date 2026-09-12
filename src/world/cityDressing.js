@@ -9,7 +9,7 @@ const OFFSET = 4.2
 
 export function addStreetlights(group) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1c222c, roughness: 0.8 })
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
   const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
   const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb878, emissiveIntensity: 2.5 })
   const anchors = []
@@ -55,9 +55,9 @@ export function addVehicles(group, collision) {
   const bodyGeoH = new THREE.BoxGeometry(4.5, 1.0, 1.8)
   const cabinGeoH = new THREE.BoxGeometry(2.4, 0.9, 1.7)
   const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3)
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a4149, roughness: 0.9 })
-  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x46505e, roughness: 0.9 })
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.9 })
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333b46, roughness: 0.6, metalness: 0.25 })
+  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x3d4656, roughness: 0.65, metalness: 0.2 })
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.5, metalness: 0.35 })
   const aabbs = []
   for (const v of TABLE) {
     const bodyGeo = v.vertical ? bodyGeoV : bodyGeoH
@@ -112,7 +112,7 @@ export function addBarricades(group, collision) {
     { x: 72, z: -48 },    // 8
   ]
   const plankGeo = new THREE.BoxGeometry(2.5, 0.4, 0.4) // long axis = X
-  const plankMat = new THREE.MeshStandardMaterial({ color: 0x6b4f3a, roughness: 0.9 })
+  const plankMat = new THREE.MeshStandardMaterial({ color: 0x5f4734, roughness: 0.85, metalness: 0 })
   const aabbs = []
   for (const { x, z } of TABLE) {
     // 2 planks at the same (x, z): plank 1 center y = 0.5, plank 2 center y = 0.9
