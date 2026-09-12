@@ -509,7 +509,7 @@ cross is marked as a danger corridor, plazas are marked safe with signage.
 - Confirmed decisions: bloom KEEP (strength 0.25 / radius 0.5 / threshold 0.0 / full-res; measured restrained — 31.8% of pixels >8 luminance shift, mean +3.71/255, bright pixels 1.17% -> 1.30%, readability preserved; retune to V6P-1's threshold ≥ 0.8 / half-res remains an optional V7P-3 decision requiring a visual check); shadows ON, no tier (0.186 ms/frame ≈ 1.1% of a 16.7 ms frame); fog rho = 0.022 PASS (corner beacons are local spawn-zone markers by design).
 - Independent orchestrator re-run after the review: npm test 117/117 (0 fail / 0 skipped); verify-game 81 ok / 0 fail / 0 skipped FULL ACCEPTANCE; no src/test files touched.
 
-## V7P-3 — Final full-suite verification — commit af1a822
+## V7P-3 — Final full-suite verification — commit a916fc8
 - No code changes: final acceptance re-run of the entire V2 suite (dev :5173 live; E2E run BEFORE `npm run build` per the dist-write full-reload caution; hard 240 s cap on every browser command).
 - npm test: 117/117 pass, 0 fail, 0 skipped (216 ms).
 - E2E browser walk (tools/e2e-browser.mjs, headless Playwright Chromium): 18/18 PASS, 0 console/page errors — title → START → gameplay → weapon switch (axe/shotgun) → shotgun kill + blood + score (walker = 60) → pickup +8 → flashlight on/off + battery drain → pause → resume (pointer lock engaged) → game over ("Wave 1 — 1 kills — 60 pts") → restart (wave 1, kills 0, score 0).
