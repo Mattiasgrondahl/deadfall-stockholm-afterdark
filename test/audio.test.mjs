@@ -276,4 +276,38 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 
+// ---- V4P-1a: LCG-scheduled gusts ------------------------------------------
+{
+  // Determinism + bounded node growth: twin banks with the bed running,
+  // 40 s of empty-frame ticks -> identical gust schedules; every node
+  // created beyond the bed is a transient burst node (3 per gust).
+  const b1 = bankWithFakeCtx(), b2 = bankWithFakeCtx()
+  b1.startAmbient(); b2.startAmbient()
+  const bed = b1.ctx._created.length
+  const n1 = [], n2 = []
+  for (let i = 0; i < 60 * 40; i++) {
+    b1.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    b2.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    n1.push(b1._gustCount)
+    n2.push(b2._gustCount)
+  }
+  assert.deepStrictEqual(n1, n2)
+  assert.ok(b1._gustCount >= 2, `too few gusts in 40 s: ${b1._gustCount}`)
+  assert.strictEqual(b1.ctx._created.length, bed + 3 * b1._gustCount, 'persistent node growth')
+  b1.dispose(); b2.dispose()
+}
+{
+  // No gusts unless the bed is running; stopAmbient kills an in-flight burst.
+  const bank = bankWithFakeCtx()
+  for (let i = 0; i < 60 * 30; i++) bank.updateGroans(1 / 60, [], { x: 0, z: 0 })
+  assert.strictEqual(bank._gustCount, 0, 'gust fired without startAmbient')
+  bank.startAmbient()
+  for (let i = 0; i < 60 * 12; i++) bank.updateGroans(1 / 60, [], { x: 0, z: 0 })
+  assert.ok(bank._gustCount >= 1, 'no gust within the first 12 s')
+  bank.stopAmbient()
+  assert.strictEqual(bank._gustSrc, null, 'in-flight burst not cleared')
+  assert.strictEqual(bank._ambientOn, false)
+  bank.dispose()
+}
+
 console.log('audio OK')

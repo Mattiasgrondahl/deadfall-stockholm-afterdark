@@ -32,6 +32,15 @@ export class AudioBank {
     this._groanClock = 0
     this._groanVoices = [] // expiration times of active groan voices
     this._groanSeed = 4242
+    // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
+    // pure (advances with the per-frame updateGroans tick); each gust fires
+    // transient burst nodes only - the persistent bed stays 6 nodes.
+    this._ambClock = 0
+    this._gustSeed = 90909
+    this._gustNextAt = 2
+    this._gustCount = 0
+    this._gustGainNode = null
+    this._gustSrc = null
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -208,6 +217,12 @@ export class AudioBank {
     return this._groanSeed / 65537
   }
 
+  /** Seeded LCG in [0,1) for gust scheduling (independent of the groan LCG). */
+  _gustRand() {
+    this._gustSeed = (Math.imul(this._gustSeed, 48271) >>> 0) % 65537
+    return this._gustSeed / 65537
+  }
+
   /** Number of groan voices currently sounding (for tests/budget checks). */
   activeGroans() {
     return this._groanVoices.length
@@ -276,7 +291,46 @@ export class AudioBank {
         this.groan(z.type, d)
       }
     }
+    // V4P-1a gust tick (piggybacks on this per-frame call): fire a gust when
+    // due. No-op headless (ambient never starts without ctx).
+    this._ambClock += dt
+    if (this._ambientOn && this._gustGainNode && this._ambClock >= this._gustNextAt) {
+      this._scheduleGust(this._ambClock)
+    }
     return scheduled
+  }
+
+  /**
+   * Fire one LCG-drawn gust: ramp the ambient bed gain up and back, plus a
+   * low-passed noise "whoosh" burst. Burst nodes are transient (auto-stopped
+   * after dur); nothing persistent is added. Draw order is fixed.
+   */
+  _scheduleGust(t) {
+    if (!this.ctx) return
+    const at = this.ctx.currentTime
+    const dur = 1.5 + 3.0 * this._gustRand()
+    const peak = 0.07 + 0.04 * this._gustRand()
+    const gap = 3.0 + 9.0 * this._gustRand()
+    const p = this._gustGainNode.gain
+    p.cancelScheduledValues(at)
+    p.setValueAtTime(0.03, at)
+    p.linearRampToValueAtTime(peak, at + dur * 0.4)
+    p.linearRampToValueAtTime(0.03, at + dur)
+    const src = this.ctx.createBufferSource()
+    src.buffer = this._noiseBuffer
+    const f = this.ctx.createBiquadFilter()
+    f.type = 'lowpass'
+    f.frequency.value = 400
+    const b = this.ctx.createGain()
+    b.gain.setValueAtTime(0.001, at)
+    b.gain.linearRampToValueAtTime(0.03 + 0.06 * this._gustRand(), at + dur * 0.3)
+    b.gain.linearRampToValueAtTime(0.001, at + dur)
+    src.connect(f); f.connect(b); b.connect(this.master)
+    src.start(at)
+    src.stop(at + dur + 0.05)
+    this._gustSrc = src
+    this._gustCount++
+    this._gustNextAt = t + dur + gap
   }
 
   startAmbient() {
@@ -294,6 +348,7 @@ export class AudioBank {
     o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master)
     o1.start(t); o2.start(t); lfo.start(t)
     this._ambientNodes = { o1, o2, lfo, g }
+    this._gustGainNode = g
     this._ambientOn = true
   }
 
@@ -306,6 +361,11 @@ export class AudioBank {
     a.g.gain.linearRampToValueAtTime(0, t + 0.4)
     const stopAt = t + 0.5
     a.o1.stop(stopAt); a.o2.stop(stopAt); a.lfo.stop(stopAt)
+    if (this._gustSrc) {
+      try { this._gustSrc.stop(stopAt) } catch (err) {}
+    }
+    this._gustSrc = null
+    this._gustGainNode = null
     this._ambientOn = false
     this._ambientNodes = null
   }
@@ -326,6 +386,10 @@ export class AudioBank {
     this._groanMap = new Map()
     this._groanVoices = []
     this._groanClock = 0
+    this._ambClock = 0
+    this._gustNextAt = 2
+    this._gustSrc = null
+    this._gustGainNode = null
     if (this.ctx) {
       try { this.ctx.close() } catch (err) {}
       this.ctx = null
