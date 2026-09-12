@@ -117,7 +117,10 @@ export class WaveManager {
       }
       return
     }
-    const alive = game.zombies.filter(z => !z.isDead).length
+    // Per-frame: count without allocating (concurrent zombie cap is 24).
+    let alive = 0
+    const zs = game.zombies
+    for (let i = 0; i < zs.length; i++) if (!zs[i].isDead) alive++
     if (alive < this._prevAlive) this.killed += this._prevAlive - alive
     this._prevAlive = alive
     if (this.spawned > 0 && alive === 0) {
@@ -140,7 +143,10 @@ export class WaveManager {
 
   /** Debug: kill every live zombie and discard the unspawned remainder. */
   forceClear(game) {
-    const alive = game.zombies.filter(z => !z.isDead).length
+    // Per-frame: count without allocating (concurrent zombie cap is 24).
+    let alive = 0
+    const zs = game.zombies
+    for (let i = 0; i < zs.length; i++) if (!zs[i].isDead) alive++
     if (alive === 0 && this.spawned === 0) return
     for (const z of game.zombies) {
       if (!z.isDead) z.damage(z.maxHealth + 10)
