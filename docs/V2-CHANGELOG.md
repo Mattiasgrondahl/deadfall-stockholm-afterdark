@@ -195,3 +195,25 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   only).
 - Decision: shadows stay ON at high quality (0.186 ms ≈ 1.1% of a 16.7 ms frame
   budget); no mapSize/frustum tier yet — see V2-DECISIONS.md.
+
+## V2P-7 — Snow depth layers, wind drift, gusts (state at 73faccb)
+
+- Replaced the single uniform 1500-flake Points with 3 depth layers, each its
+  own THREE.Points in the same 60 m player-centered box: near 600 flakes
+  (size 0.13, opacity 0.85, fall 2.6 m/s, drift 1.0 m/s), mid 550 (0.08,
+  0.70, 2.0, 0.6), far 350 (0.045, 0.50, 1.4, 0.35) — near flakes read as
+  large/bright/fast, far flakes as small/dim/slow, giving a real depth gradient.
+- Per-flake variation from one seeded LCG stream (seed 7, unchanged): fall
+  multiplier in [0.7, 1.3], wobble phase/frequency/amplitude — no Math.random.
+- Deterministic global gust: g(t) ∈ [0,1] = 0.5 + 0.5·(0.65·sin(2πt/17) +
+  0.35·sin(2πt/4.3 + 1.7)), a pure function of accumulated dt; modulates the
+  +x drift (0.6×–2.0× of the band base), adds zero-mean ±z crosswind, and
+  slows falling to ×0.7 at gust peaks (updraft feel).
+- setCount scales every layer proportionally (750 → 300/275/175), so the
+  Lighting low-quality 1500→750 toggle keeps working unchanged.
+- Total flakes unchanged (1500 ≤ 2500 budget); +2 draw calls (1→3 Points);
+  no new meshes or lights; update() allocates nothing per frame.
+- Evidence: npm test 106/106 (0 fail / 0 skipped, +1 new twin-determinism
+  block); verify-game 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE); npm run
+  build green (known chunk-size warning only). Twin instances bit-identical
+  across all 1500 flakes after 30 updates.

@@ -89,3 +89,19 @@ Record important visual, audio, and architecture decisions as they are made
   tier or frustum shrink is still not justified by the data. Revisit only if
   V6P-1 shows frame-time pressure or the caster population grows materially
   (more concurrent zombies near the player). Numbers in docs/shadow-cost.md.
+- V2P-7 snow: three separate THREE.Points (near/mid/far) instead of per-vertex
+  sizing, because PointsMaterial has no per-flake size attribute (a custom
+  shader would add risk for a cosmetic gain). Cost is +2 draw calls; Points
+  objects are not counted against the mesh budget, and per-frame CPU stays
+  proportional to flake count, not layer count. Total flakes kept at 1500
+  (not raised toward the 2500 budget) so Lighting.setQuality's 1500→750
+  low-quality toggle keeps its meaning and frame cost stays flat — depth is
+  bought with size/opacity/fall-speed differences, not more flakes. Ground
+  splash (mentioned in the V2-PLAN phase line) deferred: flakes wrap instead
+  of landing, so a real splash would need per-flake ground-collision checks
+  against city AABBs every frame — expensive, and the acceptance criterion
+  only requires that snow works without obscuring gameplay. Revisit as a
+  micro-task before V7P-1 if budget remains. Determinism: the gust is a pure
+  function of accumulated dt and wobble uses LCG-drawn phase/frequency, so
+  identical dt sequences on two fresh instances are bit-identical — pinned by
+  the new twin test.
