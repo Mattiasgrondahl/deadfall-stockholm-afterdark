@@ -133,3 +133,19 @@ Record important visual, audio, and architecture decisions as they are made
   those lines are guaranteed walkable. Spire/beacon castShadow=true
   extends the landmark silhouettes into the moon shadow pass (tiny
   geometry, negligible cost per V2P-6b); strips castShadow=false.
+- V3P-1a plaza halos (safe-zone language): open plazas read as safe/lit
+  gathering areas against streetlight-lit streets and unlit alleys, using
+  additive ground glow instead of another light source — 22 halo sprites at
+  the deterministic plaza centers (LCG seed 7, collected in City.js at layout
+  time via a push that consumes no rnd() draw, so the city layout stays
+  byte-identical), one shared SpriteMaterial (0xffd9a5, opacity 0.35, y=0.5,
+  scale 6). Color choice: a pale amber distinct from streetlight 0xffb066
+  (fixture pools), spire 0xffc878 (landmark), and beacon 0xff4433 (caution),
+  keeping the V2P-9 color language coherent — plaza amber = safe open space —
+  and keeping the color-filtered test assertions (40/1/4) untouched. Ground
+  level (y=0.5) rather than streetlight head height: the glow marks the
+  ground you stand on, reads as "lit plaza floor", and a 6 m sprite at plaza
+  center (15×15 blocks) stays restrained. No lights, no AABBs, no Math.random,
+  no per-frame work: +22 sprites only (boot 272 meshes + 68 sprites = 340 ≤
+  600; 17 lights, 3 points unchanged). getPlazaCenters() exposes the set for
+  V3P-1b signage placement.

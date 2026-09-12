@@ -289,3 +289,37 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   probe): 272 meshes + 46 sprites = 318 ≤ 600 / 17 lights ≤ 40 / 3 Points
   ≤ 2500 — exact delta +15 meshes / +5 sprites vs the 257/41 baseline,
   zero new lights.
+
+## V3P-1a — Plaza vs street lighting language (commit b4fda3d, round 13)
+
+- Safe-vs-danger visual language, first half: open plazas read as safe/lit
+  gathering areas against streetlight-lit streets and unlit alleys — pure
+  emissive glow, no new PointLights (GPU-1 coder, first-try success, 1
+  documented deviation: the new test block builds its own City instance
+  because the final pre-existing block disposes the shared one, matching the
+  snow-gust test pattern).
+- `src/world/cityDressing.js` (+13 L): `addPlazaHalos(group, centers)` — one
+  shared SpriteMaterial (0xffd9a5, opacity 0.35, AdditiveBlending,
+  depthWrite false, map from the shared document-guarded makeGlowMap), one
+  sprite per plaza center at y=0.5, scale (6, 6, 1). Color 0xffd9a5 is a
+  pale amber deliberately distinct from streetlight 0xffb066, spire
+  0xffc878, and beacon 0xff4433, so the V2P-9 color language stays coherent
+  (amber = safe open space) and the color-filtered test assertions keep
+  passing.
+- `src/world/City.js` (+4 L): plaza centers collected at layout time — the
+  `rnd() < 0.4` branch now pushes {x, z} to `plazas` before continuing (the
+  push consumes no LCG draw, so the city layout is byte-identical);
+  `addPlazaHalos(group, plazas)` + `this.plazas` after addLandmarks;
+  `getPlazaCenters()` getter (available to V3P-1b signage and HUD work).
+- Determinism: the plaza set is LCG-fixed (seed 7). A Node replay of the
+  exact draw order (center-building palette draw; 1 draw per block; 1+2 per
+  quadrant if built) yields exactly 22 plazas, cross-validated against the
+  87-AABB ground truth (1 center + 66 quadrant + 12 vehicle + 8 barricade).
+- Tests: `test/city.test.mjs` +1 block — 22 halos, one shared material,
+  every halo at a getPlazaCenters() entry (y=0.5, scale 6), 87 aabbs
+  unchanged, 67 total sprites in the city group.
+- Evidence: focused 16/16; npm test 109/109 (0 fail / 0 skipped);
+  verify-game 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE); npm run build
+  green (known chunk-size warning only). Budgets: 272 meshes + 68 sprites =
+  340 ≤ 600 / 17 lights ≤ 40 / 3 Points ≤ 2500 — exact delta +22 sprites,
+  zero new meshes/lights/aabbs.
