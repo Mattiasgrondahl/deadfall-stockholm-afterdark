@@ -105,3 +105,14 @@ Record important visual, audio, and architecture decisions as they are made
   function of accumulated dt and wobble uses LCG-drawn phase/frequency, so
   identical dt sequences on two fresh instances are bit-identical — pinned by
   the new twin test.
+- V2P-8 sprite over quad for the muzzle flash: an additive radial-glow
+  sprite reads far better in the dark than a flat opaque square and
+  billboards automatically; the pooled PointLight (already in the 17-light
+  budget) stays the only dynamic flash light — no new lights. depthTest
+  false keeps the flash visible through the barrel. The pitch kick lives
+  on Player (addPitchKick + decay in update) because Player.update writes
+  camera.rotation every frame — a weapon-side offset would be overwritten
+  the same frame. Kick call sites are typeof-guarded so the plain-object
+  fake players in axe/weaponbank tests stay valid. Tracer deferred: it is
+  optional in the plan and would add a world-space mesh pool with
+  per-blast orientation; revisit after V6P-1 establishes perf headroom.

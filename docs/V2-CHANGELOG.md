@@ -217,3 +217,35 @@ Completed Version 2 improvements (append one entry per landed task, with commit 
   block); verify-game 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE); npm run
   build green (known chunk-size warning only). Twin instances bit-identical
   across all 1500 flakes after 30 updates.
+
+## V2P-8 — Firing feel: muzzle flash upgrade + camera pitch kick (commit 9975622, round 10)
+
+- Muzzle flash (Shotgun.js): flat opaque 0.3 m quad → additive-blend
+  THREE.Sprite with a procedural 64×64 radial-glow CanvasTexture
+  (255,220,160 → transparent), document-guarded (map null headless,
+  same pattern as cityDressing halos), depthTest/depthWrite off so it is
+  never clipped by the barrel. Fade: opacity 0.9→0, scale 0.3→0.1,
+  light intensity 500→0 all linear over FLASH_TIME (0.05 → 0.07 s),
+  instead of the old constant-on-then-snap-off. shoot() resets to full
+  state so a render between shoot() and the next update sees a full flash.
+- Camera pitch kick: new Player.addPitchKick(a) (cap 0.03 rad), decayed
+  at 0.15 rad/s in Player.update and added to camera.rotation.x
+  (which Player writes every frame, so the kick lives on the Player, not
+  the weapon). Shotgun 0.018 rad (~0.12 s), axe 0.008 rad (~0.05 s).
+  Kick call sites are typeof-guarded so existing fake-player tests
+  (plain objects without the method) keep passing.
+- Dispose fix: Sprite has no .geometry, so the Shotgun.dispose() child
+  loop skipped it — material + texture now disposed explicitly.
+- No new lights (the existing pooled flashLight is reused), no Game.js
+  wiring (Player.update already runs every frame before weapon.update),
+  no Math.random, no per-frame allocations.
+- Tests: +1 shotgun block (Sprite type, additive blend, fade to 0,
+  map null headless, kick 0.018→0 via player.update) +1 player block
+  (apply/decay/cap/reset).
+- Tracer (explicitly optional in the plan) deferred — revisit after V6P-1
+  if perf headroom shows.
+- Evidence: npm test 107/107 (0 fail / 0 skipped); verify-game 81 ok /
+  0 fail / 0 skipped (FULL ACCEPTANCE); npm run build green (known
+  chunk-size warning only). Budgets: 257 meshes + 41 sprites = 298
+  (≤ 600; exact delta −1 mesh / +1 sprite) / 17 lights (≤ 40) / 3 Points
+  (≤ 2500), independently re-probed headless.
