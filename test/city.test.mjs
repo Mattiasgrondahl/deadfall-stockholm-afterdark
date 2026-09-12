@@ -222,4 +222,26 @@ test('dispose removes group from scene and all city aabbs', () => {
   assert.ok(city._disposed, '_disposed flag set')
 })
 
+test('plaza halos: 22 shared amber (0xffd9a5) ground halos at plaza centers; 87 aabbs, 67 total sprites', () => {
+  const scene = new THREE.Scene()
+  const collision = new CollisionWorld(180, 180)
+  const city = new City(scene, collision, { canvasFactory: () => null })
+  const halos = []
+  city.group.traverse(o => { if (o.isSprite && o.material.color.getHex() === 0xffd9a5) halos.push(o) })
+  assert.equal(halos.length, 22, `expected 22 plaza halos, got ${halos.length}`)
+  assert.equal(new Set(halos.map(h => h.material)).size, 1, 'all plaza halos share one SpriteMaterial')
+  const centers = city.getPlazaCenters()
+  assert.equal(centers.length, 22, `getPlazaCenters ${centers.length}`)
+  for (const h of halos) {
+    assert.ok(Math.abs(h.position.y - 0.5) < 1e-6, `halo y ${h.position.y}`)
+    assert.ok(h.scale.x === 6 && h.scale.y === 6 && h.scale.z === 1, `halo scale ${h.scale.x},${h.scale.y},${h.scale.z}`)
+    assert.ok(centers.some(c => Math.abs(c.x - h.position.x) < 1e-6 && Math.abs(c.z - h.position.z) < 1e-6), `halo (${h.position.x},${h.position.z}) not a plaza center`)
+  }
+  assert.equal(collision.aabbs.length, 87, `expected 87 aabbs, got ${collision.aabbs.length}`)
+  let sprites = 0
+  city.group.traverse(o => { if (o.isSprite) sprites++ })
+  assert.equal(sprites, 67, `expected 67 total sprites, got ${sprites}`)
+  city.dispose()
+})
+
 

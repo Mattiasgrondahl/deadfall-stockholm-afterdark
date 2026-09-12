@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addVehicles, addBarricades, addLandmarks } from './cityDressing.js'
+import { addStreetlights, addVehicles, addBarricades, addLandmarks, addPlazaHalos } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -22,6 +22,7 @@ export class City {
 
     const group = new THREE.Group()
     group.name = 'city'
+    const plazas = []
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
@@ -53,7 +54,7 @@ export class City {
         const bx = (i - 3) * 24
         const bz = (j - 3) * 24
         const zone = Math.max(Math.abs(i - 3), Math.abs(j - 3))
-        if (rnd() < 0.4) continue // plaza: no buildings
+        if (rnd() < 0.4) { plazas.push({ x: bx, z: bz }); continue } // plaza: no buildings
         for (let q = 0; q < 4; q++) {
           if (rnd() >= 0.6) continue
           const qx = bx + (q & 1 ? 4.25 : -4.25)
@@ -67,6 +68,8 @@ export class City {
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
   addLandmarks(group)
+  addPlazaHalos(group, plazas)
+  this.plazas = plazas
   this.snow = createSnow()
   for (const p of this.snow.points) group.add(p)
     this.group = group
@@ -74,6 +77,7 @@ export class City {
   }
 
   getSpawnPoints() { return SPAWNS }
+  getPlazaCenters() { return this.plazas }
 
   setSnowCount(n) { this.snow.setCount(n) }
 

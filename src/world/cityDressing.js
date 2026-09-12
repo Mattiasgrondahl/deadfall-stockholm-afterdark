@@ -189,3 +189,16 @@ export function addLandmarks(group) {
     group.add(strip)
   }
 }
+
+// Task V3P-1a: safe-zone language - one shared additive halo material,
+// soft amber ground glow at every plaza center. No lights, no aabbs.
+export function addPlazaHalos(group, centers) {
+  const glow = makeGlowMap()
+  const mat = new THREE.SpriteMaterial({ color: 0xffd9a5, map: glow, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })
+  for (const c of centers) {
+    const halo = new THREE.Sprite(mat)
+    halo.position.set(c.x, 0.5, c.z)
+    halo.scale.set(6, 6, 1)
+    group.add(halo)
+  }
+}
