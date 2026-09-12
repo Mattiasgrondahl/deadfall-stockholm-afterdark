@@ -113,8 +113,9 @@ src/styles.css         UI styling
 src/game/              Game (loop/state), Input, Player, Zombie,
                        WaveManager, CollisionWorld, HUD, Screens,
                        WeaponBank, Axe, Shotgun, AmmoDrops, Flashlight,
-                       AudioBank, Blood, Score
-src/world/             City (procedural environment), Lighting
+                       AudioBank, Blood, Score, PostFX (optional bloom), ray
+src/world/             City (procedural environment), cityDressing, Lighting,
+                       sky, snow
 test/                  node:test logic tests + headless playthrough (verify-game.mjs)
 docs/                  architecture + research notes
 ```
@@ -126,7 +127,11 @@ docs/                  architecture + research notes
 - Night atmosphere: exponential fog, moonlight with dynamic shadows, a small
   pool of streetlights that follow the player, generated ambient audio.
 - Performance: instanced/Points snow, bounded zombie count, light pooling,
-  no per-frame allocations in hot loops, delta-time movement.
+  no per-frame allocations in hot loops, delta-time movement. An optional
+  restrained bloom pass (EffectComposer + UnrealBloomPass, strength 0.25,
+  full resolution) runs after the scene render; it is disabled automatically
+  in headless runs, costs ~1 ms/frame, and leaves all documented budgets
+  intact.
 
 ## Agent code navigation (dev tooling)
 
