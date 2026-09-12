@@ -359,3 +359,9 @@ cross is marked as a danger corridor, plazas are marked safe with signage.
   PLAYWRIGHT_BROWSERS_PATH set). Budgets: city group 272 → 320 meshes
   (+48), +0 sprites/lights/aabbs; S8 scene stats 380 meshes + 68 sprites =
   448 ≤ 600, 17 lights ≤ 40, 3 Points ≤ 2500.
+
+## V3P-2 — Zombie eye glow (commit 5d63fad, round 15)
+
+- Eye glow for visibility: two small unlit MeshBasicMaterial boxes nested under each zombie's head mesh at local (±0.075, 0.03, 0.14) — local +z faces the player (group.rotation.y = atan2(dx, dz)), front face protrudes ~0.01 m past the head face for all three head scales (walker ×1, shambler ×0.9, screamer ×1.15). Per-type shared material EYEMAT (walker 0x8aff5e green / shambler 0xd0ff4f yellow-green / screamer 0xff3b2e red), one shared EYE box geometry; on fatal damage both eyes dim to shared DEADEYEMAT 0x2a2a2a so corpses do not glow.
+- Nesting under the head (not the group) preserves the load-bearing 6-child body invariant and every existing test (group.children.length === 6); eyes are not in _parts so hit-flash/death material swaps never touch them; getHitboxes() byte-identical — hit detection untouched.
+- Budgets: +2 eye meshes per zombie; 10-zombie (wave 3) S8 scene = 400 meshes + 68 sprites = 468 ≤ 600 (+20 over the 380 baseline); 0 lights, 0 sprites, 0 points added. npm test 111/111, verify 81/0/0, build green.

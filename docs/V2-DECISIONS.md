@@ -169,3 +169,5 @@ Record important visual, audio, and architecture decisions as they are made
   test() block individually (city.test.mjs went 16 → 17 blocks), so npm
   test totals grow by 1 per added block (109 → 110); the round-10
   "plain script counts as one test" note was wrong.
+
+- V3P-2 eye placement: eyes are nested as children of the head mesh, not siblings in the zombie group. The shared-materials and per-type-body tests pin group.children.length === 6 and the hit-flash/death swap loops iterate _parts only; nesting also inherits per-type head scale and pose (hunched shambler) for free and leaves hitbox anchors untouched. Dead-corpse glow is killed by a one-line swap to shared DEADEYEMAT in the fatal damage branch — otherwise sinking corpses keep glowing like live threats.
