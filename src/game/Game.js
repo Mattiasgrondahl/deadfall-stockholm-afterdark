@@ -15,6 +15,7 @@ import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
+import { PostFX } from './PostFX.js'
 
 export const GameState = Object.freeze({
   TITLE: 'title',
@@ -194,6 +195,7 @@ export class Game {
     const w = this.env.window.innerWidth
     const h = this.env.window.innerHeight
     this.renderer.setSize(w, h)
+    if (this.postfx) this.postfx.setSize(w, h)
     // Camera is created in setupScene(); guard so an early resize (before the
     // camera exists) sizes the renderer without throwing.
     if (this.camera) {
@@ -224,6 +226,8 @@ export class Game {
     this.lighting = new Lighting(this.scene, this.city, this.renderer, this.quality)
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
+    // WIRING:POSTFX (V2P-10b): restrained bloom; no-op headless (StubRenderer)
+    this.postfx = new PostFX(this.scene, this.camera, this.renderer, { strength: 0.25 })
     // WIRING:AUDIO
     this.audio = new AudioBank()
     if (this.player) this.player.audio = this.audio
@@ -376,7 +380,9 @@ export class Game {
   }
 
   render() {
-    if (this.renderer && this.scene) this.renderer.render(this.scene, this.camera)
+    if (!this.renderer || !this.scene) return
+    if (this.postfx && this.postfx.enabled) this.postfx.render()
+    else this.renderer.render(this.scene, this.camera)
   }
 
   rendererStats() {
