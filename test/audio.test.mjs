@@ -114,19 +114,45 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 {
-  // startAmbient() builds 6 nodes and toggles the flag; stopAmbient() clears it
+  // startAmbient() builds 10 nodes (6 wind + 4 city hum) and toggles the flag;
   const bank = bankWithFakeCtx()
   assert.strictEqual(bank._ambientOn, false)
   const before = bank.ctx._created.length
   bank.startAmbient()
   assert.strictEqual(bank._ambientOn, true)
-  assert.ok(bank.ctx._created.length - before >= 6)
+  assert.ok(bank.ctx._created.length - before >= 10)
   bank.startAmbient()               // idempotent: no second bed
-  assert.strictEqual(bank.ctx._created.length - before, 6)
+  assert.strictEqual(bank.ctx._created.length - before, 10)
   bank.stopAmbient()
   assert.strictEqual(bank._ambientOn, false)
   bank.stopAmbient()                // safe to repeat
   bank.dispose()
+}
+{
+  // V4P-1b: city hum subgraph - 4 fixed nodes, idempotent, cleared on stop,
+  // headless-safe.
+  const bank = bankWithFakeCtx()
+  const before = bank.ctx._created.length
+  bank.startAmbient()
+  assert.strictEqual(bank.ctx._created.length - before, 10)
+  const h = bank._humNodes
+  assert.ok(h, 'hum nodes missing')
+  assert.strictEqual(h.ho1.frequency.value, 32)
+  assert.strictEqual(h.ho2.frequency.value, 48)
+  assert.strictEqual(h.hg.gain.value, 0.015)
+  bank.startAmbient()               // idempotent: no second hum
+  assert.strictEqual(bank.ctx._created.length - before, 10)
+  bank.stopAmbient()
+  assert.strictEqual(bank._humNodes, null, 'hum not cleared on stop')
+  bank.stopAmbient()                // safe to repeat
+  bank.dispose()
+}
+{
+  // Headless bank: startAmbient stays a no-op and never builds hum nodes.
+  const bank = new AudioBank()
+  bank.startAmbient(); bank.stopAmbient()
+  assert.strictEqual(bank._ambientOn, false)
+  assert.strictEqual(bank._humNodes, null)
 }
 {
   // muted routing: setMuted drives the master gain; toggle flips it

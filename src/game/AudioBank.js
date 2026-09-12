@@ -34,13 +34,15 @@ export class AudioBank {
     this._groanSeed = 4242
     // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
     // pure (advances with the per-frame updateGroans tick); each gust fires
-    // transient burst nodes only - the persistent bed stays 6 nodes.
+    // transient burst nodes only - the persistent bed stays fixed (10 nodes:
+    // 6 wind + 4 city hum).
     this._ambClock = 0
     this._gustSeed = 90909
     this._gustNextAt = 2
     this._gustCount = 0
     this._gustGainNode = null
     this._gustSrc = null
+    this._humNodes = null
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -347,6 +349,16 @@ export class AudioBank {
     const o2 = this.ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 57
     o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master)
     o1.start(t); o2.start(t); lfo.start(t)
+    // V4P-1b: distant city hum/rumble - fixed 4-node subgraph (two sub-bass
+    // sines through a 120 Hz lowpass, gain below the wind bed), separate from
+    // the gust-modulated wind gain so gusts swell only the wind.
+    const ho1 = this.ctx.createOscillator(); ho1.type = 'sine'; ho1.frequency.value = 32
+    const ho2 = this.ctx.createOscillator(); ho2.type = 'sine'; ho2.frequency.value = 48
+    const hlp = this.ctx.createBiquadFilter(); hlp.type = 'lowpass'; hlp.frequency.value = 120
+    const hg = this.ctx.createGain(); hg.gain.value = 0.015
+    ho1.connect(hlp); ho2.connect(hlp); hlp.connect(hg); hg.connect(this.master)
+    ho1.start(t); ho2.start(t)
+    this._humNodes = { ho1, ho2, hlp, hg }
     this._ambientNodes = { o1, o2, lfo, g }
     this._gustGainNode = g
     this._ambientOn = true
@@ -361,6 +373,14 @@ export class AudioBank {
     a.g.gain.linearRampToValueAtTime(0, t + 0.4)
     const stopAt = t + 0.5
     a.o1.stop(stopAt); a.o2.stop(stopAt); a.lfo.stop(stopAt)
+    const h = this._humNodes
+    if (h) {
+      h.hg.gain.cancelScheduledValues(t)
+      h.hg.gain.setValueAtTime(h.hg.gain.value, t)
+      h.hg.gain.linearRampToValueAtTime(0, t + 0.4)
+      h.ho1.stop(stopAt); h.ho2.stop(stopAt)
+      this._humNodes = null
+    }
     if (this._gustSrc) {
       try { this._gustSrc.stop(stopAt) } catch (err) {}
     }
@@ -390,6 +410,7 @@ export class AudioBank {
     this._gustNextAt = 2
     this._gustSrc = null
     this._gustGainNode = null
+    this._humNodes = null
     if (this.ctx) {
       try { this.ctx.close() } catch (err) {}
       this.ctx = null
