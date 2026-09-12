@@ -57,7 +57,7 @@ const POSE2 = {
   screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT }
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal }
 
 const ATTACK_RANGE = 1.3
 const SEPARATION_DIST = 0.9
@@ -68,14 +68,15 @@ const CLEAR_DIST = 0.75  // m to keep sliding in free space before resuming chas
 
 /**
  * True contact normal for a circle against the AABBs, choosing the contact
- * that most opposes the wanted direction (deepest penetration breaks ties).
- * Returns {x, z} or null if no box is actually in contact.
+ * that most opposes the wanted direction (first AABB wins exact ties).
+ * Writes {x, z} into the caller-owned scratch object out and returns out,
+ * or returns null if no box is actually in contact. No allocations per call.
  */
-function contactNormal(pos, aabbs, radius, wantX, wantZ) {
-  let best = null
+function contactNormal(pos, aabbs, radius, wantX, wantZ, out) {
   let bestDot = Infinity
-  let bestPen = 0
-  for (const b of aabbs) {
+  let has = false
+  for (let i = 0; i < aabbs.length; i++) {
+    const b = aabbs[i]
     const cx = pos.x < b.minX ? b.minX : (pos.x > b.maxX ? b.maxX : pos.x)
     const cz = pos.z < b.minZ ? b.minZ : (pos.z > b.maxZ ? b.maxZ : pos.z)
     const dx = pos.x - cx
@@ -95,11 +96,10 @@ function contactNormal(pos, aabbs, radius, wantX, wantZ) {
       nx = m === dL ? -1 : (m === dR ? 1 : 0)
       nz = m === dT ? -1 : (m === dB ? 1 : 0)
     }
-    const pen = d > 1e-9 ? radius - d : radius
     const dot = nx * wantX + nz * wantZ
-    if (dot < bestDot) { bestDot = dot; best = { x: nx, z: nz }; bestPen = pen }
+    if (dot < bestDot) { bestDot = dot; has = true; out.x = nx; out.z = nz }
   }
-  return best
+  return has ? out : null
 }
 
 export class Zombie {
@@ -122,6 +122,8 @@ export class Zombie {
     this._clearDist = 0
     this._blockedT = 0
     this._flips = 0
+    // Per-frame scratch for contactNormal (avoids per-frame {x, z} allocs).
+    this._cn = { x: 0, z: 0 }
     // Deterministic per-zombie phase (fixed-seed LCG from spawn coords + type).
     // Stored here for later tasks (walk animation, groan scheduling). Math.imul
     // keeps the LCG exact: later iterations exceed 2^53 under plain '*'.
@@ -243,7 +245,7 @@ export class Zombie {
     const netX = this.position.x - preX
     const netZ = this.position.z - preZ
     const netLen = Math.hypot(netX, netZ)
-    const n = contactNormal(this.position, collision.aabbs, COLLIDER_RADIUS, wantX, wantZ)
+    const n = contactNormal(this.position, collision.aabbs, COLLIDER_RADIUS, wantX, wantZ, this._cn)
     const pickTangent = () => {
       let tx, tz
       if (n === null) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -211,4 +211,28 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
   assert.equal(zombie._eyes.length, 2)
   zombie.damage(zombie.maxHealth + 10)
   for (const e of zombie._eyes) assert.equal(e.material, DEADEYEMAT)
+})
+
+test('contactNormal writes into caller scratch (no per-frame allocs)', () => {
+  const { collision } = makeZombie('walker', 0, 0, 1)
+  const out = { x: 0, z: 0 }
+  const pos = new THREE.Vector3(0, 0, 0)
+  // Box A on the west (closest point (0.4, 0), normal (-1, 0)) and box B on
+  // the south (closest point (0, -0.4), normal (0, -1)); zombie radius 0.6.
+  collision.addAABB(0.4, -1, 4, 1, 5)
+  collision.addAABB(-1, -0.4, 1, 4, 5)
+  // Most-opposing normal wins: wanting south, A (dot 0) beats B (dot 1).
+  assert.equal(contactNormal(pos, collision.aabbs, 0.6, 0, -1, out), out)
+  assert.equal(out.x, -1); assert.equal(out.z, 0)
+  // A later AABB still wins when it opposes more: want (1, 2) gives
+  // dot A = -1, dot B = -2, so B wins.
+  assert.equal(contactNormal(pos, collision.aabbs, 0.6, 1, 2, out), out)
+  assert.equal(out.x, 0); assert.equal(out.z, -1)
+  // Exact tie (want (1, 1): both dots -1) -> first AABB wins (strict <).
+  assert.equal(contactNormal(pos, collision.aabbs, 0.6, 1, 1, out), out)
+  assert.equal(out.x, -1); assert.equal(out.z, 0)
+  // No contact -> null; the scratch keeps its previous values.
+  const far = new THREE.Vector3(50, 0, 50)
+  assert.equal(contactNormal(far, collision.aabbs, 0.6, 0, -1, out), null)
+  assert.equal(out.x, -1); assert.equal(out.z, 0)
 })
