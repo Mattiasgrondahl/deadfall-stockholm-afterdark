@@ -4,6 +4,7 @@ import { Player } from './Player.js'
 import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
+import { Sky } from '../world/sky.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
@@ -221,6 +222,8 @@ export class Game {
     this.city = new City(this.scene, this.collision, this.env)
     // WIRING:LIGHTING
     this.lighting = new Lighting(this.scene, this.city, this.renderer, this.quality)
+    // WIRING:SKY (V2P-1)
+    this.sky = new Sky(this.scene)
     // WIRING:AUDIO
     this.audio = new AudioBank()
     if (this.player) this.player.audio = this.audio
@@ -354,6 +357,7 @@ export class Game {
     if (this.waveManager) this.waveManager.update(dt, this)
     // WIRING:LIGHTING
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
+    if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position)
     if (this.city) this.city.update(this.player ? this.player.position : this.camera.position, dt)
   }
 
