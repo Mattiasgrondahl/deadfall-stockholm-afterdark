@@ -550,3 +550,12 @@ The five non-blocking hygiene items deferred at V7P-4 are now fixed; all are beh
 - `WaveManager.js`: the per-frame count comment incorrectly attributed to "concurrent zombie cap is 24" — corrected: the spawn gate compares the count against the wave cap `min(8 + wave, 18)`, under the 24 budget; the debug `forceClear` comment corrected likewise.
 
 Evidence: npm test 117/117 (0 fail / 0 skipped); node tools/verify-game.mjs 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE); E2E 18/18 with 0 console/page errors (run before build); build green. Version 2 now has zero open code items.
+
+## Deployment — GitHub Pages (round 39)
+
+- Repo `Mattiasgrondahl/deadfall-stockholm-afterdark` made public (user-approved); `v2` branch pushed.
+- `npm run pages` added (`vite build --base /deadfall-stockholm-afterdark`) so asset URLs resolve under the Pages subpath.
+- `gh-pages` branch published containing only the built `dist/` (`index.html` + `assets/`); Pages enabled with source = `gh-pages` branch root.
+- Deployed URL: **https://mattiasgrondahl.github.io/deadfall-stockholm-afterdark/**
+- Verified on the live deployment: assets 200, E2E 18/18 PASS with 0 console/page errors, mouse-look pipeline PASS (in-page movementX → exact LOOK_SENS yaw delta; CDP-synthesized movement stays a headless artifact), WASD/sprint/reload probe PASS.
+- README documents the online URL, `npm run pages`, and the redeploy procedure.

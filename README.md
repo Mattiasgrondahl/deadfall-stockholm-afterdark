@@ -5,6 +5,15 @@ after dark. Built with **Three.js** and **Vite**, 100% procedural (no external
 assets, no backend). Survive the zombie waves, keep your magazine loaded, and
 try to see the dawn.
 
+## Play online
+
+The game is deployed from the `gh-pages` branch — no install needed:
+
+**https://mattiasgrondahl.github.io/deadfall-stockholm-afterdark/**
+
+Open it in a desktop browser (Chrome or Firefox, hardware acceleration on) and
+click **START**. Audio starts after the START click, per browser autoplay rules.
+
 ## Setup
 
 Requires Node.js 18+ (tested on Node 26) and npm.
@@ -32,10 +41,15 @@ pointer lock engages and the first wave starts.
 ```bash
 npm run build      # production build (dist/)
 npm run preview    # serve the production build on :4173
+npm run pages      # production build with base /deadfall-stockholm-afterdark (GitHub Pages)
 npm test           # node:test unit tests for pure game logic
 npm run verify     # headless playthrough of the real game in Node (no browser)
 node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run with `npm run dev`)
 ```
+
+> To redeploy the online version: run `npm run pages`, replace the contents of
+> the `gh-pages` branch with `dist/`, and push it — GitHub Pages republishes
+> automatically.
 
 ## Controls
 
