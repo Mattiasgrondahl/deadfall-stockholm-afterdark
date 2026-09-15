@@ -9,6 +9,7 @@ dist/
 # logs & debug artifacts
 *.log
 .debug/
+.research/
 .npm-verbose.txt
 .verify-log.txt
 

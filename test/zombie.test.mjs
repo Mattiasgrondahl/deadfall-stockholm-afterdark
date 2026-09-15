@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACEMAT, POSE2 } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -136,6 +136,7 @@ test('shared geometry/materials; dispose detaches only the group', () => {
     assert.equal(a.group.children[i].geometry, b.group.children[i].geometry)
     assert.equal(a.group.children[i].material, b.group.children[i].material)
   }
+  assert.equal(a.group.children[1].children[2].material, b.group.children[1].children[2].material) // same-type face material shared
   assert.equal(scene.children.length, 2) // two groups, no per-zombie geo
   a.dispose()
   assert.equal(scene.children.length, 1)
@@ -162,6 +163,7 @@ test('hit flash swaps to HITMAT then restores type material', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
   zombie.damage(10) // non-fatal
   for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
+  assert.equal(zombie.group.children[1].children[2].material, FACEMAT.walker) // face untouched by flash
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
   for (const m of zombie.group.children) assert.equal(m.material, MAT2.walker)
 })
@@ -171,6 +173,7 @@ test('fatal hit switches every part to DEADMAT', () => {
   zombie.damage(zombie.maxHealth + 10)
   assert.ok(zombie.isDead)
   for (const m of zombie.group.children) assert.equal(m.material, DEADMAT)
+  assert.equal(zombie.group.children[1].children[2].material, DEADMAT) // face darkened with the corpse
 })
 
 test('L-pocket: walker touching two boxes slides out and keeps moving', () => {
@@ -201,11 +204,15 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
     const { zombie } = makeZombie(type, 1, 1, 1)
     const head = zombie.group.children[1]
     assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
-    assert.equal(head.children.length, 2, `${type}: eye count`)
+    assert.equal(head.children.length, 3, `${type}: eye + face count`)
     assert.equal(head.children[0].position.x, -0.075)
     assert.equal(head.children[0].position.z, 0.14)
     assert.equal(head.children[1].position.x, 0.075)
-    for (const eye of head.children) assert.equal(eye.material, EYEMAT[type])
+    for (const eye of head.children.slice(0, 2)) assert.equal(eye.material, EYEMAT[type])
+    const face = head.children[2]
+    assert.deepEqual(face.position.toArray(), [0, 0, 0.155])
+    assert.equal(face.material, FACEMAT[type])
+    assert.ok(!zombie._parts.includes(face), `${type}: face excluded from hit-flash parts`)
   }
   const { zombie } = makeZombie('walker', 0, 0, 1)
   assert.equal(zombie._eyes.length, 2)
@@ -235,4 +242,48 @@ test('contactNormal writes into caller scratch (no per-frame allocs)', () => {
   const far = new THREE.Vector3(50, 0, 50)
   assert.equal(contactNormal(far, collision.aabbs, 0.6, 0, -1, out), null)
   assert.equal(out.x, -1); assert.equal(out.z, 0)
+})
+
+test('walk cycle: limbs oscillate in opposite phase while chasing', () => {
+  const { collision, zombie } = makeZombie('walker', 10, 0)
+  const player = fakePlayer(0, 0)
+  const armRest = POSE2.walker.armRest
+  let aLmin = Infinity, aLmax = -Infinity, lLmin = Infinity, lLmax = -Infinity
+  for (let i = 0; i < 30; i++) {
+    zombie.update(1 / 60, player, [zombie], collision, null)
+    const aL = zombie._armL.rotation.x - armRest
+    const aR = zombie._armR.rotation.x - armRest
+    const lL = zombie._legL.rotation.x
+    const lR = zombie._legR.rotation.x
+    assert.ok(Math.abs(aL + aR) < 1e-9, `arms not opposite at step ${i}: ${aL} + ${aR}`)
+    assert.ok(Math.abs(lL + lR) < 1e-9, `legs not opposite at step ${i}: ${lL} + ${lR}`)
+    aLmin = Math.min(aLmin, aL); aLmax = Math.max(aLmax, aL)
+    lLmin = Math.min(lLmin, lL); lLmax = Math.max(lLmax, lL)
+  }
+  assert.ok(aLmax - aLmin > 0.3, `arm swing range ${aLmax - aLmin} (need > 0.3)`)
+  assert.ok(Math.max(Math.abs(lLmin), Math.abs(lLmax)) > 0.1,
+    `leg swing ${lLmin}..${lLmax} (need max |dev| > 0.1)`)
+})
+
+test('walk cycle: screamer arms stay raised while swinging', () => {
+  const { collision, zombie } = makeZombie('screamer', 10, 0)
+  const player = fakePlayer(0, 0)
+  for (let i = 0; i < 30; i++) {
+    zombie.update(1 / 60, player, [zombie], collision, null)
+    assert.ok(zombie._armL.rotation.x < -2, `screamer left arm not raised at step ${i}`)
+    assert.ok(zombie._armR.rotation.x < -2, `screamer right arm not raised at step ${i}`)
+  }
+})
+
+test('death resets limbs to rest pose', () => {
+  const { collision, zombie } = makeZombie('walker', 3, 0)
+  const player = fakePlayer(-3, 0)
+  // Swing a few frames first so a corpse would otherwise freeze mid-swing.
+  for (let i = 0; i < 10; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  zombie.damage(zombie.maxHealth + 10)
+  for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.equal(zombie._armL.rotation.x, POSE2.walker.armRest)
+  assert.equal(zombie._armR.rotation.x, POSE2.walker.armRest)
+  assert.equal(zombie._legL.rotation.x, 0)
+  assert.equal(zombie._legR.rotation.x, 0)
 })

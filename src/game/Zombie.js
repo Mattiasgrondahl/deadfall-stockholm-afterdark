@@ -57,7 +57,33 @@ const POSE2 = {
   screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal }
+// Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
+// not-yet-loaded face blends with the head color. Shared by all zombies of a
+// type; the texture is attached lazily in the browser only (headless Node keeps
+// the flat material).
+const FACE_GEO = new THREE.PlaneGeometry(0.26, 0.26)
+const FACEMAT = {
+  walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
+  shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
+  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+}
+
+let faceTexturesLoading = false
+function loadFaceTextures() {
+  if (faceTexturesLoading || typeof document === 'undefined') return
+  faceTexturesLoading = true
+  const loader = new THREE.TextureLoader()
+  for (const type of ORDER) {
+    loader.load('/assets/faces/' + type + '-face.jpg', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      FACEMAT[type].map = tex
+      FACEMAT[type].needsUpdate = true
+    }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type})`))
+  }
+}
+
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2 }
 
 const ATTACK_RANGE = 1.3
 const SEPARATION_DIST = 0.9
@@ -159,17 +185,29 @@ export class Zombie {
       head.add(eye)
       this._eyes.push(eye)
     }
+    // Face portrait plane nested under the head, just in front of the head's
+    // front face (0.15 -> 0.155, no z-fighting); the eyes (front z 0.16) still
+    // protrude over the portrait. NOT in _parts, so hit flash never touches it;
+    // only the death branch swaps it to DEADMAT.
+    const face = new THREE.Mesh(FACE_GEO, FACEMAT[type])
+    face.position.set(0, 0, 0.155)
+    head.add(face)
+    this._face = face
     for (const side of [-1, 1]) {
       const arm = new THREE.Mesh(GEO2.arm, mat)
       arm.position.set(0.33 * side, 1.45, 0.12)
       arm.rotation.x = pose.armRest
       parts.push(arm)
+      if (side === -1) this._armL = arm
+      else this._armR = arm
     }
     for (const side of [-1, 1]) {
       const leg = new THREE.Mesh(GEO2.leg, mat)
       leg.position.set(0.15 * side, 0.45, 0)
       leg.scale.set(pose.legS[0], pose.legS[1], pose.legS[2])
       parts.push(leg)
+      if (side === -1) this._legL = leg
+      else this._legR = leg
     }
     this.group.add(...parts)
     this.group.position.copy(this.position)
@@ -178,6 +216,7 @@ export class Zombie {
     for (const p of parts) p.castShadow = true
     this._restMats = parts.map(() => mat)
     this._flashT = 0
+    loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
   }
 
   /** State update. No randomness. `audio` may be null (headless). */
@@ -186,6 +225,12 @@ export class Zombie {
       this.deathTimer += dt
       this.position.y = -Math.min(this.deathTimer * 0.35, 0.8) // sink
       this.group.rotation.x = -Math.min(this.deathTimer / 1.5, 1) * 1.2 // fall over
+      // Reset limbs to rest pose so corpses do not freeze mid-swing.
+      const armRest = POSE2[this.type].armRest
+      this._armL.rotation.x = armRest
+      this._armR.rotation.x = armRest
+      this._legL.rotation.x = 0
+      this._legR.rotation.x = 0
       this.group.position.copy(this.position)
       return
     }
@@ -303,6 +348,15 @@ export class Zombie {
       }
     }
     this._time += dt
+    // Walk cycle, synchronized with the bob below (same frequency 6): arms
+    // swing around the per-type rest pose, legs around 0, exactly opposite
+    // phase per pair. Deterministic: _phase is the fixed-seed LCG value.
+    const armRest = POSE2[this.type].armRest
+    const swing = Math.sin(this._time * 6 + this._phase) * 0.35
+    this._armL.rotation.x = armRest + swing
+    this._armR.rotation.x = armRest - swing
+    this._legL.rotation.x = swing * 1.2
+    this._legR.rotation.x = -swing * 1.2
     this.group.rotation.x = Math.sin(this._time * 6) * 0.08 // bob
     this.group.position.copy(this.position)
   }
@@ -328,6 +382,7 @@ export class Zombie {
       this._flashT = 0
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
       for (const e of this._eyes) e.material = DEADEYEMAT
+      this._face.material = DEADMAT
     } else {
       this._flashT = 0.15
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT

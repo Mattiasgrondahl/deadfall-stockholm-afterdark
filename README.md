@@ -45,6 +45,9 @@ npm run pages      # production build with base /deadfall-stockholm-afterdark (G
 npm test           # node:test unit tests for pure game logic
 npm run verify     # headless playthrough of the real game in Node (no browser)
 node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run with `npm run dev`)
+node tools/e2e-faces.mjs     # E2E probe: face textures loaded in-browser (run with `npm run dev`)
+node tools/e2e-walk.mjs      # E2E probe: two-frame walk-cycle check (run with `npm run dev`)
+node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanGP app running on :7860)
 ```
 
 > To redeploy the online version: run `npm run pages`, replace the contents of
@@ -140,6 +143,15 @@ docs/                  architecture + research notes
   alleys, streetlights, abandoned vehicles, barricades, falling snow.
 - Night atmosphere: exponential fog, moonlight with dynamic shadows, a small
   pool of streetlights that follow the player, generated ambient audio.
+- Zombie faces: each zombie type wears a face texture (960×960 JPEG in
+  `public/assets/faces/`, generated with Z-Image + a personal-likeness LoRA via
+  the local WanGP app; regenerate with `tools/generate-zombie-faces.mjs`). The
+  face is a small plane nested under the head using one shared material per
+  type; it loads async in the browser and falls back to the flat head color in
+  headless runs or if the load fails. Corpses lose the face on death.
+- Walk cycle: a deterministic per-zombie phase (fixed-seed LCG) drives the
+  arms and legs in opposite phase, synchronized with the body bob; corpses
+  reset to the rest pose.
 - Performance: instanced/Points snow, bounded zombie count, light pooling,
   no per-frame allocations in hot loops, delta-time movement. An optional
   restrained bloom pass (EffectComposer + UnrealBloomPass, strength 0.25,
