@@ -45,10 +45,24 @@ const target = await page.evaluate(({ W, H }) => {
   const p = g.player
   const zs = g.zombies.filter((z) => !z.isDead)
   if (!zs.length) return null
-  let best = zs[0], bd = Infinity
+  // Prefer the nearest live zombie whose face texture has actually loaded
+  // (variant 0 materials get textures; if some variants' files are missing,
+  // their faces stay flat head-color and would make the A/D diff meaningless).
+  // When every face has a texture this reduces to the original "nearest
+  // zombie" choice. Fall back to the nearest live zombie if none are textured.
+  let best = null, bd = Infinity
   for (const z of zs) {
-    const d = Math.hypot(z.position.x - p.position.x, z.position.z - p.position.z)
-    if (d < bd) { bd = d; best = z }
+    if (z._face && z._face.material && z._face.material.map) {
+      const d = Math.hypot(z.position.x - p.position.x, z.position.z - p.position.z)
+      if (d < bd) { bd = d; best = z }
+    }
+  }
+  if (!best) {
+    bd = Infinity
+    for (const z of zs) {
+      const d = Math.hypot(z.position.x - p.position.x, z.position.z - p.position.z)
+      if (d < bd) { bd = d; best = z }
+    }
   }
   const dx = p.position.x - best.position.x, dz = p.position.z - best.position.z
   const d = Math.max(bd, 1e-6)
@@ -185,11 +199,30 @@ await page.evaluate(() => {
     if (!z._face || z.isDead) continue
     z.group.visible = true
     z._face.visible = true
-    z._face.material = z._faceMatOrig
+    // Only the probe target had its material captured/replaced (_faceMatOrig);
+    // every other zombie's face material was never touched, so restoring it
+    // here would set material = undefined and crash the renderer.
+    if (z._faceMatOrig) z._face.material = z._faceMatOrig
     z._faceMatOrig = null
   }
   g.update = g._origUpdate
   g.step(0)
+})
+
+// Variant coverage: group live zombies by the texture URL their face material
+// carries. Each of the 9 shared variant materials owns a distinct texture, so
+// two or more distinct URLs within one type prove different variants are
+// actually applied to same-type zombies in the live scene.
+const variantReport = await page.evaluate(() => {
+  const g = window.__game
+  const byType = {}
+  for (const z of g.zombies.filter((z) => !z.isDead && z._face)) {
+    const mat = z._face.material
+    const url = mat && mat.map && mat.map.image && mat.map.image.src ? mat.map.image.src : '(flat/no texture)'
+    if (!byType[z.type]) byType[z.type] = {}
+    byType[z.type][url] = (byType[z.type][url] || 0) + 1
+  }
+  return byType
 })
 
 // --- PNG decode (8-bit RGB/RGBA, non-interlaced) + box statistics
@@ -288,6 +321,7 @@ const out = {
     'F_vs_A (emissive vs textured)': boxDiff(imgs.F, imgs.A, sx, sy, CORE)
   },
   screenshots: shots,
+  variantsByType: variantReport,
   consoleErrors
 }
 fs.writeFileSync(`${OUT}/face-diff.json`, JSON.stringify(out, null, 2))
@@ -299,8 +333,14 @@ console.log('FACE-DIFF PROBE:', JSON.stringify(out, null, 1))
 const liveFaceVisible = parseFloat(out.faceCoreMeanAbsDiff['A_vs_D (textured vs hidden)']) > 15 &&
   parseFloat(out.faceCoreStats.A.std) > 30 &&
   parseFloat(out.faceCoreStats.A.brightFrac) > parseFloat(out.faceCoreStats.D.brightFrac)
-const pass = liveFaceVisible &&
+// Variants applied in-page: at least one type must show 2+ distinct face
+// materials among its live zombies (different texture URLs = different
+// shared variant materials).
+const variantsApplied = Object.values(variantReport).some((m) => Object.keys(m).length >= 2)
+const pass = liveFaceVisible && variantsApplied &&
   !consoleErrors.some((e) => /404|faces\/.*jpg|Failed to load/i.test(e))
-console.log('PROBE-FACE-DIFF:', pass ? 'PASS' : 'FAIL', liveFaceVisible ? '' : '(live face not clearly visible)')
+console.log('PROBE-FACE-DIFF:', pass ? 'PASS' : 'FAIL',
+  liveFaceVisible ? '' : '(live face not clearly visible) ',
+  variantsApplied ? '' : '(no type shows more than one face variant)')
 await browser.close()
 process.exitCode = pass ? 0 : 1

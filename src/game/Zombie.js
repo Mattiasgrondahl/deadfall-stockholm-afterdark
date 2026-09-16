@@ -58,20 +58,35 @@ const POSE2 = {
 }
 
 // Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
-// not-yet-loaded face blends with the head color. Shared by all zombies of a
-// type; the texture is attached lazily in the browser only (headless Node keeps
-// the flat material). When a texture lands, the material color switches to
-// white, because MeshStandardMaterial multiplies map by color — leaving the
-// head color would tint the portrait dark and hide it. The JPEG background
-// already matches the head color, so white keeps the portrait edges seamless.
-// The portraits are themselves dark images and the night scene is dim, so a
-// scene-lit face would still blend into the head; the same texture is also set
-// as emissiveMap (self-lit) so the face stays visible wherever the zombie is.
+// not-yet-loaded face blends with the head color. Each type owns an array of
+// THREE shared face materials (3 portrait variants); individual zombies pick
+// one variant deterministically from their spawn-derived phase, so same-type
+// zombies no longer look cloned. The textures are attached lazily in the
+// browser only (headless Node keeps the flat materials). When a texture lands,
+// the material color switches to white, because MeshStandardMaterial multiplies
+// map by color — leaving the head color would tint the portrait dark and hide
+// it. The JPEG background already matches the head color, so white keeps the
+// portrait edges seamless. The portraits are themselves dark images and the
+// night scene is dim, so a scene-lit face would still blend into the head; the
+// same texture is also set as emissiveMap (self-lit) so the face stays visible
+// wherever the zombie is.
 const FACE_GEO = new THREE.PlaneGeometry(0.26, 0.26)
 const FACEMAT = {
-  walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
-  shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+  walker: [
+    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 })
+  ],
+  shambler: [
+    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 })
+  ],
+  screamer: [
+    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+  ]
 }
 
 let faceTexturesLoading = false
@@ -80,22 +95,27 @@ function loadFaceTextures() {
   faceTexturesLoading = true
   const loader = new THREE.TextureLoader()
   for (const type of ORDER) {
-    loader.load('/assets/faces/' + type + '-face.jpg', (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace
-      tex.anisotropy = 4
-      FACEMAT[type].map = tex
-      // map is multiplied by material.color; white lets the portrait render
-      // at true color instead of a dark head-color tint.
-      FACEMAT[type].color.set(0xffffff)
-      // The portrait is a dark image and the night scene is dim, so a
-      // scene-lit face would blend into the head. Self-illuminate it: the same
-      // texture as emissiveMap adds a moderate glow independent of scene light,
-      // so the face is visible in alleys as well as under streetlamps.
-      FACEMAT[type].emissiveMap = tex
-      FACEMAT[type].emissive.set(0xffffff)
-      FACEMAT[type].emissiveIntensity = 0.5
-      FACEMAT[type].needsUpdate = true
-    }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type})`))
+    for (let i = 0; i < 3; i++) {
+      // Variant 0 is the original portrait ({type}-face.jpg); variants 1 and 2
+      // are the extra faces ({type}2-face.jpg, {type}3-face.jpg).
+      loader.load('/assets/faces/' + type + (i === 0 ? '' : i) + '-face.jpg', (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.anisotropy = 4
+        const mat = FACEMAT[type][i]
+        // map is multiplied by material.color; white lets the portrait render
+        // at true color instead of a dark head-color tint.
+        mat.color.set(0xffffff)
+        // The portrait is a dark image and the night scene is dim, so a
+        // scene-lit face would blend into the head. Self-illuminate it: the same
+        // texture as emissiveMap adds a moderate glow independent of scene light,
+        // so the face is visible in alleys as well as under streetlamps.
+        mat.map = tex
+        mat.emissiveMap = tex
+        mat.emissive.set(0xffffff)
+        mat.emissiveIntensity = 0.5
+        mat.needsUpdate = true
+      }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type} variant ${i})`))
+    }
   }
 }
 
@@ -205,7 +225,11 @@ export class Zombie {
     // front face (0.15 -> 0.155, no z-fighting); the eyes (front z 0.16) still
     // protrude over the portrait. NOT in _parts, so hit flash never touches it;
     // only the death branch swaps it to DEADMAT.
-    const face = new THREE.Mesh(FACE_GEO, FACEMAT[type])
+    // Variant pick: the spawn-derived LCG phase (above) selects one of the
+    // 3 shared variant materials per zombie — deterministic (no Math.random)
+    // and spreads zombies of a type across the variants by position.
+    const variant = Math.floor((this._phase / (2 * Math.PI)) * 3) % 3
+    const face = new THREE.Mesh(FACE_GEO, FACEMAT[type][variant])
     face.position.set(0, 0, 0.155)
     head.add(face)
     this._face = face

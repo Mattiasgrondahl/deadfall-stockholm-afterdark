@@ -136,13 +136,35 @@ test('shared geometry/materials; dispose detaches only the group', () => {
     assert.equal(a.group.children[i].geometry, b.group.children[i].geometry)
     assert.equal(a.group.children[i].material, b.group.children[i].material)
   }
-  assert.equal(a.group.children[1].children[2].material, b.group.children[1].children[2].material) // same-type face material shared
+  // Face: same type, different spawn positions -> possibly DIFFERENT shared
+  // variant materials; each must be a member of the type's variant array.
+  assert.ok(FACEMAT.walker.includes(a.group.children[1].children[2].material), 'a face is a shared walker variant')
+  assert.ok(FACEMAT.walker.includes(b.group.children[1].children[2].material), 'b face is a shared walker variant')
   assert.equal(scene.children.length, 2) // two groups, no per-zombie geo
   a.dispose()
   assert.equal(scene.children.length, 1)
   b.dispose()
   assert.equal(scene.children.length, 0)
   a.dispose() // never throws, even when called twice
+})
+
+test('face variant: deterministic per-zombie pick, distributed across the variants', () => {
+  const variantOf = (z) => Math.floor((z._phase / (2 * Math.PI)) * 3) % 3
+  // Deterministic: same type + same spawn position -> same variant and the
+  // exact same shared material instance.
+  const a = new Zombie(new THREE.Scene(), 'walker', 0, 0, 1)
+  const a2 = new Zombie(new THREE.Scene(), 'walker', 0, 0, 1)
+  assert.equal(variantOf(a), variantOf(a2), 'same position always picks the same variant')
+  assert.equal(a.group.children[1].children[2].material, a2.group.children[1].children[2].material)
+  // Distributed: different positions map to different variant indices
+  // (verified LCG phases: (0,0) -> 1, (1,0) -> 2), so the two face materials
+  // really are different shared variant materials.
+  const b = new Zombie(new THREE.Scene(), 'walker', 1, 0, 1)
+  assert.notEqual(variantOf(a), variantOf(b), 'phases of (0,0) and (1,0) map to different variants')
+  const fa = a.group.children[1].children[2].material
+  const fb = b.group.children[1].children[2].material
+  assert.ok(FACEMAT.walker.includes(fa) && FACEMAT.walker.includes(fb), 'both face materials are shared walker variants')
+  assert.notEqual(fa, fb, 'different variants -> different face materials')
 })
 
 test('per-type bodies and anchors', () => {
@@ -163,7 +185,7 @@ test('hit flash swaps to HITMAT then restores type material', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
   zombie.damage(10) // non-fatal
   for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
-  assert.equal(zombie.group.children[1].children[2].material, FACEMAT.walker) // face untouched by flash
+  assert.ok(FACEMAT.walker.includes(zombie.group.children[1].children[2].material)) // face untouched by flash (a shared variant)
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
   for (const m of zombie.group.children) assert.equal(m.material, MAT2.walker)
 })
@@ -211,7 +233,7 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
     for (const eye of head.children.slice(0, 2)) assert.equal(eye.material, EYEMAT[type])
     const face = head.children[2]
     assert.deepEqual(face.position.toArray(), [0, 0, 0.155])
-    assert.equal(face.material, FACEMAT[type])
+    assert.ok(FACEMAT[type].includes(face.material))
     assert.ok(!zombie._parts.includes(face), `${type}: face excluded from hit-flash parts`)
   }
   const { zombie } = makeZombie('walker', 0, 0, 1)

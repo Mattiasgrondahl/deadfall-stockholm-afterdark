@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // tools/generate-zombie-faces.mjs
-// Generates three zombie-face images (z_image + mattias_1024_z_2 LoRA) through
-// the WanGP Gradio UI at http://127.0.0.1:7860 using headless Playwright, and
-// saves results under public/assets/faces/.
+// Generates nine zombie-face images (3 types x 3 variants, z_image +
+// mattias_1024_z_2 LoRA) through the WanGP Gradio UI at http://127.0.0.1:7860
+// using headless Playwright, and saves results under public/assets/faces/.
+// Variant 0 of each type is the original portrait ({type}-face.jpg); variants
+// 1 and 2 are extra distinct faces ({type}2-face.jpg, {type}3-face.jpg).
 //
 // Usage:
 //   node tools/generate-zombie-faces.mjs            run all not-yet-complete variants
 //   node tools/generate-zombie-faces.mjs --probe    load page, dump DOM probe + screenshots, exit
-//   node tools/generate-zombie-faces.mjs --only NAME  run a single variant (walker|shambler|screamer)
+//   node tools/generate-zombie-faces.mjs --only NAME  run a single variant
+//     (walker|walker2|walker3|shambler|shambler2|shambler3|screamer|screamer2|screamer3)
 
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -24,8 +27,14 @@ const GEN_TIMEOUT_MS = 600 * 1000;
 const BASE = JSON.parse(fs.readFileSync(path.join(RESEARCH, 'zimage_mattias.json'), 'utf8'));
 const VARIANTS = [
   { name: 'walker', seed: 42, prompt: 'front-facing close-up portrait of Mattias as a fresh zombie, pale grey-green skin, dark sunken eyes, slightly open mouth, torn collar, plain solid dark olive background color, realistic photograph, no text' },
+  { name: 'walker2', seed: 45, prompt: 'front-facing close-up portrait of Mattias as a fresh zombie, pale grey-green skin, blood-stained chin, black bruise around one eye, clenched jaw, matted hair, plain solid dark olive background color, realistic photograph, no text' },
+  { name: 'walker3', seed: 46, prompt: 'front-facing close-up portrait of Mattias as a fresh zombie, pale grey-green skin, milky cloudy eyes, split lip, half-open mouth, thinning grey hair, plain solid dark olive background color, realistic photograph, no text' },
   { name: 'shambler', seed: 43, prompt: 'front-facing close-up portrait of Mattias as a rotting zombie, gaunt face, matted hair, drooling, decayed skin, plain solid dark brown background color, realistic photograph, no text' },
+  { name: 'shambler2', seed: 47, prompt: 'front-facing close-up portrait of Mattias as a rotting zombie, gaunt face, exposed rotting teeth, blackened decayed skin, dripping blood, balding matted hair, plain solid dark brown background color, realistic photograph, no text' },
+  { name: 'shambler3', seed: 48, prompt: 'front-facing close-up portrait of Mattias as a rotting zombie, gaunt face, weeping sores, cracked grey decayed skin, drool streaks, long greasy matted hair, plain solid dark brown background color, realistic photograph, no text' },
   { name: 'screamer', seed: 44, prompt: 'front-facing close-up portrait of Mattias as a screaming zombie, wide open mouth, blood on chin, wild disheveled hair, plain solid dark maroon background color, realistic photograph, no text' },
+  { name: 'screamer2', seed: 49, prompt: 'front-facing close-up portrait of Mattias as a screaming zombie, gaping open mouth, blood spatter on cheek, hollow sunken eyes, wild disheveled hair, plain solid dark maroon background color, realistic photograph, no text' },
+  { name: 'screamer3', seed: 50, prompt: 'front-facing close-up portrait of Mattias as a screaming zombie, twisted open mouth, bared teeth, blood on chin, bruised dark skin, wild disheveled hair, plain solid dark maroon background color, realistic photograph, no text' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
