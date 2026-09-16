@@ -60,7 +60,13 @@ const POSE2 = {
 // Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
 // not-yet-loaded face blends with the head color. Shared by all zombies of a
 // type; the texture is attached lazily in the browser only (headless Node keeps
-// the flat material).
+// the flat material). When a texture lands, the material color switches to
+// white, because MeshStandardMaterial multiplies map by color — leaving the
+// head color would tint the portrait dark and hide it. The JPEG background
+// already matches the head color, so white keeps the portrait edges seamless.
+// The portraits are themselves dark images and the night scene is dim, so a
+// scene-lit face would still blend into the head; the same texture is also set
+// as emissiveMap (self-lit) so the face stays visible wherever the zombie is.
 const FACE_GEO = new THREE.PlaneGeometry(0.26, 0.26)
 const FACEMAT = {
   walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
@@ -78,6 +84,16 @@ function loadFaceTextures() {
       tex.colorSpace = THREE.SRGBColorSpace
       tex.anisotropy = 4
       FACEMAT[type].map = tex
+      // map is multiplied by material.color; white lets the portrait render
+      // at true color instead of a dark head-color tint.
+      FACEMAT[type].color.set(0xffffff)
+      // The portrait is a dark image and the night scene is dim, so a
+      // scene-lit face would blend into the head. Self-illuminate it: the same
+      // texture as emissiveMap adds a moderate glow independent of scene light,
+      // so the face is visible in alleys as well as under streetlamps.
+      FACEMAT[type].emissiveMap = tex
+      FACEMAT[type].emissive.set(0xffffff)
+      FACEMAT[type].emissiveIntensity = 0.5
       FACEMAT[type].needsUpdate = true
     }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type})`))
   }
