@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips } from './cityDressing.js'
+import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -142,12 +142,14 @@ export class City {
     this._facadeVariants = variants
 
     this.streetlightAnchors = addStreetlights(group)
+    addStreetlightPools(group, this.streetlightAnchors)
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
   addLandmarks(group)
   addPlazaHalos(group, plazas)
   addDangerStrips(group)
   addOuterStrips(group)
+  addGroundDressing(group, this.env && this.env.canvasFactory)
   addSigns(group, plazas)
   this.plazas = plazas
   this.snow = createSnow()

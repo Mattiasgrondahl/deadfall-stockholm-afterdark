@@ -351,9 +351,6 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 67, 'layout unchanged: 67 sprites')
-  let meshes = 0
-  city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 319, 'mesh count unchanged: 319')
   const city2 = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   assert.deepEqual(city2.getFacadeVariants(), city.getFacadeVariants(), 'facade variants deterministic')
   const vs = city.getFacadeVariants()
@@ -362,6 +359,40 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   assert.ok(new Set(vs).size >= 2, 'more than one variant used')
   city.dispose()
   city2.dispose()
+})
+
+test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk bands, 8 drifts, no new collision', () => {
+  const scene = new THREE.Scene()
+  const collision = new CollisionWorld(180, 180)
+  const city = new City(scene, collision, { canvasFactory: () => null })
+  const pools = []
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xffb066) pools.push(o) })
+  assert.equal(pools.length, 40, 'expected 40 streetlight pools, got ' + pools.length)
+  for (const p of pools) {
+    assert.ok(Math.abs(p.position.y - 0.02) < 1e-6, 'pool y ' + p.position.y)
+    assert.equal(p.castShadow, false, 'pool castShadow')
+    assert.ok(city.streetlightAnchors.some(a => Math.abs(a.x - p.position.x) < 1e-6 && Math.abs(a.z - p.position.z) < 1e-6), 'pool at an anchor')
+  }
+  assert.equal(new Set(pools.map(p => p.material)).size, 1, 'pools share one material')
+  const bands = []
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xd8e2f0) bands.push(o) })
+  assert.equal(bands.length, 16, 'expected 16 crosswalk bands, got ' + bands.length)
+  for (const b of bands) {
+    assert.ok(Math.abs(b.position.y - 0.085) < 1e-6, 'band y ' + b.position.y)
+    assert.ok(Math.abs(Math.abs(b.position.x) - 36) < 1e-6 || Math.abs(Math.abs(b.position.z) - 36) < 1e-6, 'band near a +-36 intersection')
+  }
+  const drifts = []
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && o.material.color.getHex() === 0xbcd0e6) drifts.push(o) })
+  assert.equal(drifts.length, 8, 'expected 8 snowdrifts, got ' + drifts.length)
+  assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
+  let meshes = 0
+  city.group.traverse(o => { if (o.isMesh) meshes++ })
+  assert.equal(meshes, 383, 'mesh count 319 + 64 dressing, got ' + meshes)
+  assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
+  let sprites = 0
+  city.group.traverse(o => { if (o.isSprite) sprites++ })
+  assert.equal(sprites, 67, 'sprite count unchanged')
+  city.dispose()
 })
 
 

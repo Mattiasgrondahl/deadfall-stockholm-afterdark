@@ -267,3 +267,93 @@ export function addOuterStrips(group) {
     }
   }
 }
+
+// Task V3P-6a: streetlight ground pools — one flat disc per streetlight
+// anchor. MeshBasicMaterial (unlit) + additive blending makes every pole
+// read as lit even when the point-light pool (12 of 40) is not assigned to
+// it. Shared geometry + material, no lights, no AABBs, no sprites.
+export function addStreetlightPools(group, anchors) {
+  const geo = new THREE.CircleGeometry(1.6, 20)
+  geo.rotateX(-Math.PI / 2)
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false })
+  for (const a of anchors) {
+    const pool = new THREE.Mesh(geo, mat)
+    pool.castShadow = false
+    pool.position.set(a.x, 0.02, a.z)
+    group.add(pool)
+  }
+}
+
+// Task V3P-6b: ground dressing — subtle snow-compaction noise map on the
+// ground, crosswalks at the four outer intersections, snowdrift patches at
+// street corners. Deterministic LCG (seed 77); no Math.random. The ground
+// map is skipped when `canvasFactory` is null (unit tests) or absent.
+export function addGroundDressing(group, canvasFactory) {
+  const ground = group.children[0] // ground plane, registered first by City
+  if (typeof canvasFactory === 'function') {
+    const c = canvasFactory()
+    if (c) {
+      c.width = 512
+      c.height = 512
+      const g = c.getContext('2d')
+      // Headless-safe: fillStyle/fillRect and property assignments only.
+      g.fillStyle = '#93a9c2'
+      g.fillRect(0, 0, 512, 512)
+      const light = '#9ab0c9'
+      const dark = '#8b9fb8'
+      let s = 77
+      const rnd = () => (s = (s * 48271) % 65537) / 65537
+      for (let i = 0; i < 240; i++) {
+        const x = Math.floor(rnd() * 500)
+        const y = Math.floor(rnd() * 500)
+        const w = 8 + Math.floor(rnd() * 36)
+        const h = 8 + Math.floor(rnd() * 36)
+        g.fillStyle = rnd() < 0.5 ? light : dark
+        g.fillRect(x, y, w, h)
+      }
+      const tex = new THREE.CanvasTexture(c)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.wrapS = THREE.RepeatWrapping
+      tex.wrapT = THREE.RepeatWrapping
+      tex.repeat.set(3, 3) // 512 px tile = 60 m; the ground is 180 m
+      tex.needsUpdate = true
+      ground.material.map = tex
+      ground.material.color.set(0xffffff) // the map carries the base color
+    }
+  }
+  // Crosswalks: 4 intersections at (+-36, +-36), 2 bands per street. Additive
+  // white reads through the snow; y=0.085 sits clear of the blue centerline
+  // strips (y=0.03, top at 0.055).
+  const mat = new THREE.MeshBasicMaterial({ color: 0xd8e2f0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  const geoX = new THREE.BoxGeometry(9, 0.05, 0.9)
+  const geoZ = new THREE.BoxGeometry(0.9, 0.05, 9)
+  for (const sx of [36, -36]) {
+    for (const sz of [36, -36]) {
+      for (const s of [3.2, -3.2]) {
+        const bx = new THREE.Mesh(geoX, mat)
+        bx.castShadow = false
+        bx.position.set(sx, 0.085, sz + s)
+        group.add(bx)
+        const bz = new THREE.Mesh(geoZ, mat)
+        bz.castShadow = false
+        bz.position.set(sx + s, 0.085, sz)
+        group.add(bz)
+      }
+    }
+  }
+  // Snowdrift patches at street corners: flat discs, 2 per intersection,
+  // offset off the centerline strips so nothing z-fights.
+  const driftGeo = new THREE.CircleGeometry(2.2, 16)
+  driftGeo.rotateX(-Math.PI / 2)
+  const driftMat = new THREE.MeshStandardMaterial({ color: 0xbcd0e6, roughness: 1 })
+  for (const sx of [36, -36]) {
+    for (const sz of [36, -36]) {
+      for (const s of [2.6, -2.6]) {
+        const d = new THREE.Mesh(driftGeo, driftMat)
+        d.castShadow = false
+        d.position.set(sx + s, 0.04, sz + s)
+        group.add(d)
+      }
+    }
+  }
+}
