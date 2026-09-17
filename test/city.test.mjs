@@ -325,4 +325,43 @@ test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs,
   city.dispose()
 })
 
+test('facade: buildings use 6-slot material arrays (shared roof, window emissive), layout unchanged', () => {
+  const scene = new THREE.Scene()
+  const collision = new CollisionWorld(180, 180)
+  const city = new City(scene, collision, { canvasFactory: () => null })
+  const buildings = []
+  city.group.traverse(o => {
+    if (o.isMesh && Array.isArray(o.material) && o.material.length === 6) buildings.push(o)
+  })
+  assert.equal(buildings.length, 67, 'expected 67 building meshes with material arrays, got ' + buildings.length)
+  const roofs = new Set()
+  for (const b of buildings) {
+    const mats = b.material
+    assert.ok(mats[0] === mats[1] && mats[0] === mats[4] && mats[0] === mats[5], 'facade slots share one material')
+    assert.equal(mats[0].emissive.getHex(), 0xffa64d, 'window emissive 0xffa64d')
+    assert.equal(mats[0].emissiveIntensity, 1.1, 'window emissiveIntensity 1.1')
+    assert.equal(mats[0].map, null, 'headless: no color map')
+    assert.equal(mats[0].emissiveMap, null, 'headless: no emissive map')
+    assert.ok(mats[2] === mats[3], 'top/bottom share the roof material')
+    roofs.add(mats[2])
+  }
+  assert.equal(roofs.size, 1, 'one shared roof material for all buildings')
+  assert.equal(collision.aabbs.length, 87, 'layout unchanged: 87 aabbs')
+  assert.equal(city.getPlazaCenters().length, 22, 'layout unchanged: 22 plazas')
+  let sprites = 0
+  city.group.traverse(o => { if (o.isSprite) sprites++ })
+  assert.equal(sprites, 67, 'layout unchanged: 67 sprites')
+  let meshes = 0
+  city.group.traverse(o => { if (o.isMesh) meshes++ })
+  assert.equal(meshes, 319, 'mesh count unchanged: 319')
+  const city2 = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
+  assert.deepEqual(city2.getFacadeVariants(), city.getFacadeVariants(), 'facade variants deterministic')
+  const vs = city.getFacadeVariants()
+  assert.equal(vs.length, 67, 'one variant per building')
+  for (const v of vs) assert.ok(v >= 0 && v <= 3, 'variant in 0..3, got ' + v)
+  assert.ok(new Set(vs).size >= 2, 'more than one variant used')
+  city.dispose()
+  city2.dispose()
+})
+
 
