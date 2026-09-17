@@ -90,6 +90,12 @@ const FACEMAT = {
 }
 
 let faceTexturesLoading = false
+// Asset base for runtime (non-bundled) fetches. Vite substitutes BASE_URL at
+// build time, so the same code works on the dev server ("/") and on GitHub
+// Pages (base /deadfall-stockholm-afterdark/), where an absolute "/assets/..."
+// path would 404. In headless Node import.meta.env is undefined; the guard in
+// loadFaceTextures means this value is never used there.
+const ASSET_BASE = (typeof document !== 'undefined' ? (import.meta.env?.BASE_URL || '') : '')
 function loadFaceTextures() {
   if (faceTexturesLoading || typeof document === 'undefined') return
   faceTexturesLoading = true
@@ -98,7 +104,7 @@ function loadFaceTextures() {
     for (let i = 0; i < 3; i++) {
       // Variant 0 is the original portrait ({type}-face.jpg); variants 1 and 2
       // are the extra faces ({type}2-face.jpg, {type}3-face.jpg).
-      loader.load('/assets/faces/' + type + (i === 0 ? '' : i) + '-face.jpg', (tex) => {
+      loader.load(ASSET_BASE + 'assets/faces/' + type + (i === 0 ? '' : i) + '-face.jpg', (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
         tex.anisotropy = 4
         const mat = FACEMAT[type][i]
