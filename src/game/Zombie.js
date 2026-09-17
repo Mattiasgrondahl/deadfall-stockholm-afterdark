@@ -89,6 +89,27 @@ const FACEMAT = {
   ]
 }
 
+// Per-outfit clothing materials, shared across all zombie types. Outfit 0 =
+// suit (dark grey jacket + charcoal trousers), 1 = hoodie + sweatpants
+// (heather grey), 2 = blue tee + dark denim jeans. The torso and arms wear
+// the top material, the legs the bottom; the head keeps the per-type MAT2
+// color so the face still reads. Base colors are the clothing colors so the
+// headless / not-yet-loaded state already looks clothed; when the texture
+// lands (browser only) the color flips to white, because
+// MeshStandardMaterial multiplies map by color (same reasoning as the faces).
+const OUTFITMATS = {
+  tops: [
+    new THREE.MeshStandardMaterial({ color: 0x3b414a, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x3d4a66, roughness: 0.9 })
+  ],
+  bottoms: [
+    new THREE.MeshStandardMaterial({ color: 0x333840, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x2e3d5c, roughness: 0.9 })
+  ]
+}
+
 let faceTexturesLoading = false
 // Asset base for runtime (non-bundled) fetches. Vite substitutes BASE_URL at
 // build time, so the same code works on the dev server ("/") and on GitHub
@@ -129,7 +150,30 @@ function loadFaceTextures() {
   }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2 }
+// Browser-only lazy outfit texture loading (headless Node keeps the flat
+// colors). Each top/bottom pair is one file per outfit; .jpg is guaranteed by
+// tools/generate-outfit-textures.mjs.
+let outfitTexturesLoading = false
+function loadOutfitTextures() {
+  if (outfitTexturesLoading || typeof document === 'undefined') return
+  outfitTexturesLoading = true
+  const loader = new THREE.TextureLoader()
+  const names = ['suit-top', 'suit-pants', 'hoodie-top', 'sweat-pants', 'tee-top', 'jeans-pants']
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 2; j++) {
+      const mat = (j === 0 ? OUTFITMATS.tops : OUTFITMATS.bottoms)[i]
+      loader.load(ASSET_BASE + 'assets/outfits/' + names[i * 2 + j] + '.jpg', (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.anisotropy = 4
+        mat.color.set(0xffffff)
+        mat.map = tex
+        mat.needsUpdate = true
+      }, () => console.warn(`outfit texture failed to load; keeping flat color (${names[i * 2 + j]})`))
+    }
+  }
+}
+
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS }
 
 const ATTACK_RANGE = 1.3
 const SEPARATION_DIST = 0.9
@@ -209,8 +253,16 @@ export class Zombie {
     this.group = new THREE.Group()
     const mat = MAT2[type]
     const pose = POSE2[type]
+    // Clothing outfit: an independent deterministic re-mapping of the spawn LCG
+    // phase (offset so it does not track the face variant) selects one of the
+    // three shared top/bottom material pairs. No extra LCG draw, so the face
+    // variant pick (below) is unaffected.
+    const outfit = Math.floor((((this._phase / (2 * Math.PI)) + 0.37) % 1) * 3)
+    this._outfit = outfit
+    const topMat = OUTFITMATS.tops[outfit]
+    const bottomMat = OUTFITMATS.bottoms[outfit]
     const parts = []
-    const torso = new THREE.Mesh(GEO2.torso, mat)
+    const torso = new THREE.Mesh(GEO2.torso, topMat)
     torso.position.set(0, 1.2, 0)
     torso.scale.set(pose.torsoS[0], pose.torsoS[1], pose.torsoS[2])
     torso.rotation.x = pose.torsoR
@@ -244,7 +296,7 @@ export class Zombie {
     head.add(face)
     this._face = face
     for (const side of [-1, 1]) {
-      const arm = new THREE.Mesh(GEO2.arm, mat)
+      const arm = new THREE.Mesh(GEO2.arm, topMat)
       arm.position.set(0.33 * side, 1.45, 0.12)
       arm.rotation.x = pose.armRest
       parts.push(arm)
@@ -252,7 +304,7 @@ export class Zombie {
       else this._armR = arm
     }
     for (const side of [-1, 1]) {
-      const leg = new THREE.Mesh(GEO2.leg, mat)
+      const leg = new THREE.Mesh(GEO2.leg, bottomMat)
       leg.position.set(0.15 * side, 0.45, 0)
       leg.scale.set(pose.legS[0], pose.legS[1], pose.legS[2])
       parts.push(leg)
@@ -264,9 +316,12 @@ export class Zombie {
     scene.add(this.group)
     this._parts = parts
     for (const p of parts) p.castShadow = true
-    this._restMats = parts.map(() => mat)
+    // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
+    // flash / recovery can restore each part to its own material.
+    this._restMats = [topMat, mat, topMat, topMat, bottomMat, bottomMat]
     this._flashT = 0
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
+    loadOutfitTextures() // same guard pattern; browser-only
   }
 
   /** State update. No randomness. `audio` may be null (headless). */
@@ -419,6 +474,9 @@ export class Zombie {
       { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3, isHead: true }
     ]
   }
+
+  /** Clothing outfit index (0 suit, 1 hoodie+sweatpants, 2 tee+jeans). */
+  getOutfit() { return this._outfit }
 
   /** Contract signature; `dir` is accepted and ignored.
    *  Non-fatal hits flash HITMAT for 0.15 s; a fatal hit swaps to DEADMAT. */

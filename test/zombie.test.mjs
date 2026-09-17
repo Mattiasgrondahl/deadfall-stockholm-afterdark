@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACEMAT, POSE2 } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACEMAT, POSE2, OUTFITMATS } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -134,7 +134,21 @@ test('shared geometry/materials; dispose detaches only the group', () => {
   assert.equal(a.group.children.length, 6) // torso, head, armL, armR, legL, legR
   for (let i = 0; i < 6; i++) {
     assert.equal(a.group.children[i].geometry, b.group.children[i].geometry)
-    assert.equal(a.group.children[i].material, b.group.children[i].material)
+    // Materials all come from the small shared pool: same type -> same head
+    // skin; clothing comes from the 3 shared top/bottom material pairs. These
+    // two spawns pick different outfits, so per-part identity is NOT expected;
+    // membership in the shared arrays is the shared-material guarantee.
+    const ma = a.group.children[i].material
+    const mb = b.group.children[i].material
+    if (i === 1) {
+      assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
+    } else if (i === 0 || i === 2 || i === 3) {
+      assert.ok(OUTFITMATS.tops.includes(ma), 'a torso/arm is a shared top material')
+      assert.ok(OUTFITMATS.tops.includes(mb), 'b torso/arm is a shared top material')
+    } else {
+      assert.ok(OUTFITMATS.bottoms.includes(ma), 'a leg is a shared bottom material')
+      assert.ok(OUTFITMATS.bottoms.includes(mb), 'b leg is a shared bottom material')
+    }
   }
   // Face: same type, different spawn positions -> possibly DIFFERENT shared
   // variant materials; each must be a member of the type's variant array.
@@ -181,13 +195,16 @@ test('per-type bodies and anchors', () => {
   assert.ok(sc.group.children[2].rotation.x < -2, 'screamer arms raised')
 })
 
-test('hit flash swaps to HITMAT then restores type material', () => {
+test('hit flash swaps to HITMAT then restores per-part rest materials', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
   zombie.damage(10) // non-fatal
   for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
   assert.ok(FACEMAT.walker.includes(zombie.group.children[1].children[2].material)) // face untouched by flash (a shared variant)
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
-  for (const m of zombie.group.children) assert.equal(m.material, MAT2.walker)
+  for (let i = 0; i < zombie.group.children.length; i++) {
+    assert.equal(zombie.group.children[i].material, zombie._restMats[i])
+  }
+  assert.equal(zombie.group.children[1].material, MAT2.walker) // head keeps its skin color
 })
 
 test('fatal hit switches every part to DEADMAT', () => {
@@ -308,4 +325,49 @@ test('death resets limbs to rest pose', () => {
   assert.equal(zombie._armR.rotation.x, POSE2.walker.armRest)
   assert.equal(zombie._legL.rotation.x, 0)
   assert.equal(zombie._legR.rotation.x, 0)
+})
+
+test('outfits: deterministic clothing materials per spawn; flash/death logic intact; headless-safe', () => {
+  const scene = new THREE.Scene()
+  // Mappings precomputed with the same spawn LCG + 0.37 offset:
+  // (-85,0) -> 0 (suit), (-40,0) -> 1 (hoodie + sweatpants), (-70,0) -> 2 (tee + jeans)
+  const a = new Zombie(scene, 'walker', -85, 0, 1)
+  const b = new Zombie(scene, 'walker', -40, 0, 1)
+  const c = new Zombie(scene, 'walker', -70, 0, 1)
+  assert.equal(a.getOutfit(), 0)
+  assert.equal(b.getOutfit(), 1)
+  assert.equal(c.getOutfit(), 2)
+
+  for (const z of [a, b, c]) {
+    const o = z.getOutfit()
+    const [torso, head, armL, armR, legL, legR] = z._parts
+    assert.equal(torso.material, OUTFITMATS.tops[o])
+    assert.equal(armL.material, OUTFITMATS.tops[o])
+    assert.equal(armR.material, OUTFITMATS.tops[o])
+    assert.equal(legL.material, OUTFITMATS.bottoms[o])
+    assert.equal(legR.material, OUTFITMATS.bottoms[o])
+    assert.equal(head.material, MAT2[z.type]) // head keeps the type skin color
+    for (let i = 0; i < z._parts.length; i++) assert.equal(z._restMats[i], z._parts[i].material)
+  }
+
+  // Hit flash restores each part to its OWN rest material
+  a.damage(5, null)
+  for (const p of a._parts) assert.equal(p.material, HITMAT)
+  a.update(0.2, null, [], null, null)
+  assert.equal(a._parts[0].material, OUTFITMATS.tops[0])
+  assert.equal(a._parts[1].material, MAT2.walker)
+  assert.equal(a._parts[4].material, OUTFITMATS.bottoms[0])
+
+  // Death behavior unchanged: every part (including clothing) -> DEADMAT
+  b.damage(200, null)
+  for (const p of b._parts) assert.equal(p.material, DEADMAT)
+
+  // Headless Node: no document, so no texture is ever attached
+  for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) assert.equal(m.map, null)
+
+  // Layout pin unchanged
+  assert.equal(a.group.children.length, 6)
+
+  a.dispose(); b.dispose(); c.dispose()
+  assert.equal(scene.children.length, 0)
 })
