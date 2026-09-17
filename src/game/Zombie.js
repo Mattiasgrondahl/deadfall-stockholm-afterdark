@@ -105,8 +105,10 @@ function loadFaceTextures() {
   for (const type of ORDER) {
     for (let i = 0; i < 3; i++) {
       // Variant 0 is the original portrait ({type}-face.jpg); variants 1 and 2
-      // are the extra faces ({type}2-face.jpg, {type}3-face.jpg).
-      loader.load(ASSET_BASE + 'assets/faces/' + type + (i === 0 ? '' : i) + '-face.jpg', (tex) => {
+      // are the extra faces ({type}2-face.jpg, {type}3-face.jpg) — the file
+      // suffix is i + 1, so variant 1 loads the "2" file and variant 2 the "3"
+      // file.
+      loader.load(ASSET_BASE + 'assets/faces/' + type + (i === 0 ? '' : i + 1) + '-face.jpg', (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
         tex.anisotropy = 4
         const mat = FACEMAT[type][i]

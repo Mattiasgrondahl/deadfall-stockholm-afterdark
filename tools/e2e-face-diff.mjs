@@ -1,8 +1,12 @@
-// E2E probe: face-texture visibility A/B/C pixel check (headless Chromium).
+// E2E probe: face-texture visibility + variant-coverage pixel check (headless Chromium).
 // One page session, one frozen scene, three rendered states of the SAME face:
-//   A = current code (texture + white color)       -> face should read as a portrait
-//   C = original bug sim (texture + head color)    -> map * head-color = dark tint
-//   B = flat face sim (no texture, head color)     -> what "no face" looks like
+//   A = live state (texture + white color + self-lit emissive)  -> face must read as a portrait
+//   D = same scene with the face mesh hidden (flat head)        -> "no face" baseline
+//   F = tuning reference (same texture, emissiveIntensity 0.8)  -> reported for comparison
+// Plus: after the full wave 1 spawns, targeted coverage zombies fill in the
+// variants wave 1 cannot show (shambler variant 1, all 3 screamers), so the
+// live scene exercises all 9 variant textures; console errors/warnings are
+// collected to catch 404s / failed texture loads.
 // The scene is frozen by no-op'ing game.update (the render loop keeps rendering;
 // no pause overlay appears). The face region is projected in-page from the live
 // camera, then sampled in each screenshot (pure-JS PNG decode via Node zlib).
@@ -19,7 +23,7 @@ const W = 1280, H = 720
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: W, height: H } })
 const consoleErrors = []
-page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()) })
+page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(m.text()) })
 page.on('pageerror', (e) => consoleErrors.push(String(e)))
 
 await page.goto(URL, { waitUntil: 'load', timeout: 30000 })
@@ -30,10 +34,40 @@ if ((await page.evaluate(() => window.__game.state)) !== 'playing') {
   await page.click('.screen.visible button.btn')
 }
 await page.waitForTimeout(1500)
-for (let i = 0; i < 60 && !(await page.evaluate(() => window.__game.zombies.length > 0)); i++) {
+// Wait for the full wave 1 (8 zombies = 5 + 3*1) to spawn before sampling, so
+// the live scene shows the deterministic variant spread (its 6 walkers cover
+// all 3 walker variants naturally). Sampling earlier only sees the first spawns.
+for (let i = 0; i < 60 && !(await page.evaluate(() => window.__game.zombies.length >= 8)); i++) {
   await page.waitForTimeout(500)
 }
-for (let i = 0; i < 30 && !(await page.evaluate(() =>
+// Deterministic variant coverage: wave 1 (6 walkers, 2 shamblers, no screamers)
+// shows all 3 walker variants but only 2 shambler variants and no screamers, so
+// spawn the missing ones at precomputed positions whose spawn LCG maps to the
+// needed variant (verified offline against Zombie.js's selector). debug.spawnZombie
+// does not touch wave state; the wave is already complete so nothing is displaced.
+await page.evaluate(() => {
+  const COVERAGE = {
+    shambler: [[85, 0]],
+    screamer: [[-85, 0], [85, 0], [0, -85]]
+  }
+  for (const type of Object.keys(COVERAGE)) {
+    for (const [x, z] of COVERAGE[type]) window.__game.spawnZombie(type, x, z)
+  }
+})
+const snap = (label) => page.evaluate((label) => {
+  const g = window.__game
+  return {
+    label,
+    state: g.state,
+    total: g.zombies.length,
+    alive: g.zombies.filter((z) => !z.isDead).length,
+    playerPos: g.player ? [g.player.position.x.toFixed(1), g.player.position.z.toFixed(1)] : null,
+    health: g.player ? g.player.health : null,
+    detail: g.zombies.filter((z) => !z.isDead).map((z) => [z.type, z.position.x.toFixed(0), z.position.z.toFixed(0), !!(z._face && z._face.material.map)])
+  }
+}, label)
+console.log('SNAP-AFTER-SPAWN:', JSON.stringify(await snap('after-spawn')))
+for (let i = 0; i < 60 && !(await page.evaluate(() =>
   window.__game.zombies.filter((z) => !z.isDead).every((z) => z._face && z._face.material.map))); i++) {
   await page.waitForTimeout(200) // wait until every live zombie has its texture
 }
@@ -208,6 +242,7 @@ await page.evaluate(() => {
   g.update = g._origUpdate
   g.step(0)
 })
+console.log('SNAP-REPORT:', JSON.stringify(await snap('report-time')))
 
 // Variant coverage: group live zombies by the texture URL their face material
 // carries. Each of the 9 shared variant materials owns a distinct texture, so
@@ -333,14 +368,16 @@ console.log('FACE-DIFF PROBE:', JSON.stringify(out, null, 1))
 const liveFaceVisible = parseFloat(out.faceCoreMeanAbsDiff['A_vs_D (textured vs hidden)']) > 15 &&
   parseFloat(out.faceCoreStats.A.std) > 30 &&
   parseFloat(out.faceCoreStats.A.brightFrac) > parseFloat(out.faceCoreStats.D.brightFrac)
-// Variants applied in-page: at least one type must show 2+ distinct face
-// materials among its live zombies (different texture URLs = different
-// shared variant materials).
-const variantsApplied = Object.values(variantReport).some((m) => Object.keys(m).length >= 2)
+// Variants applied in-page: all 3 types must be present, and each must show
+// 3+ distinct face-texture URLs. With the coverage spawns the live scene
+// exercises all 9 shared variant materials ({type}-, {type}2-, {type}3-face.jpg);
+// any flat face (missing/failed texture) removes a URL and fails the probe.
+const variantsApplied = Object.keys(variantReport).length === 3 &&
+  Object.values(variantReport).every((m) => Object.keys(m).filter((u) => u !== '(flat/no texture)').length >= 3)
 const pass = liveFaceVisible && variantsApplied &&
   !consoleErrors.some((e) => /404|faces\/.*jpg|Failed to load/i.test(e))
 console.log('PROBE-FACE-DIFF:', pass ? 'PASS' : 'FAIL',
   liveFaceVisible ? '' : '(live face not clearly visible) ',
-  variantsApplied ? '' : '(no type shows more than one face variant)')
+  variantsApplied ? '' : '(variant coverage incomplete: <3 distinct textures in some type)')
 await browser.close()
 process.exitCode = pass ? 0 : 1
