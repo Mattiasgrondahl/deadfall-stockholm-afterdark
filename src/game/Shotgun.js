@@ -23,6 +23,7 @@ export class Shotgun {
     this.getZombies = null
     this.inputState = null
     this.player = null
+    this.owner = null // player id for kill attribution (multiplayer); null in solo
     this.magSize = MAG
     this.ammo = MAG
     this.reserve = RESERVE
@@ -162,7 +163,7 @@ export class Shotgun {
       if (hitZ) {
         this._hitP.copy(o).addScaledVector(this._pellet, bestT)
         this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, this.damage * (head ? this.headMultiplier : 1), head)
-        hitZ.damage(this.damage * (head ? this.headMultiplier : 1), this._pellet)
+        hitZ.damage(this.damage * (head ? this.headMultiplier : 1), this._pellet, this.owner)
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
       }
     }

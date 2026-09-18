@@ -49,6 +49,7 @@ export class Axe {
     this.cooldown = COOLDOWN
     this.swingTime = SWING_TIME
     this.infiniteAmmo = true
+    this.owner = null // player id for kill attribution (multiplayer); null in solo
     this._coolT = 0
     this._swingT = 0
     this._swinging = false
@@ -161,7 +162,7 @@ export class Axe {
         if ((dx / hdist) * fx + (dz / hdist) * fz < cosArc) continue
         const head = hdist <= this.headRange
         const dmg = this.dmg * (head ? this.headMultiplier : 1)
-        z.damage(dmg, null)
+        z.damage(dmg, null, this.owner)
         // Hit reaction: stagger the zombie along the player->zombie direction
         // (away from the player). No-op if the hit was fatal.
         z.knockback(dx / hdist, dz / hdist, KNOCKBACK)

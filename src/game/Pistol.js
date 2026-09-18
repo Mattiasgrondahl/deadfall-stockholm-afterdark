@@ -38,6 +38,7 @@ export class Pistol {
     this.recoilKick = RECOIL_KICK
     this.isReloading = false
     this.onDecapitate = null // (zombie, dir) -> Task E rolling-head pool
+    this.owner = null // player id for kill attribution (multiplayer); null in solo
     this._reloadT = 0
     this._fireT = 0
     this._time = 0
@@ -164,7 +165,7 @@ export class Pistol {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head)
-      hitZ.damage(dmg, this._shot)
+      hitZ.damage(dmg, this._shot, this.owner)
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot) // fatal headshot
       this.audio?.hitZombie?.()
       this.onHit?.() // HUD hit marker

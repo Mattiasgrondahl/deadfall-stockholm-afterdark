@@ -174,7 +174,7 @@ function loadOutfitTextures() {
   }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS }
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, ATTACK_RANGE, AIR_CLEAR }
 
 const ATTACK_RANGE = 1.3
 const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
@@ -234,6 +234,10 @@ export class Zombie {
     this._attackT = 0
     this._time = 0
     this._killCounted = false
+    // Id of the player whose hit last dealt damage (set by weapons that know
+    // their owner via the `by` argument); the killer is the last one to hit
+    // because damage() no-ops on a dead zombie. null in solo play / debug kills.
+    this.lastDamager = null
     this._slideX = undefined
     this._slideZ = undefined
     this._slideT = 0
@@ -508,10 +512,14 @@ export class Zombie {
   /** Clothing outfit index (0 suit, 1 hoodie+sweatpants, 2 tee+jeans). */
   getOutfit() { return this._outfit }
 
-  /** Contract signature; `dir` is accepted and ignored.
+  /** Contract signature; `dir` is accepted and ignored. `by` (optional) is
+   *  the id of the player dealing the damage; it is recorded as lastDamager
+   *  so multiplayer kill attribution can credit the killer (the last hit is
+   *  the killing hit, because this method no-ops on a dead zombie).
    *  Non-fatal hits flash HITMAT for 0.15 s; a fatal hit swaps to DEADMAT. */
-  damage(amount, dir = null) {
+  damage(amount, dir = null, by = null) {
     if (this.isDead) return
+    if (by !== null) this.lastDamager = by
     this.health -= amount
     if (this.health <= 0) {
       this.health = 0

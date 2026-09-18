@@ -5,6 +5,7 @@ import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
+import { updateWorld } from './WorldCore.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
@@ -272,6 +273,29 @@ export class Game {
     if (this.weapon) this.weapon.onHit = () => { if (this.hud) this.hud.hitMarker() }
     // V5P-2: player damage -> HUD directional feedback (no-op headless: hud is null there)
     if (this.player) this.player._onDamaged = (n, s) => { if (this.hud) this.hud.dmgFeedback(n, s) }
+    // WIRING:WORLDCORE (Phase 0, MULTIPLAYER_PLAN §9): state of the shared
+    // authoritative core, passed to updateWorld() every frame. ws.zombies is
+    // this.zombies (same array), so the core's corpse removal and the wave
+    // spawner operate on the live list. onKill / onDropPickup do exactly what
+    // the inline update() loop used to (kill counter, HUD marker, score,
+    // drop pickup + audio); `by` (the killer's id) is ignored in solo play.
+    this._ws = {
+      players: [{ id: 'p1', player: this.player, weapon: this.weapon, inputState: this.inputState }],
+      zombies: this.zombies,
+      collision: this.collision,
+      wave: this.waveManager,
+      drops: this.drops,
+      audio: this.audio,
+      onKill: (z) => {
+        this.kills++
+        if (this.hud) this.hud.killMarker()
+        if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
+      },
+      onDropPickup: () => {
+        if (this.weapon) this.weapon.shotgun.reserve += SHELLS_PER_DROP
+        if (this.audio) this.audio.pickup?.()
+      }
+    }
   }
 
   setState(next) {
@@ -295,6 +319,9 @@ export class Game {
     if (this.weapon) this.weapon.reset()
     for (const z of this.zombies) z.dispose()
     this.zombies = []
+    // WIRING:WORLDCORE (Phase 0): this reassignment breaks the constructor-time
+    // alias, so rebind the shared core's live zombie list to the new array.
+    if (this._ws) this._ws.zombies = this.zombies
     this.kills = 0
     if (this.drops) this.drops.clear()
     if (this.flashlight) this.flashlight.reset()
@@ -344,39 +371,26 @@ export class Game {
     })
   }
 
-  /** Per-frame update, only while playing. dt is clamped. */
+  /** Per-frame update, only while playing. dt is clamped.
+   *  The shared authoritative core (player, weapon, zombies, kills,
+   *  drops, waves) now runs through WorldCore.updateWorld — the same
+   *  code path the server-side Match uses (Phase 0, MULTIPLAYER_PLAN §9).
+   *  Client-only systems (blood, decap-head pool, flashlight, groans,
+   *  lighting, sky, city) stay here, around the core. */
   update(dt) {
-    // WIRING:UPDATE
-    if (this.player && !this.player.isDead) this.player.update(dt)
-    if (this.weapon) this.weapon.update(dt, this.player)
+    // WIRING:VISUAL-PRE (client-side only; these ran before the sim in the
+    // pre-refactor update — they animate purely visual state)
     // WIRING:BLOOD (V10)
     if (this.blood) this.blood.update(dt)
     // WIRING:DECAPITATE (Task E)
     if (this.headPool) this.headPool.update(dt)
     // WIRING:FLASH (V7)
     if (this.flashlight) this.flashlight.update(dt, this.inputState)
-    // WIRING:ZOMBIES
-    for (const z of this.zombies) z.update(dt, this.player, this.zombies, this.collision, this.audio)
-    // remove finished corpses
-    for (let i = this.zombies.length - 1; i >= 0; i--) {
-      const z = this.zombies[i]
-      if (z.isDead && !z._killCounted) { z._killCounted = true; this.kills++; if (this.hud) this.hud.killMarker(); if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1); if (this.drops && this.drops.maybeSpawn(z.position.x, z.position.z)) this.audio?.drop?.() }
-      if (z.deadAndGone) {
-        this.zombies.splice(i, 1)
-        z.dispose()
-      } else if (z.isDead && z.deathTimer >= 5) {
-        z.deadAndGone = true
-      }
-    }
+    // WIRING:UPDATE — the shared authoritative core (see WorldCore.js):
+    // player + weapon, zombie AI, kill bookkeeping, drops, waves.
+    updateWorld(dt, this._ws)
     // WIRING:GROANS (V8)
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
-    // WIRING:DROPS
-    if (this.drops) this.drops.update(dt, this.player, () => {
-      if (this.weapon) this.weapon.shotgun.reserve += SHELLS_PER_DROP
-      if (this.audio) this.audio.pickup?.()
-    })
-    // WIRING:WAVES
-    if (this.waveManager) this.waveManager.update(dt, this)
     // WIRING:LIGHTING
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
     if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position)

@@ -50,19 +50,25 @@ export class AmmoDrops {
     return true
   }
 
-  /** Per frame: age, blink, expire, and pick up. onPickup(drop) per pickup. */
+  /** Per frame: age, blink, expire, and pick up. onPickup(drop, player) per
+   *  pickup. `player` may be a single player (solo Game) or an array of
+   *  players (multiplayer Match): the first alive player in range takes the
+   *  drop, in array order (deterministic). */
   update(dt, player, onPickup) {
+    const players = Array.isArray(player) ? player : [player]
     for (let i = this._drops.length - 1; i >= 0; i--) {
       const d = this._drops[i]
       d.t += dt
       if (d.t >= LIFETIME) { this._remove(i); continue }
       d.mesh.visible = d.t >= BLINK_AFTER ? (Math.floor(d.t * 3) % 2 === 0) : true
-      if (player && !player.isDead) {
-        const dx = player.position.x - d.x
-        const dz = player.position.z - d.z
+      for (const p of players) {
+        if (!p || p.isDead) continue
+        const dx = p.position.x - d.x
+        const dz = p.position.z - d.z
         if (dx * dx + dz * dz <= PICKUP_RADIUS * PICKUP_RADIUS) {
-          if (onPickup) onPickup(d)
+          if (onPickup) onPickup(d, p)
           this._remove(i)
+          break
         }
       }
     }

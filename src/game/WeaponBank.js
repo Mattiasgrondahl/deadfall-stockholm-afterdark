@@ -28,6 +28,7 @@ export class WeaponBank {
     this._inputState = null
     this._onHit = null
     this._onDecapitate = null
+    this._owner = null
     this._swapT = 0
     this.current = this.shotgun
     // Only the current weapon's view model is visible.
@@ -73,6 +74,17 @@ export class WeaponBank {
     this.shotgun.onDecapitate = fn
     this.pistol.onDecapitate = fn
     this.sword.onDecapitate = fn
+  }
+
+  // Owner player id, forwarded to all weapons so their hits can be attributed
+  // to a killer (multiplayer kill credit). null in solo play.
+  get owner() { return this._owner }
+  set owner(id) {
+    this._owner = id
+    this.axe.owner = id
+    this.shotgun.owner = id
+    this.pistol.owner = id
+    this.sword.owner = id
   }
 
   // HUD-compat: the HUD reads weapon.ammo/reserve/isReloading/magSize.
