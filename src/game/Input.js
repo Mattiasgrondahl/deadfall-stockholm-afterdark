@@ -26,8 +26,9 @@ export class Input {
     this.inputState.switch3 = false
     this.inputState.switch4 = false
     this.inputState.flashlight = false
+    this.inputState.jump = false
     this.down = {}                          // e.code -> true while physically held
-    this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false }
+    this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false, jump: false }
     this._listeners = null                  // [target, event, handler] triples
     this._events = { lock: [], unlock: [], mute: [] }
     this._wasLocked = false
@@ -58,7 +59,7 @@ export class Input {
     this._listeners = null
     for (const k in this.down) this.down[k] = false
     this._edgeHeld.fire = this._edgeHeld.reload = this._edgeHeld.pause = false
-    this._edgeHeld.switch1 = this._edgeHeld.switch2 = this._edgeHeld.switch3 = this._edgeHeld.switch4 = this._edgeHeld.flashlight = false
+    this._edgeHeld.switch1 = this._edgeHeld.switch2 = this._edgeHeld.switch3 = this._edgeHeld.switch4 = this._edgeHeld.flashlight = this._edgeHeld.jump = false
     this._wasLocked = false
     this._syncMovement()
     // Clear stale edges/look deltas left in the shared state object
@@ -72,6 +73,7 @@ export class Input {
     st.switch3 = false
     st.switch4 = false
     st.flashlight = false
+    st.jump = false
     st.turnX = 0
     st.turnY = 0
   }
@@ -135,6 +137,7 @@ export class Input {
         else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = true; this._edgeHeld.pause = true }
         else if (code === 'KeyM') this._emit('mute')
         else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
+        else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }
         else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true }
         else if (code === 'Digit2') { this.inputState.switch2 = true; this._edgeHeld.switch2 = true }
         else if (code === 'Digit3') { this.inputState.switch3 = true; this._edgeHeld.switch3 = true }
@@ -149,6 +152,7 @@ export class Input {
       if (code === 'KeyR') { this.inputState.reload = false; this._edgeHeld.reload = false }
       else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = false; this._edgeHeld.pause = false }
       else if (code === 'KeyF') { this.inputState.flashlight = false; this._edgeHeld.flashlight = false }
+      else if (code === 'Space') { this.inputState.jump = false; this._edgeHeld.jump = false }
       else if (code === 'Digit1') { this.inputState.switch1 = false; this._edgeHeld.switch1 = false }
       else if (code === 'Digit2') { this.inputState.switch2 = false; this._edgeHeld.switch2 = false }
       else if (code === 'Digit3') { this.inputState.switch3 = false; this._edgeHeld.switch3 = false }

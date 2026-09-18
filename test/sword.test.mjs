@@ -104,18 +104,25 @@ test('cooldown blocks rapid swings', () => {
   sword.dispose()
 })
 
-test('swing animation: backswing to follow-through, back to rest', () => {
+test('swing animation: windup, forward slash strike, recovery to rest', () => {
   const player = fakePlayer(0, 0, 0)
   const { sword } = makeSetup(player, [])
   sword.update(0.016, player)
   sword.swing()
-  sword.update(0.08, player)
+  // Mid-strike (cumulative ~0.106 s, k~0.33): the blade pitches forward,
+  // translates toward the target, and the trail flashes on.
+  sword.update(0.09, player)
   assert.ok(sword.view.rotation.y > -1.1 && sword.view.rotation.y < 1.3)
-  sword.update(0.16, player) // cumulative 0.24 s
-  assert.ok(sword.view.rotation.y > -0.3) // progressed toward follow-through
-  sword.update(0.16, player) // cumulative 0.40 s >= swing time
+  assert.ok(sword.view.rotation.x < -0.3, `forward pitch ${sword.view.rotation.x.toFixed(3)}`)
+  assert.ok(sword.view.position.z < -0.6, `forward push ${sword.view.position.z.toFixed(3)}`)
+  assert.ok(sword._trailMat.opacity > 0.2, `trail ${sword._trailMat.opacity.toFixed(3)}`)
+  // Recovery settles back to the exact rest pose once swingTime elapses.
+  sword.update(0.25, player) // cumulative ~0.356 s >= swing time
   assert.equal(sword._swinging, false)
   assert.equal(sword.view.rotation.y, 0)
+  assert.equal(sword.view.rotation.x, 0)
+  assert.equal(sword.view.position.z, -0.6)
+  assert.equal(sword._trailMat.opacity, 0)
   sword.dispose()
 })
 
@@ -123,7 +130,7 @@ test('dispose detaches view from camera; double-safe', () => {
   const player = fakePlayer(0, 0, 0)
   const { camera, sword } = makeSetup(player, [])
   const meshes = sword.view.children.filter((c) => c.isMesh)
-  assert.equal(meshes.length, 3, 'blade, guard, grip present')
+  assert.equal(meshes.length, 4, 'blade, guard, grip, slash trail present')
   sword.dispose()
   assert.equal(camera.children.length, 0)
   sword.dispose() // second call must not throw

@@ -17,6 +17,11 @@ const STAMINA_REGEN = 18    // per second otherwise
 const SPRINT_MIN_STAMINA = 5
 const RADIUS = 0.35
 const SPAWN_X = 0, SPAWN_Y = 1.7, SPAWN_Z = 12
+// Vertical motion: the ground is at y=0 and the eye (position.y) rests at
+// SPAWN_Y. Gravity is a snappy 2g so the street-scale arcs feel quick;
+// JUMP_V gives an apex of JUMP_V^2 / (2 * |GRAVITY|) ≈ 0.98 m.
+const GRAVITY = -19.6 // m/s^2
+const JUMP_V = 6.2    // m/s initial rise
 
 export class Player {
   constructor(camera, inputState, collision, audio = null) {
@@ -75,6 +80,23 @@ export class Player {
     this.position.x += this.velocity.x * dt
     this.position.z += this.velocity.z * dt
     this.collision.resolve(this.position, RADIUS)
+
+    // Vertical: a jump edge fires only while grounded (on the ground, not
+    // already rising). Gravity then accelerates downward and the ground at
+    // y=SPAWN_Y clamps the fall. Head bob (below) still rides on position.y,
+    // so the camera carries the jump arc automatically.
+    if (st.jump) {
+      st.jump = false
+      if (this.position.y <= SPAWN_Y + 1e-4 && this.velocity.y <= 0) {
+        this.velocity.y = JUMP_V
+      }
+    }
+    this.velocity.y += GRAVITY * dt
+    this.position.y += this.velocity.y * dt
+    if (this.position.y <= SPAWN_Y) {
+      this.position.y = SPAWN_Y
+      this.velocity.y = 0
+    }
 
     // Stamina: drains while sprinting, regenerates otherwise.
     const speedNow = Math.hypot(this.velocity.x, this.velocity.z)

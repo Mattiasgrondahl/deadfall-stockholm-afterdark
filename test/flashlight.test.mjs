@@ -33,7 +33,7 @@ test('F edge toggles on then off; edge consumed; click sounds play', () => {
   fl.update(DT, input)
   assert.equal(input.flashlight, false) // edge consumed
   assert.equal(fl.on, true)
-  assert.equal(fl.spot.intensity, 300)
+  assert.equal(fl.spot.intensity, 120)
   assert.equal(audio.calls.click, 1)
   input.flashlight = true
   fl.update(DT, input)
@@ -86,7 +86,7 @@ test('flicker engages below 25% battery; schedule is deterministic', () => {
     seqB.push(b.fl.spot.intensity)
   }
   assert.deepEqual(seqA, seqB) // identical LCG schedule
-  const dims = seqA.filter(v => v < 300).length
+  const dims = seqA.filter(v => v < 120).length
   assert.ok(dims > 0, `no dim frames observed`)
   assert.ok(dims < 600, `flicker never recovers`)
   a.fl.dispose(); b.fl.dispose()

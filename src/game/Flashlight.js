@@ -6,7 +6,7 @@ import * as THREE from 'three'
 // (no Math.random); headless-safe (no DOM, audio optional, no shadows).
 
 const SEED = 9021
-const BASE_INTENSITY = 300 // cd — ~8x a streetlight pool at equal range
+const BASE_INTENSITY = 120 // cd — ~2.2x a streetlight at equal range (dimmed from 300; still reads in alleys)
 const CONE_ANGLE = 0.45 // rad (~26 deg cone)
 const PENUMBRA = 0.35
 const DISTANCE = 14 // m cutoff

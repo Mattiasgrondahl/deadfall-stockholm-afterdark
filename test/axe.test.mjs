@@ -67,18 +67,25 @@ test('cooldown blocks rapid swings', () => {
   axe.dispose()
 })
 
-test('swing animation: backswing to follow-through, back to rest', () => {
+test('swing animation: windup, forward slash strike, recovery to rest', () => {
   const player = fakePlayer(0, 0, 0)
   const { axe } = makeSetup(player, [])
   axe.update(0.016, player)
   axe.swing()
-  axe.update(0.05, player)
+  // Mid-strike (cumulative ~0.086 s, k~0.34): the head pitches forward,
+  // translates toward the target, and the trail flashes on.
+  axe.update(0.07, player)
   assert.ok(axe.view.rotation.y > -0.9 && axe.view.rotation.y < 1.1)
-  axe.update(0.1, player) // cumulative 0.15 s
-  assert.ok(axe.view.rotation.y > -0.5) // progressed toward follow-through
-  axe.update(0.2, player) // cumulative 0.35 s >= swing time
+  assert.ok(axe.view.rotation.x < -0.3, `forward pitch ${axe.view.rotation.x.toFixed(3)}`)
+  assert.ok(axe.view.position.z < -0.5, `forward push ${axe.view.position.z.toFixed(3)}`)
+  assert.ok(axe._trailMat.opacity > 0.2, `trail ${axe._trailMat.opacity.toFixed(3)}`)
+  // Recovery settles back to the exact rest pose once swingTime elapses.
+  axe.update(0.3, player) // cumulative ~0.386 s >= swing time
   assert.equal(axe._swinging, false)
   assert.equal(axe.view.rotation.y, 0)
+  assert.equal(axe.view.rotation.x, 0)
+  assert.equal(axe.view.position.z, -0.5)
+  assert.equal(axe._trailMat.opacity, 0)
   axe.dispose()
 })
 

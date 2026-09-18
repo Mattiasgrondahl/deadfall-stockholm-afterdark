@@ -91,9 +91,10 @@ const FACEMAT = {
 
 // Per-outfit clothing materials, shared across all zombie types. Outfit 0 =
 // suit (dark grey jacket + charcoal trousers), 1 = hoodie + sweatpants
-// (heather grey), 2 = blue tee + dark denim jeans. The torso and arms wear
-// the top material, the legs the bottom; the head keeps the per-type MAT2
-// color so the face still reads. Base colors are the clothing colors so the
+// (heather grey), 2 = blue tee + dark denim jeans. The torso wears the top
+// material and the legs the bottom; the arms stay bare (per-type MAT2 skin
+// color) and the head keeps the per-type color so the face still reads.
+// Base colors are the clothing colors so the
 // headless / not-yet-loaded state already looks clothed; when the texture
 // lands (browser only) the color flips to white, because
 // MeshStandardMaterial multiplies map by color (same reasoning as the faces).
@@ -176,11 +177,14 @@ function loadOutfitTextures() {
 export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS }
 
 const ATTACK_RANGE = 1.3
+const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
 const SEPARATION_DIST = 0.9
 const SEPARATION_STRENGTH = 0.6
 const COLLIDER_RADIUS = 0.5
 const NO_PROG_FLIP = 0.6 // s of zero progress while sliding before flipping direction
 const CLEAR_DIST = 0.75  // m to keep sliding in free space before resuming chase
+const KB_TIME = 0.35     // s of stagger after a melee hit
+const KB_STRENGTH = 3    // initial m/s; total push = STRENGTH*TIME/2 ≈ 0.53 m
 
 /**
  * True contact normal for a circle against the AABBs, choosing the contact
@@ -241,6 +245,9 @@ export class Zombie {
     // Per-frame scratch for contactNormal (avoids per-frame {x, z} allocs).
     this._cn = { x: 0, z: 0 }
     this._tan = { x: 0, z: 0 } // scratch for pickTangent (removes its commit-only [tx,tz] allocation)
+    this._kbT = 0 // stagger timer (s), decremented in update()
+    this._kbX = 0 // stagger velocity x (m/s)
+    this._kbZ = 0 // stagger velocity z (m/s)
     // Deterministic per-zombie phase (fixed-seed LCG from spawn coords + type).
     // Stored here for later tasks (walk animation, groan scheduling). Math.imul
     // keeps the LCG exact: later iterations exceed 2^53 under plain '*'.
@@ -296,7 +303,9 @@ export class Zombie {
     head.add(face)
     this._face = face
     for (const side of [-1, 1]) {
-      const arm = new THREE.Mesh(GEO2.arm, topMat)
+      // Bare arms: the top texture/color is torso-only; arms keep the
+      // per-type skin color so the cloth reads as a jacket/shirt on the body.
+      const arm = new THREE.Mesh(GEO2.arm, mat)
       arm.position.set(0.33 * side, 1.45, 0.12)
       arm.rotation.x = pose.armRest
       parts.push(arm)
@@ -318,7 +327,7 @@ export class Zombie {
     for (const p of parts) p.castShadow = true
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
-    this._restMats = [topMat, mat, topMat, topMat, bottomMat, bottomMat]
+    this._restMats = [topMat, mat, mat, mat, bottomMat, bottomMat]
     this._flashT = 0
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
@@ -348,11 +357,32 @@ export class Zombie {
       }
     }
     if (!player || player.isDead) return
+    // Hit stagger: after a melee hit the zombie is pushed along the knockback
+    // vector while it decays linearly, and it neither chases nor attacks for
+    // the duration. Displacement is smooth and deterministic (total ≈
+    // KB_STRENGTH * KB_TIME / 2). Limbs drop to rest pose while staggered.
+    if (this._kbT > 0) {
+      this._kbT = Math.max(0, this._kbT - dt)
+      const f = this._kbT / KB_TIME
+      this.position.x += this._kbX * f * dt
+      this.position.z += this._kbZ * f * dt
+      collision.resolve(this.position, COLLIDER_RADIUS)
+      const armRest = POSE2[this.type].armRest
+      this._armL.rotation.x = armRest
+      this._armR.rotation.x = armRest
+      this._legL.rotation.x = 0
+      this._legR.rotation.x = 0
+      this.group.rotation.x = 0
+      this.group.position.copy(this.position)
+      return
+    }
     const dx = player.position.x - this.position.x
     const dz = player.position.z - this.position.z
     const dist = Math.hypot(dx, dz)
     this.group.rotation.y = Math.atan2(dx, dz) // face player
-    if (dist <= ATTACK_RANGE) {
+    // Melee only lands when the player is within horizontal range AND not
+    // high above the torso (a mid-jump player is out of arm reach).
+    if (dist <= ATTACK_RANGE && Math.abs(player.position.y - 1.2) <= AIR_CLEAR) {
       this._attackT += dt
       if (this._attackT >= TABLE[this.type].cooldown) {
         this._attackT = 0
@@ -495,6 +525,15 @@ export class Zombie {
       this._flashT = 0.15
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
     }
+  }
+
+  /** Hit reaction: stagger backward along (dx, dz) at `strength` m/s,
+   *  decaying over KB_TIME. No-op on a dead zombie (its corpse is inert). */
+  knockback(dx, dz, strength = KB_STRENGTH) {
+    if (this.isDead) return
+    this._kbX = dx * strength
+    this._kbZ = dz * strength
+    this._kbT = KB_TIME
   }
 
   /** Detach only the per-zombie group. Shared GEO/MAT are module-level and

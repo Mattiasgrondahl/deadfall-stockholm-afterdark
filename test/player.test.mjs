@@ -157,4 +157,28 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   player.dispose()
 }
 
+{ // jump: edge fires only on the ground; gravity lands at 1.7; no re-jump airborne; re-jump after landing
+  const { player, st } = makePlayer()
+  st.jump = true
+  player.update(DT)
+  assert.ok(player.position.y > 1.7, `rose to ${player.position.y.toFixed(3)}`)
+  assert.ok(player.velocity.y > 0, 'ascending after jump')
+  st.jump = true // pressed again while airborne: must be ignored
+  player.update(DT)
+  assert.ok(player.velocity.y < 6.2, `no re-jump airborne (vy ${player.velocity.y.toFixed(3)})`)
+  let landed = -1
+  for (let i = 0; i < 300; i++) {
+    player.update(DT)
+    if (player.position.y === 1.7 && player.velocity.y === 0) { landed = i; break }
+  }
+  assert.ok(landed >= 0, 'lands back on the ground')
+  assert.strictEqual(player.velocity.y, 0)
+  st.jump = true
+  player.update(DT)
+  assert.ok(player.position.y > 1.7, 're-jump works after landing')
+  player.reset()
+  assert.strictEqual(player.position.y, 1.7)
+  assert.strictEqual(player.velocity.y, 0)
+}
+
 console.log('player OK')

@@ -142,9 +142,12 @@ test('shared geometry/materials; dispose detaches only the group', () => {
     const mb = b.group.children[i].material
     if (i === 1) {
       assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
-    } else if (i === 0 || i === 2 || i === 3) {
-      assert.ok(OUTFITMATS.tops.includes(ma), 'a torso/arm is a shared top material')
-      assert.ok(OUTFITMATS.tops.includes(mb), 'b torso/arm is a shared top material')
+    } else if (i === 2 || i === 3) {
+      // Bare arms: both spawns are walkers, so arm identity holds.
+      assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
+    } else if (i === 0) {
+      assert.ok(OUTFITMATS.tops.includes(ma), 'a torso is a shared top material')
+      assert.ok(OUTFITMATS.tops.includes(mb), 'b torso is a shared top material')
     } else {
       assert.ok(OUTFITMATS.bottoms.includes(ma), 'a leg is a shared bottom material')
       assert.ok(OUTFITMATS.bottoms.includes(mb), 'b leg is a shared bottom material')
@@ -342,8 +345,8 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
     const o = z.getOutfit()
     const [torso, head, armL, armR, legL, legR] = z._parts
     assert.equal(torso.material, OUTFITMATS.tops[o])
-    assert.equal(armL.material, OUTFITMATS.tops[o])
-    assert.equal(armR.material, OUTFITMATS.tops[o])
+    assert.equal(armL.material, MAT2[z.type]) // bare arms keep the type skin color
+    assert.equal(armR.material, MAT2[z.type])
     assert.equal(legL.material, OUTFITMATS.bottoms[o])
     assert.equal(legR.material, OUTFITMATS.bottoms[o])
     assert.equal(head.material, MAT2[z.type]) // head keeps the type skin color
@@ -356,6 +359,8 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   a.update(0.2, null, [], null, null)
   assert.equal(a._parts[0].material, OUTFITMATS.tops[0])
   assert.equal(a._parts[1].material, MAT2.walker)
+  assert.equal(a._parts[2].material, MAT2.walker) // bare arm restored to skin color
+  assert.equal(a._parts[3].material, MAT2.walker)
   assert.equal(a._parts[4].material, OUTFITMATS.bottoms[0])
 
   // Death behavior unchanged: every part (including clothing) -> DEADMAT
@@ -370,4 +375,42 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
 
   a.dispose(); b.dispose(); c.dispose()
   assert.equal(scene.children.length, 0)
+})
+
+test('knockback: a melee hit staggers the zombie backward, then chase resumes', () => {
+  const { collision, zombie } = makeZombie('walker', 0, -2, 1) // player at origin
+  const player = fakePlayer(0, 0)
+  // Push away from the player (player -> zombie direction is (0, -1)).
+  zombie.knockback(0, -1, 3)
+  assert.equal(zombie._kbT, 0.35)
+  const x0 = zombie.position.x
+  for (let i = 0; i < 21; i++) zombie.update(1 / 60, player, [zombie], collision, null) // 0.35 s
+  assert.ok(zombie._kbT < 1e-9, `_kbT=${zombie._kbT}`) // 21*(1/60) ≈ 0.35 in fp
+  // Discrete sum of the linear decay: exactly 0.5 m back from -2.
+  assert.ok(Math.abs(zombie.position.z + 2.5) < 1e-9, `z=${zombie.position.z}`)
+  assert.ok(Math.abs(zombie.position.x - x0) < 1e-9, `x=${zombie.position.x}`) // ~1e-16 fp noise from resolve()
+  // Stagger ends with limbs at rest pose
+  assert.equal(zombie._legL.rotation.x, 0)
+  assert.equal(zombie._armL.rotation.x, POSE2.walker.armRest)
+  // After the stagger the zombie resumes chasing the player (+z here).
+  const zAfter = zombie.position.z
+  for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.ok(zombie.position.z > zAfter, 'chase resumes after stagger')
+  // Knocking a dead zombie is a no-op.
+  zombie.damage(zombie.maxHealth + 10)
+  const deadX = zombie.position.x
+  zombie.knockback(1, 0, 5)
+  assert.equal(zombie._kbT, 0)
+  assert.equal(zombie.position.x, deadX)
+})
+
+test('melee skips a player jumping above arm reach; hits once grounded', () => {
+  const { collision, zombie } = makeZombie('walker', 1.2, 0, 1)
+  const player = fakePlayer(0, 0)
+  player.position.y = 2.6 // mid-jump: 1.4 m above the torso center (1.2)
+  for (let i = 0; i < 60; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.equal(player.health, 1000) // no hit while the player is high
+  player.position.y = 1.7 // lands back on the ground
+  for (let i = 0; i < 60; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.equal(player.health, 992) // one 8-damage hit after landing
 })
