@@ -43,7 +43,19 @@ export class Screens {
     const startBtn = d.createElement('button'); startBtn.className = 'btn primary'; startBtn.textContent = 'START'
     startBtn.addEventListener('click', () => this._game.startGame())
     panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs)
-    panelT.appendChild(grid); panelT.appendChild(startBtn)
+    // Difficulty picker (radio-style toggles): NIGHT is the baseline;
+    // FRENZY = 2× zombie speed + flat 50 HP (2 body shots or 1 headshot).
+    // The choice is stored on the game and applied to every spawned zombie.
+    const diffRow = d.createElement('div'); diffRow.className = 'difficulty-row'
+    const diffLabel = d.createElement('div'); diffLabel.className = 'difficulty-label'; diffLabel.textContent = 'DIFFICULTY'
+    this._nightBtn = d.createElement('button'); this._nightBtn.className = 'toggle on'; this._nightBtn.textContent = 'NIGHT'
+    this._frenzyBtn = d.createElement('button'); this._frenzyBtn.className = 'toggle'; this._frenzyBtn.textContent = 'FRENZY'
+    const frenzyHint = d.createElement('div'); frenzyHint.className = 'tagline dim'; frenzyHint.textContent = 'FRENZY: they run 2× faster — 2 shots to kill unless you headshot'
+    this._nightBtn.addEventListener('click', () => this._setDifficulty('normal'))
+    this._frenzyBtn.addEventListener('click', () => this._setDifficulty('frenzy'))
+    diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn)
+    diffRow.appendChild(frenzyHint)
+    panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(startBtn)
     this._title.appendChild(panelT)
     this._root.appendChild(this._title)
 
@@ -111,6 +123,15 @@ export class Screens {
     const s = this._game.state
     if (s === 'title' || s === 'gameover') this._game.startGame()
     else if (s === 'paused' && this._game.input) this._game.input.requestLock()
+  }
+
+  // Title-screen difficulty selection: sets the game preset and the active
+  // toggle. START/Enter then begin with the selected difficulty, and a
+  // game-over restart keeps it (startGame re-rolls the same difficulty).
+  _setDifficulty(name) {
+    this._game.difficulty = name
+    this._nightBtn.classList.toggle('on', name === 'normal')
+    this._frenzyBtn.classList.toggle('on', name === 'frenzy')
   }
 
   _hideAll() {

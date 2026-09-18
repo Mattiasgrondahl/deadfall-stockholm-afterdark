@@ -43,6 +43,16 @@ const TABLE = {
   screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 }
 }
 
+// Difficulty presets. NORMAL is the shipped baseline (identity). FRENZY: every
+// zombie runs at 2× speed and has a flat 50 HP regardless of type, tuned so
+// that at wave 1 exactly 2 body shots (pistol 26+26, axe 25+25) or 1 headshot
+// (pistol 52, axe 50, sword 90) kill it. The usual 1.12×/wave HP scaling
+// still applies on top.
+export const DIFFICULTY = {
+  normal: { speedMult: 1, hpBase: null },
+  frenzy: { speedMult: 2, hpBase: 50 }
+}
+
 const ORDER = ['walker', 'shambler', 'screamer']
 
 /**
@@ -223,11 +233,14 @@ function contactNormal(pos, aabbs, radius, wantX, wantZ, out) {
 }
 
 export class Zombie {
-  constructor(scene, type, x, z, wave = 1) {
+  constructor(scene, type, x, z, wave = 1, difficulty = 'normal') {
     if (!TABLE[type]) throw new Error('unknown zombie type: ' + type)
+    const diff = DIFFICULTY[difficulty] || DIFFICULTY.normal
     this.type = type
     this.scene = scene
-    this.maxHealth = this.health = Math.round(TABLE[type].hp * Math.pow(1.12, wave - 1))
+    this.speed = TABLE[type].speed * diff.speedMult
+    const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
     this.position = new THREE.Vector3(x, 0, z) // group origin = feet (y 0)
     this.isDead = false
     this.deathTimer = 0
@@ -423,7 +436,7 @@ export class Zombie {
     if (this._slideX !== undefined) { dirX = this._slideX; dirZ = this._slideZ }
     const preX = this.position.x
     const preZ = this.position.z
-    const stepLen = TABLE[this.type].speed * dt
+    const stepLen = this.speed * dt
     this.position.x += dirX * stepLen
     this.position.z += dirZ * stepLen
     collision.resolve(this.position, COLLIDER_RADIUS)

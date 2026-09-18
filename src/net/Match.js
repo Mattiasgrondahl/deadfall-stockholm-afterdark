@@ -4,7 +4,7 @@ import { City } from '../world/City.js'
 import { Player } from '../game/Player.js'
 import { WeaponBank } from '../game/WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP } from '../game/AmmoDrops.js'
-import { Zombie, ATTACK_RANGE, AIR_CLEAR } from '../game/Zombie.js'
+import { Zombie, ATTACK_RANGE, AIR_CLEAR, DIFFICULTY } from '../game/Zombie.js'
 import { WaveManager } from '../game/WaveManager.js'
 import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
 
@@ -54,6 +54,9 @@ export class Match {
    */
   constructor(opts = {}) {
     this.playersCap = opts.playersCap ?? 8
+    // Difficulty preset (see DIFFICULTY in Zombie.js); 'normal' is the
+    // default. A future lobby/room message can select 'frenzy'.
+    this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal'
     this.scene = opts.scene || new THREE.Scene()
     this.tick = 0
     this.time = 0
@@ -144,7 +147,7 @@ export class Match {
 
   /** Spawn a zombie (the WaveManager calls this; tests may too). */
   spawnZombie(type, x, z, wave = this.wave ? this.wave.wave : 1) {
-    const zombie = new Zombie(this.scene, type, x, z, wave)
+    const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
     zombie._matchId = ++this._zombieSeq
     this.zombies.push(zombie)
     return zombie

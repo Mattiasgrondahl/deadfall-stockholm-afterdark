@@ -447,6 +447,20 @@ html, body {
   color: var(--banner);
 }
 
+/* title-screen difficulty picker (NIGHT / FRENZY) */
+.difficulty-row { margin-top: 18px; }
+.difficulty-label { font-size: 12px; letter-spacing: 0.12em; opacity: 0.7; margin-bottom: 6px; }
+.difficulty-row .toggle {
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  margin: 0 6px 6px 0;
+}
+.difficulty-row .toggle.on {
+  background: rgba(110, 168, 255, 0.2);
+  border-color: var(--accent);
+  color: var(--banner);
+}
+
 /* game over */
 .gameover-title {
   font-family: var(--mono);

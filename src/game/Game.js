@@ -12,7 +12,7 @@ import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
-import { Zombie } from './Zombie.js'
+import { Zombie, DIFFICULTY } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
@@ -58,6 +58,10 @@ export class Game {
     this.canvas = opts.canvas || null
     this.state = GameState.TITLE
     this.quality = 'high'
+    // Difficulty preset (see DIFFICULTY in Zombie.js): 'normal' is the
+    // shipped baseline; 'frenzy' = 2x zombie speed + flat 50 HP (2-shot kill
+    // unless headshot). Screens can reassign it on the title screen.
+    this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal'
     this._lastTime = -1
 
     this.renderer = this.headless ? new StubRenderer() : null
@@ -335,6 +339,9 @@ export class Game {
     if (this.input && !this.input.locked()) this.input.requestLock()
     if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
     if (this.screens) this.screens.showGameplay()
+    if (this.difficulty !== 'normal' && this.screens) {
+      this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')
+    }
   }
 
   togglePause() {
@@ -401,7 +408,7 @@ export class Game {
   spawnZombie(type, x, z) {
     // WIRING:SPAWN (owned by task D: create zombie, push into this.zombies, return it)
     const wave = this.waveManager ? this.waveManager.wave : 1
-    const zombie = new Zombie(this.scene, type, x, z, wave)
+    const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
     this.zombies.push(zombie)
     return zombie
   }
