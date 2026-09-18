@@ -41,11 +41,12 @@ function fakeZombie(type, x, z, isDead = false) {
   const bank = new AudioBank()
   bank.axeSwing(); bank.pickup(); bank.drop()
   bank.flashlightClick(); bank.weaponSwitch()
+  bank.pistolShot(); bank.swordSwing()
   bank.groan('walker', 5); bank.groan('shambler', 8); bank.groan('screamer', 12)
   bank.updateGroans(1 / 60, [fakeZombie('walker', 3, 0)], { x: 0, z: 0 })
   assert.ok(bank.activeGroans() >= 0 && bank.activeGroans() <= 4)
   bank.dispose()
-  bank.axeSwing(); bank.pickup(); bank.updateGroans(1 / 60, [], { x: 0, z: 0 })
+  bank.axeSwing(); bank.pickup(); bank.pistolShot(); bank.swordSwing(); bank.updateGroans(1 / 60, [], { x: 0, z: 0 })
 }
 
 // ---- fake AudioContext: exercise the real graph code ---------------------
@@ -290,6 +291,12 @@ function bankWithFakeCtx() {
   const bank = bankWithFakeCtx()
   let before = bank.ctx._created.length
   bank.axeSwing() // noise burst (3 nodes) + falling thud (2)
+  assert.ok(bank.ctx._created.length - before >= 5)
+  before = bank.ctx._created.length
+  bank.pistolShot() // highpassed crack (3) + falling ping (2)
+  assert.ok(bank.ctx._created.length - before >= 5)
+  before = bank.ctx._created.length
+  bank.swordSwing() // lowpassed whoosh (3) + metallic thud (2)
   assert.ok(bank.ctx._created.length - before >= 5)
   before = bank.ctx._created.length
   bank.pickup() // two rising chirps (4)

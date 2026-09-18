@@ -51,10 +51,12 @@ function find(root, cls) {
 }
 
 function fakeBank(currentName) {
-  const mk = (name) => ({ name, ammo: 5, reserve: 30, isReloading: false, infiniteAmmo: name === 'axe' })
+  const mk = (name) => ({ name, ammo: 5, reserve: 30, isReloading: false, infiniteAmmo: name === 'axe' || name === 'sword' })
   const axe = mk('axe')
   const shotgun = mk('shotgun')
-  return { axe, shotgun, current: currentName === 'axe' ? axe : shotgun }
+  const pistol = mk('pistol')
+  const sword = mk('sword')
+  return { axe, shotgun, pistol, sword, current: { axe, shotgun, pistol, sword }[currentName] || shotgun }
 }
 
 const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
@@ -67,13 +69,15 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   const slots = hudRoot.children
     .filter((c) => c.classList.contains('hud-weapons'))
     .flatMap((w) => w.children.filter((c) => c.classList.contains('weapon-slot')))
-  assert.equal(slots.length, 2)
+  assert.equal(slots.length, 4)
   assert.equal(slots[0].classList.contains('active'), false)
   assert.equal(slots[1].classList.contains('active'), true) // shotgun is current
+  assert.equal(slots[2].classList.contains('active'), false)
+  assert.equal(slots[3].classList.contains('active'), false)
   const names = slots.map((s) => find(s, 'weapon-name').textContent)
   const ammo = slots.map((s) => find(s, 'weapon-ammo').textContent)
-  assert.deepEqual(names, ['axe', 'shotgun'])
-  assert.deepEqual(ammo, ['∞', '5 / 30'])
+  assert.deepEqual(names, ['axe', 'shotgun', 'pistol', 'sword'])
+  assert.deepEqual(ammo, ['∞', '5 / 30', '5 / 30', '∞'])
   assert.equal(find(hudRoot, 'hud-ammo').classList.contains('hidden'), true) // legacy hidden
   assert.equal(hudRoot.children.find((c) => c.classList.contains('hud-battery')).classList.contains('hidden'), true)
   assert.equal(hudRoot.children.find((c) => c.classList.contains('hud-score')).classList.contains('hidden'), true)
@@ -97,6 +101,12 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   assert.equal(slots[1].classList.contains('reloading'), true)
   assert.equal(slots[1].classList.contains('empty'), true)
   assert.equal(slots[0].classList.contains('empty'), false) // axe is infinite
+  bank.current = bank.pistol
+  hud.update(fakePlayer, bank, null)
+  slots = hudRoot.children.filter((c) => c.classList.contains('hud-weapons')).flatMap((w) => w.children.filter((c) => c.classList.contains('weapon-slot')))
+  assert.equal(slots[2].classList.contains('active'), true) // pistol now current
+  assert.equal(slots[0].classList.contains('active'), false)
+  assert.equal(slots[3].classList.contains('active'), false) // sword stays passive
   hud.dispose()
 }
 

@@ -5,7 +5,7 @@ import { Input } from '../src/game/Input.js'
 const freshState = () => ({
   forward: false, back: false, left: false, right: false, sprint: false,
   turnX: 0, turnY: 0, fire: false, reload: false, pause: false,
-  switch1: false, switch2: false, flashlight: false
+  switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false
 })
 
 function makeEnv() {
@@ -147,8 +147,17 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   key(env, 'Digit1', 'keyup'); assert.strictEqual(st.switch1, false)
   key(env, 'Digit2', 'keydown'); assert.strictEqual(st.switch2, true)
   key(env, 'Digit2', 'keyup'); assert.strictEqual(st.switch2, false)
+  key(env, 'Digit3', 'keydown'); assert.strictEqual(st.switch3, true)
+  st.switch3 = false // consumer (WeaponBank) acted
+  key(env, 'Digit3', 'keydown', true); assert.strictEqual(st.switch3, false) // repeat suppressed
+  key(env, 'Digit3', 'keyup'); assert.strictEqual(st.switch3, false)
+  key(env, 'Digit3', 'keydown'); assert.strictEqual(st.switch3, true) // new press edge
+  key(env, 'Digit3', 'keyup'); assert.strictEqual(st.switch3, false)
+  key(env, 'Digit4', 'keydown'); assert.strictEqual(st.switch4, true)
+  key(env, 'Digit4', 'keyup'); assert.strictEqual(st.switch4, false)
   input.dispose()
   assert.strictEqual(st.switch1, false); assert.strictEqual(st.switch2, false)
+  assert.strictEqual(st.switch3, false); assert.strictEqual(st.switch4, false)
   assert.strictEqual(st.flashlight, false)
 }
 

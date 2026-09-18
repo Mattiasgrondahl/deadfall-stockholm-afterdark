@@ -201,6 +201,23 @@ export class AudioBank {
     this._playTone({ type: 'sine', freq: 110, freqEnd: 60, duration: 0.14, gain: 0.2 })
   }
 
+  // Pistol shot: sharp short crack (highpassed noise) + brief falling ping.
+  // Quieter and tighter than the shotgun blast.
+  pistolShot() {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 900, gain: 0.4 })
+    this._playTone({ type: 'sine', freq: 900, freqEnd: 300, duration: 0.07, gain: 0.2 })
+  }
+
+  // Sword swing: longer, lower whoosh than the axe + a deep metallic thud.
+  swordSwing() {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.22, filterType: 'lowpass', filterFreq: 500, gain: 0.35 })
+    this._playTone({ type: 'sine', freq: 130, freqEnd: 70, duration: 0.2, gain: 0.25, when: 0.05 })
+  }
+
   // Ammo pickup: two short rising chirps.
   pickup() {
     if (!this.ctx) return

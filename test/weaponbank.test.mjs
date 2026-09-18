@@ -6,13 +6,15 @@ import { WeaponBank } from '../src/game/WeaponBank.js'
 import { Zombie } from '../src/game/Zombie.js'
 
 function fakeAudio() {
-  const counts = { shoot: 0, hitZombie: 0, reload: 0, axeSwing: 0, weaponSwitch: 0 }
+  const counts = { shoot: 0, hitZombie: 0, reload: 0, axeSwing: 0, pistolShot: 0, swordSwing: 0, weaponSwitch: 0 }
   return {
     counts,
     shoot() { counts.shoot++ },
     hitZombie() { counts.hitZombie++ },
     reload() { counts.reload++ },
     axeSwing() { counts.axeSwing++ },
+    pistolShot() { counts.pistolShot++ },
+    swordSwing() { counts.swordSwing++ },
     weaponSwitch() { counts.weaponSwitch++ }
   }
 }
@@ -28,7 +30,7 @@ function makeBank(player, zombies, audio = fakeAudio()) {
   camera.lookAt(player.position.x, player.position.y, player.position.z - 10) // aim straight ahead
   const bank = new WeaponBank(scene, camera, new CollisionWorld(180, 180), audio)
   bank.getZombies = () => zombies
-  bank.inputState = { fire: false, reload: false, switch1: false, switch2: false }
+  bank.inputState = { fire: false, reload: false, switch1: false, switch2: false, switch3: false, switch4: false }
   return { bank, audio, camera }
 }
 
@@ -37,11 +39,15 @@ test('construction: shotgun primary, visibility, getters', () => {
   assert.equal(bank.current, bank.shotgun)
   assert.equal(bank.shotgun.view.visible, true)
   assert.equal(bank.axe.view.visible, false)
+  assert.equal(bank.pistol.view.visible, false)
+  assert.equal(bank.sword.view.visible, false)
   assert.equal(bank.ammo, bank.shotgun.ammo)
   assert.equal(bank.reserve, bank.shotgun.reserve)
   assert.equal(bank.magSize, bank.shotgun.magSize)
   assert.equal(bank.axe.name, 'axe')
   assert.equal(bank.shotgun.name, 'shotgun')
+  assert.equal(bank.pistol.name, 'pistol')
+  assert.equal(bank.sword.name, 'sword')
   bank.dispose()
 })
 
@@ -94,7 +100,65 @@ test('switch1/switch2 input edges', () => {
   bank.dispose()
 })
 
-test('reset restores shotgun and clears both weapons', () => {
+test('switch3/switch4 input edges route to pistol and sword', () => {
+  const { bank, audio } = makeBank(fakePlayer(0, 0), [])
+  bank.inputState.switch3 = true
+  bank.update(1 / 60, null)
+  assert.equal(bank.inputState.switch3, false)
+  assert.equal(bank.current, bank.pistol)
+  assert.equal(bank.pistol.view.visible, true)
+  assert.equal(bank.shotgun.view.visible, false)
+  assert.equal(audio.counts.weaponSwitch, 1)
+  bank.update(0.3, null) // clear the swap lockout
+  bank.inputState.switch4 = true
+  bank.update(1 / 60, null)
+  assert.equal(bank.inputState.switch4, false)
+  assert.equal(bank.current, bank.sword)
+  assert.equal(bank.sword.view.visible, true)
+  assert.equal(audio.counts.weaponSwitch, 2)
+  bank.dispose()
+})
+
+test('fire routes to the current weapon only (pistol and sword)', () => {
+  const zombies = [new Zombie(new THREE.Scene(), 'walker', 0, -5, 1)]
+  const { bank, audio } = makeBank(fakePlayer(0, 0, 0), zombies)
+  bank.switchTo('pistol')
+  bank.pistol._rng = () => 0.5 // zero spread
+  bank.inputState.fire = true
+  bank.update(1 / 60, fakePlayer(0, 0, 0))
+  assert.equal(bank.inputState.fire, false)
+  assert.equal(audio.counts.pistolShot, 1)
+  assert.equal(bank.pistol.ammo, 11)
+  assert.ok(zombies[0].health < zombies[0].maxHealth)
+  bank.update(0.3, fakePlayer(0, 0, 0)) // clear the swap lockout
+  bank.switchTo('sword')
+  bank.inputState.fire = true
+  bank.update(1 / 60, fakePlayer(0, 0, 0))
+  assert.equal(bank.inputState.fire, false)
+  assert.equal(audio.counts.swordSwing, 1)
+  assert.equal(audio.counts.pistolShot, 1) // pistol untouched while sword is current
+  assert.equal(bank.pistol.ammo, 11)
+  bank.dispose()
+})
+
+test('fatal headshot through the bank fires onDecapitate', () => {
+  // Camera at (0,1.7,0) facing -Z; a zombie 2.5 m ahead is head-shot by a
+  // straight pistol round (head box center (0,1.8,-2.5), r 0.3).
+  const zombies = [new Zombie(new THREE.Scene(), 'walker', 0, -2.5, 1)]
+  const { bank, audio } = makeBank(fakePlayer(0, 0, 0), zombies)
+  const decapCalls = []
+  bank.onDecapitate = (z, dir) => decapCalls.push([z, dir])
+  bank.switchTo('pistol')
+  bank.pistol._rng = () => 0.5 // zero spread
+  bank.inputState.fire = true
+  bank.update(1 / 60, fakePlayer(0, 0, 0))
+  assert.equal(zombies[0].isDead, true, '52-dmg headshot kills a wave-1 walker')
+  assert.equal(decapCalls.length, 1, 'bank forwards the decap callback')
+  assert.equal(decapCalls[0][0], zombies[0])
+  bank.dispose()
+})
+
+test('reset restores shotgun and clears all weapons', () => {
   const player = fakePlayer(0, 0, 0)
   const { bank } = makeBank(player, [])
   bank.switchTo('axe')
@@ -108,14 +172,24 @@ test('reset restores shotgun and clears both weapons', () => {
   }
   assert.equal(bank.shotgun.ammo, 0)
   assert.equal(bank.shotgun.isReloading, true) // auto-reload after the last round
+  bank.switchTo('pistol')
+  bank.pistol.shoot()
+  bank.switchTo('sword')
+  bank.sword.swing()
   bank.reset()
   assert.equal(bank.current, bank.shotgun)
   assert.equal(bank.shotgun.ammo, 5)
   assert.equal(bank.shotgun.reserve, 30)
   assert.equal(bank.shotgun.isReloading, false)
+  assert.equal(bank.pistol.ammo, 12)
+  assert.equal(bank.pistol.reserve, 36)
+  assert.equal(bank.pistol.isReloading, false)
+  assert.equal(bank.sword._coolT, 0)
   assert.equal(bank.axe._coolT, 0)
   assert.equal(bank.axe.view.visible, false)
   assert.equal(bank.shotgun.view.visible, true)
+  assert.equal(bank.pistol.view.visible, false)
+  assert.equal(bank.sword.view.visible, false)
   bank.dispose()
 })
 
@@ -146,12 +220,15 @@ test('reload() delegates to the current weapon; axe is a no-op', () => {
   bank.update(0.3, player) // clear the switch lockout
   bank.switchTo('axe')
   assert.equal(bank.reload(), true) // axe has no magazine: no-op success
+  bank.update(0.3, player) // clear the switch lockout
+  bank.switchTo('sword')
+  assert.equal(bank.reload(), true) // sword has no magazine: no-op success
   bank.dispose()
 })
 
-test('dispose detaches both view models; double-safe', () => {
+test('dispose detaches all four view models; double-safe', () => {
   const { bank, camera } = makeBank(fakePlayer(0, 0), [])
-  assert.equal(camera.children.length, 2) // axe view + shotgun view
+  assert.equal(camera.children.length, 4) // axe + shotgun + pistol + sword views
   bank.dispose()
   assert.equal(camera.children.length, 0)
   bank.dispose() // second call must not throw

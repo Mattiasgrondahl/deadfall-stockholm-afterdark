@@ -10,6 +10,7 @@ import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
+import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
 import { Zombie } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { HUD } from './HUD.js'
@@ -248,9 +249,18 @@ export class Game {
     })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
-    // WIRING:BLOOD (V10)
+    // WIRING:BLOOD (V10) — every weapon sprays blood
     this.blood = new Blood(this.scene)
-    if (this.weapon) { this.weapon.shotgun.blood = this.blood; this.weapon.axe.blood = this.blood }
+    if (this.weapon) {
+      this.weapon.shotgun.blood = this.blood
+      this.weapon.axe.blood = this.blood
+      this.weapon.pistol.blood = this.blood
+      this.weapon.sword.blood = this.blood
+      // WIRING:DECAPITATE (Task E): a fatal headshot spawns a rolling
+      // severed head (shared geometry/materials; pool caps at 3).
+      this.headPool = new DecapitatedHeadPool(this.scene)
+      this.weapon.onDecapitate = (z, dir) => { if (this.headPool) this.headPool.spawn(z, dir) }
+    }
     // WIRING:UI (browser only; headless keeps hud/screens null)
     if (this.env.document) {
       this.hud = new HUD(this.env.document.getElementById('hud-root'), this.env.document.getElementById('fx-root'))
@@ -290,6 +300,7 @@ export class Game {
     if (this.flashlight) this.flashlight.reset()
     if (this.score) this.score.reset()
     if (this.blood) this.blood.clear()
+    if (this.headPool) this.headPool.clear()
     if (this.hud) this.hud.clearMarker()
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
@@ -340,6 +351,8 @@ export class Game {
     if (this.weapon) this.weapon.update(dt, this.player)
     // WIRING:BLOOD (V10)
     if (this.blood) this.blood.update(dt)
+    // WIRING:DECAPITATE (Task E)
+    if (this.headPool) this.headPool.update(dt)
     // WIRING:FLASH (V7)
     if (this.flashlight) this.flashlight.update(dt, this.inputState)
     // WIRING:ZOMBIES

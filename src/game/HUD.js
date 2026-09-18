@@ -77,7 +77,10 @@ export class HUD {
     }
     this._slotA = slot('AXE')
     this._slotB = slot('SHOTGUN')
+    this._slotC = slot('PISTOL')
+    this._slotD = slot('SWORD')
     weapons.appendChild(this._slotA.box); weapons.appendChild(this._slotB.box)
+    weapons.appendChild(this._slotC.box); weapons.appendChild(this._slotD.box)
     this._legacyAmmo = d.createElement('div'); this._legacyAmmo.className = 'hud-ammo hidden'
     this._ammoValue = d.createElement('div'); this._ammoValue.className = 'hud-value'; this._ammoValue.textContent = '0 / 0'
     const reload = d.createElement('div'); reload.className = 'hud-reload'
@@ -170,11 +173,13 @@ export class HUD {
 
     if (weapon) {
       if (weapon.axe && weapon.shotgun) {
-        // WeaponBank: two slots, active one highlighted.
+        // WeaponBank: four slots, active one highlighted.
         this._slotA.box.classList.remove('hidden')
         this._slotB.box.classList.remove('hidden')
+        this._slotC.box.classList.remove('hidden')
+        this._slotD.box.classList.remove('hidden')
         this._legacyAmmo.classList.add('hidden')
-        // Unrolled (no per-frame array literal): two fixed slots.
+        // Unrolled (no per-frame array literal): four fixed slots.
         let w = weapon.axe, s = this._slotA
         s.name.textContent = w.name || 'weapon'
         s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
@@ -187,10 +192,24 @@ export class HUD {
         s.box.classList.toggle('active', w === weapon.current)
         s.box.classList.toggle('reloading', !!w.isReloading)
         s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
+        w = weapon.pistol; s = this._slotC
+        s.name.textContent = w.name || 'weapon'
+        s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+        s.box.classList.toggle('active', w === weapon.current)
+        s.box.classList.toggle('reloading', !!w.isReloading)
+        s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
+        w = weapon.sword; s = this._slotD
+        s.name.textContent = w.name || 'weapon'
+        s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+        s.box.classList.toggle('active', w === weapon.current)
+        s.box.classList.toggle('reloading', !!w.isReloading)
+        s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
       } else {
         // Legacy single weapon (pre-bank compatibility).
         this._slotA.box.classList.add('hidden')
         this._slotB.box.classList.add('hidden')
+        this._slotC.box.classList.add('hidden')
+        this._slotD.box.classList.add('hidden')
         this._legacyAmmo.classList.remove('hidden')
         this._ammoValue.textContent = weapon.ammo + ' / ' + weapon.reserve
         this._ammoBox.classList.toggle('reloading', !!weapon.isReloading)
