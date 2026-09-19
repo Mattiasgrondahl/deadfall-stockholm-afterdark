@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { PostFX } from '../src/game/PostFX.js'
 
 // Headless stand-in: not a WebGLRenderer, so PostFX must stay disabled.
@@ -33,6 +34,7 @@ test('headless stub renderer: disabled, no-op methods, dispose safe', () => {
   assert.equal(fx.enabled, false)
   assert.equal(fx.composer, null)
   assert.equal(fx.bloom, null)
+  assert.equal(fx.grade, null)
   assert.equal(fx.strength, 0.25)
   fx.render()
   fx.setStrength(0.4)
@@ -42,19 +44,28 @@ test('headless stub renderer: disabled, no-op methods, dispose safe', () => {
   fx.dispose()
   assert.equal(fx.composer, null)
   assert.equal(fx.bloom, null)
+  assert.equal(fx.grade, null)
   fx.render()
 })
 
-test('WebGLRenderer guard: composer path builds RenderPass + UnrealBloomPass', () => {
+test('WebGLRenderer guard: composer builds RenderPass + grade + bloom (grade before bloom)', () => {
   const fx = new PostFX(mkScene(), mkCamera(), fakeGLRenderer())
   assert.equal(fx.enabled, true)
   assert.ok(fx.composer instanceof EffectComposer)
   assert.ok(fx.bloom instanceof UnrealBloomPass)
-  assert.equal(fx.composer.passes.length, 2)
+  assert.ok(fx.grade instanceof ShaderPass)
+  assert.equal(fx.composer.passes.length, 3)
   assert.ok(fx.composer.passes[0] instanceof RenderPass)
+  // V3P-10 fix: grade runs BEFORE bloom so bloom is the final on-screen pass.
+  assert.ok(fx.composer.passes[1] === fx.grade)
+  assert.ok(fx.composer.passes[2] === fx.bloom)
   assert.equal(fx.bloom.strength, 0.25)
   assert.equal(fx.bloom.radius, 0.5)
   assert.equal(fx.bloom.threshold, 0.0)
+  // Grade uniforms at their tuned defaults (V3P-10): grain + vignette only.
+  assert.equal(fx.grade.uniforms.uGrain.value, 0.012)
+  assert.equal(fx.grade.uniforms.uVignette.value, 0.05)
+  assert.equal(fx.grade.uniforms.uTime.value, 0)
 })
 
 test('strength clamped to [0,1]; non-finite input keeps current value', () => {
@@ -77,6 +88,7 @@ test('setSize + dispose on the enabled path', () => {
   fx.dispose()
   assert.equal(fx.enabled, false)
   assert.equal(fx.bloom, null)
+  assert.equal(fx.grade, null)
   assert.equal(fx.composer, null)
   fx.render()
 })

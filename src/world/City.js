@@ -71,7 +71,9 @@ export class City {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
-      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.95 })
+      // Roughness 0.85 (not 0.95): wet snow catches a soft sheen from the
+      // IBL sky and streetlight halos instead of reading as flat matte.
+      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.85 })
     )
     ground.rotation.x = -Math.PI / 2
     ground.receiveShadow = true
@@ -125,7 +127,9 @@ export class City {
       variants.push(v)
       const facade = new THREE.MeshStandardMaterial({
         color: b.color, roughness: 0.88, metalness: 0.05,
-        emissive: 0xffa64d, emissiveIntensity: 1.1
+        // V3P-10: emissiveIntensity 1.1 -> 1.5 so lit windows read as warm
+        // beacons against the dark facades (checked against metrics below).
+        emissive: 0xffa64d, emissiveIntensity: 1.5
       })
       if (facadePairs) {
         const m = facadePairs[v].map.clone()

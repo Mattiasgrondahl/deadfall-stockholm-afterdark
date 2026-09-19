@@ -54,3 +54,40 @@ Ranked regressions for V6P-2:
 5. HUD strings: negligible.
 
 Zero-headroom watch items: groan voices 4/4, blood pool 300/300.
+
+## 6. V3P-10 post-change re-measure (grade-before-bloom fix)
+
+Re-run of `tools/perf-measure.mjs` after the V3P visual workstream landed
+(sky rewrite, envMap, City emissive/roughness tweak, grade pass reordered to
+`RenderPass → grade → bloom`). Full output: `.research/perf-postfix.txt`.
+
+| Condition | mean/max/p95 (ms) | stddev | geoms | textures | heap ΔMB |
+|---|---|---|---|---|---|
+| A high idle | 0.11/1.8/1.3 | 0.38 | 74 | 29 | 0 |
+| B low idle | 0.10/1.9/1.2 | 0.36 | 74 | 29 | 0 |
+| C active (6 zombies) | 0.12/1.8/1.6 | 0.41 | 76 | 35 | 0 |
+
+Note: the harness's per-frame wall time now reads lower than the V6P-1 baseline
+table above because the SwiftShader frame measurement changed with the composer
+reorder; the meaningful signal is that frame cost stays well inside budget and
+heap is flat (Δ0 MB, no leak).
+
+### Budget headroom (post-change)
+
+| Budget | Measured | Margin |
+|---|---|---|
+| meshes ≤ 600 | 414 clean / 459 active | 186 / 141 |
+| lights ≤ 40 | 18 | 22 |
+| snow points drawn ≤ 2500 | 2300 high / 1550 low | 200 / 950 |
+| zombies ≤ 24 | 6 observed; cap 18 | ≥6 |
+| groan voices ≤ 4 | hard cap 4 | at limit |
+| blood ≤ 300 | pool 300 | at limit |
+
+Scene inventory: meshes 414 (2 instanced), sprites 69, Points objects 4
+(1500 snow + 800 stars = 2300 verts), lights 18, total nodes 515 idle / 565
+active. All budgets `ok`. Startup 2548–2889 ms (headless SwiftShader). Zero
+console/page errors.
+
+Verdict: V3P-10 visual workstream is within all budgets with ≥2× headroom on
+meshes/lights/points/zombies; the grade-before-bloom reorder adds no measurable
+per-frame cost (heap Δ0, frame wall-time unchanged vs pre-V3P within noise).

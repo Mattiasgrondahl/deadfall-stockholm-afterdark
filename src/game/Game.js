@@ -5,7 +5,7 @@ import { CollisionWorld } from './CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
-import { updateWorld } from './WorldCore.js'
+import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
@@ -14,6 +14,7 @@ import { Blood } from './Blood.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
 import { Zombie, DIFFICULTY } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
+import { updateWorld } from './WorldCore.js'
 import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
@@ -192,7 +193,12 @@ export class Game {
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(0x060912)
     this.scene.fog = new THREE.FogExp2(0x0b1020, 0.022)
-    this.camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 400)
+    // Far plane 520: the sky dome (r=420), starfield (r=400) and the distant
+    // skyline silhouettes (360-400 m) must all sit inside it, or they are
+    // clipped away and the sky falls back to the flat scene.background color.
+    // Fog erases everything past ~300 m anyway, so the extra range costs
+    // nothing visible.
+    this.camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 520)
     this.camera.position.set(0, 1.7, 12)
   }
 
@@ -232,6 +238,12 @@ export class Game {
     this.lighting = new Lighting(this.scene, this.city, this.renderer, this.quality)
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
+    // WIRING:ENV (V3P-9): IBL environment map baked once from the game's own
+    // sky (gradient dome + moon + skyline silhouettes). Gives every standard
+    // material a soft ambient sheen and sky reflections consistent with what
+    // the player sees. One-shot cost at init; no per-frame cost. Headless no-op
+    // (StubRenderer is not a WebGLRenderer) and returns null there.
+    this.envMap = bakeSkyEnvironment(this.renderer, this.sky, this.scene, { intensity: 0.5 })
     // WIRING:POSTFX (V2P-10b): restrained bloom; no-op headless (StubRenderer)
     this.postfx = new PostFX(this.scene, this.camera, this.renderer, { strength: 0.25 })
     // WIRING:AUDIO
@@ -400,7 +412,8 @@ export class Game {
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
     // WIRING:LIGHTING
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
-    if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position)
+    // dt drives the star twinkle clock (deterministic: accumulated game time).
+    if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position, dt)
     if (this.city) this.city.update(this.player ? this.player.position : this.camera.position, dt)
   }
 

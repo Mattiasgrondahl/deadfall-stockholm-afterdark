@@ -16,16 +16,19 @@ function closeVec(a, b, eps = 1e-9, msg) {
   assert.ok(a.distanceTo(b) <= eps, msg || `${a} vs ${b} (eps ${eps})`)
 }
 
-test('counts: group has exactly 14 children; scene has 14 Mesh, 0 Light', () => {
+test('counts: group has exactly 15 children; scene has 14 Mesh, 0 Light', () => {
   const { scene, sky } = newSky()
-  assert.equal(sky.group.children.length, 14)
+  assert.equal(sky.group.children.length, 15)
   let meshes = 0
   let lights = 0
+  let points = 0
   scene.traverse(o => {
     if (o.isMesh) meshes++
     if (o.isLight) lights++
+    if (o.isPoints) points++
   })
   assert.equal(meshes, 14, 'dome + moon + 12 silhouettes')
+  assert.equal(points, 1, 'starfield is a single Points object')
   assert.equal(lights, 0)
   sky.dispose()
 })
@@ -68,6 +71,10 @@ test('LCG twin determinism: two instances produce identical layouts', () => {
   closeVec(a.sky.dome.position, b.sky.dome.position, 1e-9, 'dome position')
   closeVec(a.sky.moon.position, b.sky.moon.position, 1e-9, 'moon position')
   assert.ok(a.sky.moonDir.equals(b.sky.moonDir), 'moonDir identical')
+  const pa = a.sky.stars.points.geometry.attributes.position
+  const pb = b.sky.stars.points.geometry.attributes.position
+  assert.equal(pa.count, pb.count, 'star count identical')
+  assert.equal(pa.array.toString(), pb.array.toString(), 'star positions identical')
   a.sky.dispose()
   b.sky.dispose()
 })
@@ -100,10 +107,11 @@ test('headless safety: construct, update, dispose run in plain Node without brow
   assert.equal(scene.children.length, 0)
 })
 
-test('dispose: group removed from scene and all six resources dispatch dispose', () => {
+test('dispose: group removed from scene and all eight resources dispatch dispose', () => {
   const { scene, sky } = newSky()
   const disposed = {}
-  const keys = ['domeGeo', 'domeMat', 'moonGeo', 'moonMat', 'silhouetteGeo', 'silhouetteMat']
+  const keys = ['domeGeo', 'domeMat', 'moonGeo', 'moonMat', 'silhouetteGeo', 'silhouetteMat',
+    'starGeo', 'starMat']
   for (const key of keys) {
     disposed[key] = 0
     sky[key].addEventListener('dispose', () => { disposed[key]++ })

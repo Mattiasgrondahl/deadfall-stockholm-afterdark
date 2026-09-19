@@ -339,7 +339,7 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
     const mats = b.material
     assert.ok(mats[0] === mats[1] && mats[0] === mats[4] && mats[0] === mats[5], 'facade slots share one material')
     assert.equal(mats[0].emissive.getHex(), 0xffa64d, 'window emissive 0xffa64d')
-    assert.equal(mats[0].emissiveIntensity, 1.1, 'window emissiveIntensity 1.1')
+    assert.equal(mats[0].emissiveIntensity, 1.5, 'window emissiveIntensity 1.5 (V3P-10: lit windows read as beacons)')
     assert.equal(mats[0].map, null, 'headless: no color map')
     assert.equal(mats[0].emissiveMap, null, 'headless: no emissive map')
     assert.ok(mats[2] === mats[3], 'top/bottom share the roof material')
