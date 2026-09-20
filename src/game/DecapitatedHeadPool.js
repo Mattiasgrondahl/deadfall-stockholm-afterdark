@@ -25,8 +25,12 @@ export class DecapitatedHeadPool {
 
   /** Spawn a severed head at the zombie's head height, thrown along `dir`
     * (any horizontal direction; null/zero falls back to a deterministic LCG
-    * direction). Evicts the oldest head when the pool is full. */
+    * direction). Evicts the oldest head when the pool is full. The wave-5 boss
+    * (isBoss) never decapitates: its 1.4× skull is far larger than the shared
+    * 0.3³ head mesh, so a "severed head" would read as a pebble — the pool
+    * silently skips it (fatal boss headshots still kill normally). */
   spawn(zombie, dir = null) {
+    if (zombie && zombie.isBoss) return null
     if (this.heads.length >= MAX_HEADS) {
       // heads entries are [mesh, state] pairs; shift() yields the pair,
       // so destructure it to get the mesh.

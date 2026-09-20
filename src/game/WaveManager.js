@@ -7,9 +7,24 @@
 // Clear fires on `spawned > 0 && alive === 0`, i.e. every *alive* zombie
 // is dead; unspawned queue remainder is discarded (the debug
 // forceWaveClear / killAllZombies paths depend on this).
+//
+// Wave-5 finale: when the wave-5 queue is fully spawned AND every zombie is
+// dead, the wave is held open for BOSS_DELAY seconds and a `brute` boss
+// stomps in from the far north spawn point (onBossIncoming -> onBossSpawn
+// callbacks). Killing the boss clears wave 5 normally. A debug forceClear on
+// wave 5 skips the boss (it never arms the gate) and moves to wave 6.
 
 const SPAWN_INTERVAL = 0.7 // seconds between spawns
 const INTERMISSION = 3.0   // seconds between waves
+
+/** The wave whose clear is followed by the boss (the user's "level 5"). */
+const BOSS_WAVE = 5
+/** Gap after the wave-5 queue is fully spawned and cleared before the boss
+ *  stomps in — a short, dramatic pause instead of an instant spawn. */
+const BOSS_DELAY = 1.5
+/** Spawn point for the boss: index 3 of City.getSpawnPoints() = (0, 85), the
+ *  far north end of the main street, so the brute walks the player down. */
+const BOSS_POINT = { x: 0, z: 85 }
 
 export class WaveManager {
   /**
@@ -17,7 +32,8 @@ export class WaveManager {
    * @param spawnPoints city spawn points [{x, z}, ...]
    * @param collision   CollisionWorld (unused here; contract symmetry)
    * @param audio       audio bank or null (headless); calls null-guarded
-   * @param callbacks   { onWaveStart(w), onWaveCleared(w), spawnZombie(type, x, z) }
+   * @param callbacks   { onWaveStart(w), onWaveCleared(w), spawnZombie(type, x, z),
+   *                      onBossIncoming(w), onBossSpawn(w) } (last two optional)
    */
   constructor(scene, spawnPoints, collision, audio, callbacks = {}) {
     this.scene = scene
@@ -31,11 +47,22 @@ export class WaveManager {
     this.queue = []
     this.intermission = 0
     this._prevAlive = 0
+    // Boss state (wave-5 finale): armed when wave 5 is fully spawned, fires
+    // once the wave-5 queue is cleared, spawns the brute after BOSS_DELAY.
+    this._bossArmed = false
+    this._bossPending = false
+    this._bossTimer = 0
+    this._bossSpawned = false
   }
 
   get total() { return 5 + 3 * this.wave }
   get cap() { return Math.min(8 + this.wave, 18) }
-  get remaining() { return this.total - this.killed }
+  get remaining() {
+    // While the boss is pending/spawned it is not part of the queue total, so
+    // it must be counted or the HUD "left" readout would hit 0 while the fight
+    // is still on.
+    return this.total - this.killed + (this._bossPending || this._bossSpawned ? 1 : 0)
+  }
 
   /** Start (or restart) wave 1. */
   reset() {
@@ -45,6 +72,10 @@ export class WaveManager {
     this.timer = 0
     this.intermission = 0
     this._prevAlive = 0
+    this._bossArmed = false
+    this._bossPending = false
+    this._bossTimer = 0
+    this._bossSpawned = false
     this.queue = this.buildQueue(1)
     this.cb.onWaveStart?.(1)
     this.audio?.playWave?.(1)
@@ -117,16 +148,51 @@ export class WaveManager {
       }
       return
     }
+    // Boss finale: once the wave-5 queue is fully spawned, the wave is not
+    // "cleared" while the boss is pending/spawned — the alive check below
+    // counts the brute, and the pending timer holds the wave open.
+    if (this._bossPending) {
+      this._bossTimer -= dt
+      if (this._bossTimer <= 0) {
+        this._bossPending = false
+        this._bossSpawned = true
+        this.cb.spawnZombie('brute', BOSS_POINT.x, BOSS_POINT.z)
+        this.cb.onBossSpawn?.(this.wave)
+        this.audio?.playBoss?.()
+      }
+      return
+    }
     // Per-frame: count alive zombies without allocating; the spawn gate below
     // compares this against the wave cap (min(8 + wave, 18), under the 24 budget).
     let alive = 0
     const zs = game.zombies
     for (let i = 0; i < zs.length; i++) if (!zs[i].isDead) alive++
     if (alive < this._prevAlive) this.killed += this._prevAlive - alive
+    // killed can never exceed spawned: a kill only exists once its zombie was
+    // spawned. (Debug paths that kill before the spawn lands must not inflate
+    // the counter past the queue, or `remaining` would read negative.)
+    if (this.killed > this.spawned) this.killed = this.spawned
     this._prevAlive = alive
     if (this.spawned > 0 && alive === 0) {
       // Every live zombie is dead; discard the unspawned remainder.
       // Checked BEFORE spawning so a same-tick spawn cannot mask the clear.
+      if (this.wave === BOSS_WAVE && this.spawned >= this.total && !this._bossSpawned) {
+        // Wave 5 finished its whole queue and every zombie is down: hold the
+        // wave open for a short dramatic beat, then stomp in the boss.
+        this._bossPending = true
+        this._bossTimer = BOSS_DELAY
+        this.cb.onBossIncoming?.(this.wave)
+        this.audio?.playBossIncoming?.()
+        return
+      }
+      // A debug forceClear (or any kill-all path) on wave 5 skips the boss
+      // entirely: spawned === total and the boss is never armed, so jump
+      // straight to the next wave instead of holding the wave open forever.
+      if (this.wave === BOSS_WAVE && !this._bossArmed) {
+        this.cb.onWaveCleared?.(this.wave)
+        this.intermission = INTERMISSION
+        return
+      }
       this.cb.onWaveCleared?.(this.wave)
       this.intermission = INTERMISSION
       return
@@ -137,6 +203,7 @@ export class WaveManager {
         const q = this.queue[this.spawned]
         this.cb.spawnZombie(q.type, q.x, q.z)
         this.spawned++
+        if (this.wave === BOSS_WAVE && this.spawned >= this.total) this._bossArmed = true
         this.timer = SPAWN_INTERVAL
       }
     }
@@ -155,6 +222,12 @@ export class WaveManager {
     this.killed += alive
     this._prevAlive = 0
     this.spawned = this.total
+    // A forced clear on wave 5 must not stall the run behind the boss gate:
+    // debug clears jump straight to the next wave. Only wave 5's own clear
+    // consumes the boss — clearing an earlier wave must leave the finale
+    // intact so the run still reaches its boss.
+    this._bossPending = false
+    if (this.wave === BOSS_WAVE) this._bossSpawned = true
     this.intermission = INTERMISSION
   }
 }

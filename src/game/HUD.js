@@ -21,6 +21,7 @@ export class HUD {
     this._player = null // V5P-2: last player seen by update()
     this.flashlight = null // set by Game wiring (V7); battery bar hidden until then
     this.score = null      // set by Game wiring (V9); score box hidden until then
+    this.boss = null       // set by Game wiring (boss finale); bar hidden until then
     this._build()
   }
 
@@ -58,6 +59,16 @@ export class HUD {
     this._hudRoot.appendChild(wave)
     this._threat = d.createElement('div'); this._threat.className = 'hud-threat'; this._threat.textContent = 'left: 0'
     this._hudRoot.appendChild(this._threat)
+
+    // Boss health bar (wave-5 finale): hidden until a boss zombie is alive.
+    const boss = d.createElement('div'); boss.className = 'hud-boss hidden'
+    const bossLabel = d.createElement('div'); bossLabel.className = 'hud-label'; bossLabel.textContent = 'BRUTE'
+    const bossBar = d.createElement('div'); bossBar.className = 'bar'
+    this._bossFill = d.createElement('div'); this._bossFill.className = 'bar-fill'
+    bossBar.appendChild(this._bossFill)
+    boss.appendChild(bossLabel); boss.appendChild(bossBar)
+    this._bossBox = boss
+    this._hudRoot.appendChild(boss)
 
     // Weapons (bottom-right, v2): one slot per bank weapon with name, ammo,
     // and reload indicator; the active slot is highlighted. A legacy
@@ -220,6 +231,16 @@ export class HUD {
     if (waveManager) {
       this._waveValue.textContent = 'WAVE ' + (waveManager.wave || 1)
       this._threat.textContent = 'left: ' + (waveManager.remaining !== undefined ? waveManager.remaining : 0)
+    }
+
+    // Boss bar: shown while the wired boss zombie is alive (Game reassigns
+    // hud.boss on spawn/death). Hidden when null or dead.
+    const boss = this.boss
+    const bossOn = !!(boss && !boss.isDead)
+    this._bossBox.classList.toggle('hidden', !bossOn)
+    if (bossOn) {
+      const bPct = Math.max(0, Math.min(1, boss.health / (boss.maxHealth || 1)))
+      this._bossFill.style.width = (bPct * 100) + '%'
     }
 
     // Hit marker / kill confirmation decay (V5P-1).

@@ -90,6 +90,8 @@ export class Game {
     this.screens = null
     this.waveManager = null
     this.collision = null
+    // Live wave-5 boss (HUD bar target); null outside the boss fight.
+    this._boss = null
 
     // Live entity lists (zombies live here; bounded by WaveManager).
     this.zombies = []
@@ -262,7 +264,9 @@ export class Game {
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w) },
       onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED'); if (this.audio) this.audio.playWaveCleared?.(w) },
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z)
+      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
+      onBossSpawn: () => { if (this.screens) this.screens.showBanner('THE BRUTE') }
     })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
@@ -344,7 +348,8 @@ export class Game {
     if (this.score) this.score.reset()
     if (this.blood) this.blood.clear()
     if (this.headPool) this.headPool.clear()
-    if (this.hud) this.hud.clearMarker()
+    if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
+    this._boss = null
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
@@ -410,6 +415,10 @@ export class Game {
     updateWorld(dt, this._ws)
     // WIRING:GROANS (V8)
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
+    // Boss HUD: the bar tracks the live boss while it stands; it clears when
+    // the brute dies (the corpse is still in the list for a few seconds).
+    if (this._boss && this._boss.isDead) this._boss = null
+    if (this.hud) this.hud.boss = this._boss || null
     // WIRING:LIGHTING
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
     // dt drives the star twinkle clock (deterministic: accumulated game time).
@@ -423,6 +432,8 @@ export class Game {
     const wave = this.waveManager ? this.waveManager.wave : 1
     const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
     this.zombies.push(zombie)
+    // The wave-5 boss owns the HUD boss bar for as long as it is alive.
+    if (zombie.isBoss) this._boss = zombie
     return zombie
   }
 

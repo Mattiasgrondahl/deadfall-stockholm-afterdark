@@ -21,7 +21,8 @@ const GEO2 = {
 const MAT2 = {
   walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
   shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+  brute: new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 })
 }
 
 // Shared flash/death materials: non-fatal hit = 0.15 s red swap; death =
@@ -32,16 +33,27 @@ const EYE = new THREE.BoxGeometry(0.07, 0.07, 0.04)
 const EYEMAT = {
   walker: new THREE.MeshBasicMaterial({ color: 0x8aff5e }),
   shambler: new THREE.MeshBasicMaterial({ color: 0xd0ff4f }),
-  screamer: new THREE.MeshBasicMaterial({ color: 0xff3b2e })
+  screamer: new THREE.MeshBasicMaterial({ color: 0xff3b2e }),
+  brute: new THREE.MeshBasicMaterial({ color: 0xff5a1e })
 }
 const DEADEYEMAT = new THREE.MeshBasicMaterial({ color: 0x2a2a2a })
 
-/** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. */
+/** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
+ *  wave-5 boss: ≈4× a shambler's base HP, slow shamble, heavy melee, and a
+ *  short lunge (charge) when the player is within CHARGE_RANGE. */
 const TABLE = {
   walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9 },
   shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 },
-  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 }
+  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 },
+  brute: { speed: 0.7, hp: 360, melee: 30, cooldown: 1.6 }
 }
+
+/** Boss charge window: within this horizontal range the brute lunges instead
+ *  of shambling; the lunge adds CHARGE_SPEED for CHARGE_TIME seconds and its
+ *  heavy melee lands at the end of the lunge. */
+const CHARGE_RANGE = 7
+const CHARGE_SPEED = 6
+const CHARGE_TIME = 0.55
 
 // Difficulty presets. NORMAL is the shipped baseline (identity). FRENZY: every
 // zombie runs at 2× speed and has a flat 50 HP regardless of type, tuned so
@@ -53,7 +65,7 @@ export const DIFFICULTY = {
   frenzy: { speedMult: 2, hpBase: 50 }
 }
 
-const ORDER = ['walker', 'shambler', 'screamer']
+const ORDER = ['walker', 'shambler', 'screamer', 'brute']
 
 /**
  * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
@@ -64,7 +76,8 @@ const ORDER = ['walker', 'shambler', 'screamer']
 const POSE2 = {
   walker: { torsoS: [1, 1, 1], torsoR: 0, headS: [1, 1, 1], headR: 0, armRest: -0.35, legS: [1, 1, 1] },
   shambler: { torsoS: [1.15, 0.85, 1.1], torsoR: 0.45, headS: [0.9, 0.9, 0.9], headR: 0.35, armRest: 0.2, legS: [0.85, 0.85, 0.85] },
-  screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] }
+  screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] },
+  brute: { torsoS: [1.4, 1.15, 1.3], torsoR: 0.15, headS: [1.2, 1.2, 1.2], headR: 0.1, armRest: -0.6, legS: [1.2, 0.95, 1.2] }
 }
 
 // Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
@@ -96,6 +109,11 @@ const FACEMAT = {
     new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
     new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
     new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+  ],
+  brute: [
+    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 })
   ]
 }
 
@@ -184,7 +202,7 @@ function loadOutfitTextures() {
   }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, ATTACK_RANGE, AIR_CLEAR }
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
 
 const ATTACK_RANGE = 1.3
 const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
@@ -241,6 +259,16 @@ export class Zombie {
     this.speed = TABLE[type].speed * diff.speedMult
     const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
     this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
+    // The brute is the wave-5 boss: a 1.4× silhouette, so both weapon hitboxes
+    // scale by HITBOX_SCALE (the two-sphere contract and the per-type radii
+    // 0.45/0.3 stay exact for the three regular types).
+    this.isBoss = type === 'brute'
+    this._hitboxScale = this.isBoss ? 1.4 : 1
+    // Charge (boss only): when the player is within CHARGE_RANGE the brute
+    // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
+    this._chargeT = 0
+    this._chargeX = 0
+    this._chargeZ = 0
     this.position = new THREE.Vector3(x, 0, z) // group origin = feet (y 0)
     this.isDead = false
     this.deathTimer = 0
@@ -397,6 +425,33 @@ export class Zombie {
     const dz = player.position.z - this.position.z
     const dist = Math.hypot(dx, dz)
     this.group.rotation.y = Math.atan2(dx, dz) // face player
+    // Boss charge: inside CHARGE_RANGE (but outside melee) the brute commits to
+    // a straight lunge at the player for CHARGE_TIME seconds. The lunge uses the
+    // committed direction (no separation, no slide logic) so it reads as a
+    // telegraphed rush; it ends on its own timer, after which normal chase /
+    // melee resumes. While lunging the zombie does not do its cooldown melee.
+    if (this.isBoss && this._chargeT <= 0 && dist > ATTACK_RANGE && dist <= CHARGE_RANGE) {
+      this._chargeT = CHARGE_TIME
+      this._chargeX = dx / dist
+      this._chargeZ = dz / dist
+    }
+    if (this._chargeT > 0) {
+      this._chargeT = Math.max(0, this._chargeT - dt)
+      const stepLen = CHARGE_SPEED * dt
+      this.position.x += this._chargeX * stepLen
+      this.position.z += this._chargeZ * stepLen
+      collision.resolve(this.position, COLLIDER_RADIUS)
+      // Lunge pose: arms cocked back, legs mid-stride (deterministic clock).
+      const armRest = POSE2[this.type].armRest
+      const swing = Math.sin(this._time * 14 + this._phase) * 0.6
+      this._armL.rotation.x = armRest - 1.2 + swing
+      this._armR.rotation.x = armRest - 1.2 - swing
+      this._legL.rotation.x = swing * 1.6
+      this._legR.rotation.x = -swing * 1.6
+      this._time += dt
+      this.group.position.copy(this.position)
+      return
+    }
     // Melee only lands when the player is within horizontal range AND not
     // high above the torso (a mid-jump player is out of arm reach).
     if (dist <= ATTACK_RANGE && Math.abs(player.position.y - 1.2) <= AIR_CLEAR) {
@@ -513,12 +568,16 @@ export class Zombie {
     this.group.position.copy(this.position)
   }
 
-  /** Weapon hitbox contract: world-space centers, so sunk corpses sink out of reach. */
+  /** Weapon hitbox contract: world-space centers, so sunk corpses sink out of reach.
+   *  The two-sphere contract (body + head) holds for every type; the brute's
+   *  1.4× silhouette scales both radii (0.63 / 0.42) while the anchor heights
+   *  stay at y+1.2 / y+1.8, so pistol/shotgun aim logic is unchanged. */
   getHitboxes() {
     const { x, y, z } = this.position
+    const s = this._hitboxScale
     return [
-      { center: new THREE.Vector3(x, y + 1.2, z), radius: 0.45, isHead: false },
-      { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3, isHead: true }
+      { center: new THREE.Vector3(x, y + 1.2, z), radius: 0.45 * s, isHead: false },
+      { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3 * s, isHead: true }
     ]
   }
 

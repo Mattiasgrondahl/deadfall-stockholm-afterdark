@@ -15,7 +15,8 @@ const GROAN_MAX_VOICES = 4
 const GROAN_SPECS = {
   walker: { base: 2.5, voice: 0.5, gain: 0.35 },
   shambler: { base: 4.5, voice: 0.8, gain: 0.4 },
-  screamer: { base: 3.2, voice: 0.4, gain: 0.3 }
+  screamer: { base: 3.2, voice: 0.4, gain: 0.3 },
+  brute: { base: 6.0, voice: 1.1, gain: 0.5 }
 }
 
 export class AudioBank {
@@ -292,6 +293,22 @@ export class AudioBank {
     this._playTone({ type: 'triangle', freq: 440, duration: 0.15, gain: 0.25, when: 0.24 })
   }
 
+  // Wave-5 boss: a low war-horn swell when the finale is triggered, and a
+  // heavy sub-bass stomp when the brute actually stomps in.
+  playBossIncoming() {
+    if (!this.ctx) return
+    this._resume()
+    this._playTone({ type: 'sawtooth', freq: 70, freqEnd: 55, duration: 1.2, gain: 0.3 })
+    this._playTone({ type: 'triangle', freq: 140, freqEnd: 110, duration: 1.2, gain: 0.15 })
+  }
+
+  playBoss() {
+    if (!this.ctx) return
+    this._resume()
+    this._playTone({ type: 'sine', freq: 50, freqEnd: 30, duration: 0.8, gain: 0.5 })
+    this._playNoise({ duration: 0.35, filterType: 'lowpass', filterFreq: 150, gain: 0.4 })
+  }
+
   // -----------------------------------------------------------------
   // V8 zombie groans: per-type idle vocalization, LCG-scheduled,
   // distance-falloff, capped at GROAN_MAX_VOICES concurrent voices.
@@ -329,6 +346,10 @@ export class AudioBank {
     this._resume()
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain })
+    } else if (type === 'brute') {
+      // Boss growl: a sub-bass rumble under a low growl tone.
+      this._playTone({ type: 'sine', freq: 45, freqEnd: 32, duration: spec.voice, gain })
+      this._playTone({ type: 'sawtooth', freq: 80, freqEnd: 55, duration: spec.voice * 0.7, gain: gain * 0.5 })
     } else {
       this._playTone({ type: 'sine', freq: type === 'walker' ? 90 : 60, duration: spec.voice, gain })
       this._playNoise({
@@ -391,6 +412,9 @@ export class AudioBank {
     if (entry) entry.p = dest === this.master ? null : dest
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
+    } else if (type === 'brute') {
+      this._playTone({ type: 'sine', freq: 45, freqEnd: 32, duration: spec.voice, gain, dest })
+      this._playTone({ type: 'sawtooth', freq: 80, freqEnd: 55, duration: spec.voice * 0.7, gain: gain * 0.5, dest })
     } else {
       this._playTone({ type: 'sine', freq: type === 'walker' ? 90 : 60, duration: spec.voice, gain, dest })
       this._playNoise({

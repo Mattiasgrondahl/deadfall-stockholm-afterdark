@@ -267,6 +267,22 @@ html, body {
   color: var(--ink-dim);
 }
 
+/* boss health bar (wave-5 finale): below the threat readout, wide and red */
+.hud-boss {
+  position: absolute;
+  top: 104px; left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.hud-boss .hud-label { color: var(--danger); }
+.hud-boss .bar { width: 100%; height: 8px; }
+.hud-boss .bar-fill { background: var(--danger); }
+
 /* transient message */
 .hud-message {
   position: absolute;

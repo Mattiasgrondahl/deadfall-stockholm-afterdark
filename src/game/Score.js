@@ -1,11 +1,11 @@
 // Score.js — run score plus persistent high score for Deadfall.
-// Kill values: walker 10, shambler 15, screamer 25, plus a 50×wave bonus
-// per kill (wave 1 walker = 60). The high score persists in localStorage
-// when available (headless / storage-less envs degrade to best = 0 without
-// throwing). The HUD reads {value, best}; Screens shows score + record flag
-// on game over, and the title screen shows the stored best.
+// Kill values: walker 10, shambler 15, screamer 25, brute (wave-5 boss) 150,
+// plus a 50×wave bonus per kill (wave 1 walker = 60). The high score persists
+// in localStorage when available (headless / storage-less envs degrade to
+// best = 0 without throwing). The HUD reads {value, best}; Screens shows score
+// + record flag on game over, and the title screen shows the stored best.
 
-const VALUES = { walker: 10, shambler: 15, screamer: 25 }
+const VALUES = { walker: 10, shambler: 15, screamer: 25, brute: 150 }
 const WAVE_BONUS = 50
 export const STORAGE_KEY = 'deadfall-highscore'
 

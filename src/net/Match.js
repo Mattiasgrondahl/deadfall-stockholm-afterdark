@@ -30,8 +30,8 @@ export const TICK = 0.05 // 20 Hz server tick (plan §5.1)
 
 const SPAWN = { x: 0, y: 1.7, z: 12 } // same shared spawn as the single-player Game
 // Per-kill points, mirroring Score.pointsFor (walker 10, shambler 15,
-// screamer 25, plus 50 × wave).
-const KILL_VALUES = { walker: 10, shambler: 15, screamer: 25 }
+// screamer 25, brute 150, plus 50 × wave).
+const KILL_VALUES = { walker: 10, shambler: 15, screamer: 25, brute: 150 }
 const WAVE_BONUS = 50
 
 /** Plain input data object, same shape as Game's (the server ignores
@@ -80,7 +80,9 @@ export class Match {
     this.wave = new WaveManager(this.scene, this.spawnPoints, this.collision, null, {
       onWaveStart: (w) => this.events.push({ k: 'waveStart', wave: w }),
       onWaveCleared: (w) => this.events.push({ k: 'waveCleared', wave: w }),
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z)
+      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      onBossIncoming: (w) => this.events.push({ k: 'bossIncoming', wave: w }),
+      onBossSpawn: (w) => this.events.push({ k: 'bossSpawn', wave: w })
     })
 
     // Authoritative core state (WorldCore.updateWorld). ws.zombies is
