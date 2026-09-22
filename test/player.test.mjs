@@ -199,4 +199,30 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.ok(player.health <= player.maxHealth, `regen clamps at maxHealth (${player.health})`)
 }
 
+{ // crouch: lowers the eye height and caps movement speed; standing restores it
+  const { player, st, camera } = makePlayer()
+  step(player, 1) // establish the standing eye pose
+  // Standing eye sits at the body height (1.7); crouching lerps it down to ~0.95.
+  assert.ok(Math.abs(camera.position.y - 1.7) < 0.02, `standing eye ~1.7 (${camera.position.y.toFixed(3)})`)
+  st.crouch = true
+  step(player, 60) // 1 s of crouch transition
+  assert.ok(camera.position.y < 1.2, `crouched eye lowered (${camera.position.y.toFixed(3)})`)
+  assert.ok(camera.position.y > 0.7, `crouched eye not below the ground (${camera.position.y.toFixed(3)})`)
+  // Crouch-walk is slower than a normal walk.
+  const c0 = player.position.clone()
+  st.forward = true; step(player, 60); st.forward = false
+  const cd = Math.hypot(player.position.x - c0.x, player.position.z - c0.z)
+  assert.ok(cd < 2.5, `crouch-walk slower than walk (${cd.toFixed(2)} m/s)`)
+  // Sprint is disabled while crouching.
+  st.sprint = true; st.crouch = true
+  const s0 = player.position.clone()
+  step(player, 60); st.sprint = false
+  const sd = Math.hypot(player.position.x - s0.x, player.position.z - s0.z)
+  assert.ok(sd < 2.5, `sprint disabled while crouched (${sd.toFixed(2)} m/s)`)
+  // Standing back up restores the eye height.
+  st.crouch = false
+  step(player, 60)
+  assert.ok(camera.position.y > 1.5, `standing restores the eye (${camera.position.y.toFixed(3)})`)
+}
+
 console.log('player OK')

@@ -10,7 +10,7 @@
 
 const KEY_CODES = {
   w: ['KeyW'], a: ['KeyA'], s: ['KeyS'], d: ['KeyD'],
-  shift: ['ShiftLeft', 'ShiftRight'],
+  shift: ['ShiftLeft', 'ShiftRight'], crouch: ['KeyC'],
   r: ['KeyR'], p: ['KeyP'], m: ['KeyM'], escape: ['Escape'], space: ['Space'],
   f: ['KeyF'], one: ['Digit1'], two: ['Digit2'], three: ['Digit3'], four: ['Digit4']
 }
@@ -27,6 +27,7 @@ export class Input {
     this.inputState.switch4 = false
     this.inputState.flashlight = false
     this.inputState.jump = false
+    this.inputState.crouch = false
     this.down = {}                          // e.code -> true while physically held
     this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false, jump: false }
     this._listeners = null                  // [target, event, handler] triples
@@ -74,6 +75,7 @@ export class Input {
     st.switch4 = false
     st.flashlight = false
     st.jump = false
+    st.crouch = false
     st.turnX = 0
     st.turnY = 0
   }
@@ -192,5 +194,6 @@ export class Input {
     st.left = !!this.down['KeyA']
     st.right = !!this.down['KeyD']
     st.sprint = !!(this.down['ShiftLeft'] || this.down['ShiftRight'])
+    st.crouch = !!this.down['KeyC']
   }
 }

@@ -135,3 +135,24 @@ test('dispose detaches view from camera; double-safe', () => {
   assert.equal(camera.children.length, 0)
   sword.dispose() // second call must not throw
 })
+
+test('alternating diagonal slash: roll flips sign each swing (R->L then L->R)', () => {
+  const player = fakePlayer(0, 0, 0)
+  const { camera, sword } = makeSetup(player, [])
+  // First swing: right-to-left diagonal (one roll sign at mid-strike).
+  sword.swing()
+  sword.update(0.09, player) // reach mid-strike (roll near peak)
+  const roll1 = sword.view.rotation.z
+  assert.ok(Math.abs(roll1) > 0.3, `first swing rolls diagonally (${roll1.toFixed(3)})`)
+  // Recovery to rest clears the roll.
+  sword.update(0.25, player)
+  assert.equal(sword.view.rotation.z, 0, 'rest pose clears the roll')
+  // Second swing (after cooldown): opposite diagonal sign.
+  sword._coolT = 0
+  sword.swing()
+  sword.update(0.09, player)
+  const roll2 = sword.view.rotation.z
+  assert.ok(Math.abs(roll2) > 0.3, `second swing rolls diagonally (${roll2.toFixed(3)})`)
+  assert.ok(Math.sign(roll1) !== Math.sign(roll2), `roll alternates sign (${roll1.toFixed(3)} vs ${roll2.toFixed(3)})`)
+  sword.dispose()
+})

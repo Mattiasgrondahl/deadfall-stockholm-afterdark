@@ -81,7 +81,7 @@ export class Game {
 
     // Plain input data object (see class comment).
     this.inputState = {
-      forward: false, back: false, left: false, right: false, sprint: false,
+      forward: false, back: false, left: false, right: false, sprint: false, crouch: false,
       turnX: 0, turnY: 0,      // accumulated look deltas, consumed per frame
       fire: false,             // edge flag, consumed by Weapon
       reload: false,

@@ -9,6 +9,7 @@ import * as THREE from 'three'
 
 const WALK_SPEED = 3.4
 const SPRINT_SPEED = 5.8
+const CROUCH_SPEED = 1.7   // slow, quiet crouch-walk
 const LOOK_SENS = 0.0022
 const PITCH_LIMIT = 1.45
 const ACCEL = 10            // velocity lerp factor, per second
@@ -17,6 +18,11 @@ const STAMINA_REGEN = 18    // per second otherwise
 const SPRINT_MIN_STAMINA = 5
 const RADIUS = 0.35
 const SPAWN_X = 0, SPAWN_Y = 1.7, SPAWN_Z = 12
+// Crouch lowers the eye height from STAND_EYE to CROUCH_EYE over CROUCH_LERP
+// seconds (a smooth camera drop, not a snap), and caps movement to CROUCH_SPEED.
+const STAND_EYE = 1.7
+const CROUCH_EYE = 0.95
+const CROUCH_LERP = 6       // eye-height transition rate (per second)
 // Vertical motion: the ground is at y=0 and the eye (position.y) rests at
 // SPAWN_Y. Gravity is a snappy 2g so the street-scale arcs feel quick;
 // JUMP_V gives an apex of JUMP_V^2 / (2 * |GRAVITY|) ≈ 0.98 m.
@@ -46,6 +52,8 @@ export class Player {
     this._bobPhase = 0
     this._bobAmp = 0
     this._regenDelay = 0 // s remaining before passive regen resumes (reset on damage)
+    this._eyeHeight = STAND_EYE // camera eye offset above the body; lerps down when crouching
+    this._crouching = false
     this._onDeath = null
     this.camera.rotation.order = 'YXZ'
   }
@@ -74,8 +82,13 @@ export class Player {
     let dx = -sin * fwd - cos * side
     let dz = -cos * fwd + sin * side
     const len = Math.hypot(dx, dz)
-    const canSprint = len > 0 && st.sprint && this.stamina > SPRINT_MIN_STAMINA
-    const speed = canSprint ? SPRINT_SPEED : WALK_SPEED
+    // Crouch (hold C): lowers the eye and caps movement to a slow walk; it also
+    // disables sprint. The body stays at the same ground height — only the eye
+    // drops (see the eye-height lerp near the camera update below).
+    this._crouching = !!st.crouch
+    const canSprint = len > 0 && st.sprint && !this._crouching && this.stamina > SPRINT_MIN_STAMINA
+    let speed = canSprint ? SPRINT_SPEED : WALK_SPEED
+    if (this._crouching) speed = Math.min(speed, CROUCH_SPEED)
     if (len > 0) { dx /= len; dz /= len }
 
     // Smooth acceleration toward the target velocity.
@@ -125,7 +138,13 @@ export class Player {
       this._bobAmp = 0
     }
     const bobY = Math.sin(this._bobPhase) * 0.05 * this._bobAmp
-    this.camera.position.set(this.position.x, this.position.y + bobY, this.position.z)
+    // Smoothly lerp the eye height toward the crouch/stand target, then place
+    // the camera at body position + eye offset + bob. The body (position.y)
+    // stays at ground level; only the eye drops when crouching.
+    const eyeTarget = this._crouching ? CROUCH_EYE : STAND_EYE
+    const ek = Math.min(1, CROUCH_LERP * dt)
+    this._eyeHeight += (eyeTarget - this._eyeHeight) * ek
+    this.camera.position.set(this.position.x, this.position.y - STAND_EYE + this._eyeHeight + bobY, this.position.z)
     this._pitchKick = Math.max(0, this._pitchKick - dt * 0.15)
     this.camera.rotation.set(this.pitch + this._pitchKick, this.yaw, 0)
   }
@@ -163,6 +182,8 @@ export class Player {
     this._bobPhase = 0
     this._bobAmp = 0
     this._regenDelay = 0
+    this._eyeHeight = STAND_EYE
+    this._crouching = false
     this.camera.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z)
     this.camera.rotation.set(0, 0, 0)
   }

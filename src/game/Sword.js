@@ -29,6 +29,10 @@ const WINDUP = 0.12
 const STRIKE_END = 0.45
 const SLASH_PITCH = 0.5  // rad of forward dip at mid-strike
 const SLASH_FWD = 0.14   // m of forward push (camera-local -z) at mid-strike
+// Diagonal slash: the blade ROLLS (camera-local Z) through the strike so it
+// cuts across the target diagonally instead of straight down. The roll sign
+// alternates every swing (right-to-left, then left-to-right) via _slashDir.
+const SLASH_ROLL = 0.7   // rad of diagonal roll at mid-strike (the diagonal cut)
 const TRAIL_OPACITY = 0.45
 const KNOCKBACK = 3      // m/s stagger applied to hit zombies
 const smoothstep = (v) => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t) }
@@ -58,6 +62,7 @@ export class Sword {
     this._coolT = 0
     this._swingT = 0
     this._swinging = false
+    this._slashDir = 1 // +1 = right-to-left diagonal, -1 = left-to-right; flips each swing
 
     // View model: blade, guard, grip, slash trail — camera-attached. Static
     // until the swing animation runs it; _viewBase is the rest pose.
@@ -130,7 +135,11 @@ export class Sword {
       } else if (k < STRIKE_END) {
         const s = smoothstep((k - WINDUP) / (STRIKE_END - WINDUP))
         const mid = Math.sin(Math.PI * s) // 0 at windup/strike edges, 1 at mid-strike
-        this.view.rotation.set(-SLASH_PITCH * mid, SWING_START + (SWING_END - SWING_START) * s, 0)
+        // Diagonal cut: roll the blade (camera-local Z) by _slashDir * SLASH_ROLL
+        // through the strike so it slashes across the target diagonally. The
+        // sign alternates each swing (right-to-left, then left-to-right).
+        const roll = SLASH_ROLL * mid * this._slashDir
+        this.view.rotation.set(-SLASH_PITCH * mid, SWING_START + (SWING_END - SWING_START) * s, roll)
         this.view.position.set(this._viewBase.x, this._viewBase.y, this._viewBase.z - SLASH_FWD * mid)
         this._trailMat.opacity = TRAIL_OPACITY * mid
       } else {
@@ -152,6 +161,7 @@ export class Sword {
     this._coolT = this.cooldown
     this._swingT = 0
     this._swinging = true
+    this._slashDir = -this._slashDir // alternate the diagonal: R->L, then L->R
     const p = this.player
     if (p && !p.isDead) {
       if (typeof p.addPitchKick === 'function') p.addPitchKick(0.01) // melee kick; guarded for minimal fake players
