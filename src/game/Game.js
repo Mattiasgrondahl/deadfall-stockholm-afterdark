@@ -24,6 +24,10 @@ import { PostFX } from './PostFX.js'
 // against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
 const SOUNDTRACK_URL = ASSET_BASE + 'assets/audio/soundtrack.mp3'
+// Known true length of the soundtrack (seconds). Some browsers misreport an
+// mp3's `duration` and fire `ended` early, so the loop is driven off this
+// explicit length instead of the element's unreliable `duration`.
+const SOUNDTRACK_SECONDS = 60
 
 export const GameState = Object.freeze({
   TITLE: 'title',
@@ -370,7 +374,7 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playMusic(SOUNDTRACK_URL) }
+    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playMusic(SOUNDTRACK_URL, SOUNDTRACK_SECONDS) }
     if (this.screens) this.screens.showGameplay()
     if (this.difficulty !== 'normal' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')

@@ -240,7 +240,7 @@ test('plaza halos: 22 shared amber (0xffd9a5) ground halos at plaza centers; 87 
   assert.equal(collision.aabbs.length, 87, `expected 87 aabbs, got ${collision.aabbs.length}`)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
-  assert.equal(sprites, 67, `expected 67 total sprites, got ${sprites}`)
+  assert.equal(sprites, 87, `expected 87 total sprites (67 + 20 light shafts), got ${sprites}`)
   city.dispose()
 })
 
@@ -287,7 +287,7 @@ test('V3P-1b: 24 red strips total; 4 central-cross danger strips at exact positi
   assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
-  assert.equal(sprites, 67, 'expected 67 total sprites, got ' + sprites)
+  assert.equal(sprites, 87, 'expected 87 total sprites (67 + 20 light shafts), got ' + sprites)
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
   assert.ok(meshes <= 600, 'city meshes ' + meshes + ' > 600')
@@ -321,7 +321,7 @@ test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs,
   assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
-  assert.equal(sprites, 67, 'expected 67 total sprites, got ' + sprites)
+  assert.equal(sprites, 87, 'expected 87 total sprites (67 + 20 light shafts), got ' + sprites)
   city.dispose()
 })
 
@@ -352,7 +352,7 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   assert.equal(city.getPlazaCenters().length, 22, 'layout unchanged: 22 plazas')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
-  assert.equal(sprites, 67, 'layout unchanged: 67 sprites')
+  assert.equal(sprites, 87, '67 base + 20 light shafts')
   const city2 = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   assert.deepEqual(city2.getFacadeVariants(), city.getFacadeVariants(), 'facade variants deterministic')
   const vs = city.getFacadeVariants()
@@ -444,7 +444,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
-  assert.equal(sprites, 67, 'sprite count unchanged')
+  assert.equal(sprites, 87, 'sprite count: 67 base + 20 shafts')
   city.dispose()
 })
 

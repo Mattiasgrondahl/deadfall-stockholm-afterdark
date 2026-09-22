@@ -57,7 +57,7 @@ export class AudioBank {
     this._musicMuted = false
     this._onMusicEnded = null
     this._onMusicTimeUpdate = null
-    this._musicDur = 0
+    this._musicLen = 0
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -658,21 +658,22 @@ export class AudioBank {
 
   toggleMuted() { this.setMuted(!this.muted) }
 
-  /** Load + loop the soundtrack (browser-only). `url` is the mp3 path.
-   *  The element is routed through a MediaElementSource into a dedicated
-   *  musicGain -> master so it obeys mute. No-op headless (no AudioContext/DOM).
+  /** Load + loop the soundtrack (browser-only). `url` is the mp3 path; `seconds`
+   *  is the KNOWN true track length (defaults to the element's duration). The
+   *  element is routed through a MediaElementSource into a dedicated musicGain
+   *  -> master so it obeys mute. No-op headless (no AudioContext/DOM).
    *
-   *  Looping is done manually (loop=false + an `ended` -> seek(0)+play handler)
-   *  rather than via the element's `loop` flag: some browsers report a wrong
-   *  (too-short) `duration` for mp3s and fire `ended` early, which made the
-   *  track restart around the 30 s mark instead of playing to the end. We
-   *  re-arm playback on `ended` only once the real duration is known, so the
-   *  full song always plays through before it loops. */
-  playMusic(url) {
+   *  Looping is driven off the known length, NOT the element's `duration`:
+   *  some browsers misreport an mp3's duration and fire `ended` early (around
+   *  the 30 s mark), which cut the song short. A `timeupdate` watchdog rewinds
+   *  to 0 once playback reaches the known end, so the full song always plays
+   *  through before it loops. `ended` is kept as a backup that only restarts
+   *  when we're genuinely near the known end. */
+  playMusic(url, seconds) {
     if (!this.ctx || typeof Audio === 'undefined') return
     if (!this._musicEl) {
       const el = new Audio()
-      el.loop = false // manual loop: replay on `ended` so the whole track plays
+      el.loop = false // manual loop: replay on the known-end watchdog
       el.preload = 'auto'
       el.crossOrigin = 'anonymous'
       this._musicEl = el
@@ -688,24 +689,28 @@ export class AudioBank {
         this._musicSrc = null
         this._musicGain = null
       }
-      // Manual loop, robust against browsers that misreport an mp3's duration:
-      // track the real duration via `timeupdate`, and on `ended` only rewind to
-      // 0 when we're actually near the end. If `ended` fires early (a wrong,
-      // too-short duration), resume from the current position instead of cutting
-      // the song — so the full track always plays before it loops.
-      this._musicDur = 0
+      // Known length drives the loop; fall back to the element's (unreliable)
+      // duration only if no explicit length was given.
+      this._musicLen = Number.isFinite(seconds) && seconds > 0 ? seconds : 0
       this._onMusicTimeUpdate = () => {
-        const d = this._musicEl && this._musicEl.duration
-        if (typeof d === 'number' && isFinite(d) && d > 0 && d > this._musicDur) this._musicDur = d
+        if (!this._musicOn || !this._musicEl) return
+        const len = this._musicLen || (this._musicEl.duration || 0)
+        if (len <= 0) return
+        const t = this._musicEl.currentTime || 0
+        // Reached the known end -> rewind and replay the whole track.
+        if (t >= len - 0.25) {
+          try { this._musicEl.currentTime = 0; this._musicEl.play().catch(() => {}) } catch (err) {}
+        }
       }
       this._onMusicEnded = () => {
         if (!this._musicOn || !this._musicEl) return
         try {
           const t = this._musicEl.currentTime || 0
-          const dur = this._musicDur
-          // Near the true end (or duration unknown): loop from the start.
-          // Otherwise `ended` fired early — resume where we stopped.
-          if (dur > 0 && t < dur - 1.5) this._musicEl.currentTime = t
+          const len = this._musicLen || (this._musicEl.duration || 0)
+          // Only restart from 0 when we're genuinely near the known end; if
+          // `ended` fired early (wrong duration), resume where we stopped so the
+          // song isn't cut short.
+          if (len > 0 && t < len - 1.5) this._musicEl.currentTime = t
           else this._musicEl.currentTime = 0
           this._musicEl.play().catch(() => {})
         } catch (err) {}
@@ -715,6 +720,7 @@ export class AudioBank {
         el.addEventListener('timeupdate', this._onMusicTimeUpdate)
       }
     }
+    if (Number.isFinite(seconds) && seconds > 0) this._musicLen = seconds
     if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
     this._musicOn = true
     this._musicEl.play().catch(() => {}) // autoplay policy: first sound follows a gesture
@@ -753,7 +759,7 @@ export class AudioBank {
     this._musicUrl = null
     this._onMusicEnded = null
     this._onMusicTimeUpdate = null
-    this._musicDur = 0
+    this._musicLen = 0
     this._musicMuted = false
     this._groanMap = new Map()
     this._groanVoices = []

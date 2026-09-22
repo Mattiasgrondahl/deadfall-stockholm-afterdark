@@ -20,6 +20,29 @@ export function makeGlowMap() {
   return new THREE.CanvasTexture(c)
 }
 
+// Realism pass (tier 3): a vertical light-shaft map — bright at the lamp head,
+// fading down and inward toward the ground — to fake a volumetric beam in the
+// night air. Null in headless Node.
+function makeShaftMap() {
+  if (typeof document === 'undefined') return null
+  const c = document.createElement('canvas'); c.width = 32; c.height = 64
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0, 0, 0, 64)
+  grad.addColorStop(0, 'rgba(255,255,255,0.55)')
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.18)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grad; g.fillRect(0, 0, 32, 64)
+  // Horizontal falloff so the beam is narrow at the top and soft at the base.
+  const hgrad = g.createLinearGradient(0, 0, 32, 0)
+  hgrad.addColorStop(0, 'rgba(0,0,0,0.6)')
+  hgrad.addColorStop(0.5, 'rgba(0,0,0,0)')
+  hgrad.addColorStop(1, 'rgba(0,0,0,0.6)')
+  g.globalCompositeOperation = 'destination-out'
+  g.fillStyle = hgrad; g.fillRect(0, 0, 32, 64)
+  g.globalCompositeOperation = 'source-over'
+  return new THREE.CanvasTexture(c)
+}
+
 export function addStreetlights(group) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
@@ -27,8 +50,12 @@ export function addStreetlights(group) {
   const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
   const haloMap = makeGlowMap()
 const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  // Realism pass: a shared vertical light-shaft sprite under each lamp head for
+  // a soft volumetric beam in the night air.
+  const shaftMap = makeShaftMap()
+  const shaftMat = new THREE.SpriteMaterial({ color: 0xffc27a, map: shaftMap, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })
   const anchors = []
-  const place = (x, z) => {
+  const place = (x, z, shaft) => {
     const pole = new THREE.Mesh(poleGeo, poleMat)
     pole.castShadow = true
     pole.position.set(x, 2.5, z)
@@ -37,10 +64,15 @@ const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transp
     head.position.set(x, 5.2, z)
     group.add(head)
     const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(2.2, 2.2, 1); group.add(halo)
+    // Shaft hangs from the head down toward the pavement (tall, narrow). Only
+    // the vertical-street lamps get one, to stay inside the mesh/sprite budget.
+    if (shaft) {
+      const s = new THREE.Sprite(shaftMat); s.position.set(x, 2.6, z); s.scale.set(1.6, 5.2, 1); group.add(s)
+    }
     anchors.push(new THREE.Vector3(x, 5.2, z))
   }
-  for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z) // vertical streets
-  for (const z of STREETS) for (const x of POLES) place(x, z + OFFSET) // horizontal streets
+  for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z, true) // vertical streets (with shafts)
+  for (const z of STREETS) for (const x of POLES) place(x, z + OFFSET, false) // horizontal streets (no shafts)
   return anchors
 }
 
@@ -587,4 +619,22 @@ export function addContactShadows(group) {
   mesh.instanceMatrix.needsUpdate = true
   group.add(mesh)
   return mesh
+}
+
+// Realism pass (tier 4): WanGP-generated photoreal wet-asphalt ground image
+// (browser-only, via TextureLoader). Returns a loaded texture, or null in
+// headless Node so the procedural ground maps stay in place.
+export function makeGroundImageTexture(env) {
+  if (typeof document === 'undefined') return null
+  try {
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
+    const url = base.replace(/\/$/, '') + '/assets/ground/asphalt.jpg'
+    const tex = new THREE.TextureLoader().load(url)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 4
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    return tex
+  } catch (err) {
+    return null
+  }
 }

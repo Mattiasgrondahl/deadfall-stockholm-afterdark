@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture } from './cityDressing.js'
+import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture, makeGroundImageTexture } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -229,6 +229,16 @@ export class City {
       ground.material.normalMap = groundMaps.normalMap
       ground.material.normalScale = new THREE.Vector2(0.5, 0.5)
       ground.material.roughnessMap = groundMaps.roughnessMap
+      ground.material.needsUpdate = true
+    }
+    // Realism pass (tier 4): a photoreal wet-asphalt image as the ground color
+    // map (browser-only); headless / missing-asset keeps the flat color.
+    const groundImage = makeGroundImageTexture(this.env)
+    if (groundImage) {
+      groundImage.repeat.set(30, 30)
+      groundImage.needsUpdate = true
+      ground.material.map = groundImage
+      ground.material.color.set(0xffffff)
       ground.material.needsUpdate = true
     }
     ground.rotation.x = -Math.PI / 2

@@ -552,25 +552,31 @@ function bankWithFakeCtx() {
     }
   }
   let before = bank2.ctx._created.length
-  bank2.playMusic('track.mp3')
+  bank2.playMusic('track.mp3', 60)
   assert.ok(bank2._musicEl, 'music element created')
   assert.equal(bank2._musicEl.loop, false, 'manual loop: element loop flag is off')
   assert.equal(bank2._musicEl.src, 'track.mp3')
   assert.equal(endedHandlers.length, 1, 'an ended handler is registered')
   assert.equal(timeHandlers.length, 1, 'a timeupdate handler is registered')
+  assert.equal(bank2._musicLen, 60, 'known track length drives the loop')
   // +2 nodes: media source + music gain.
   assert.equal(bank2.ctx._created.length - before, 2, 'music graph is src + gain')
   assert.ok(bank2._musicGain._children.includes(bank2.master), 'music gain wired to master')
-  // timeupdate records the real duration once known.
-  bank2._musicEl.duration = 60
-  bank2._musicEl.currentTime = 12
+  // The loop is driven off the KNOWN length, not the (unreliable) element
+  // duration: a wrong short duration must not cut the song short.
+  bank2._musicEl.duration = 30 // browser misreports the length
+  bank2._musicEl.currentTime = 30
   timeHandlers[0]()
-  assert.equal(bank2._musicDur, 60, 'timeupdate records the true duration')
-  // Manual loop: firing `ended` near the true end rewinds to 0 and replays.
+  assert.equal(bank2._musicEl.currentTime, 30, 'timeupdate before the known end does not rewind')
+  // Reaching the known end (>= len-0.25) rewinds to 0 and replays the whole track.
+  bank2._musicEl.currentTime = 59.9
+  timeHandlers[0]()
+  assert.equal(bank2._musicEl.currentTime, 0, 'timeupdate at the known end rewinds to the start')
+  assert.equal(bank2._musicEl.paused, false, 'the known-end watchdog restarts playback')
+  // Manual `ended` backup: near the known end rewinds to 0 and replays.
   bank2._musicEl.currentTime = 59
   endedHandlers[0]()
-  assert.equal(bank2._musicEl.currentTime, 0, 'ended near the end rewinds to the start')
-  assert.equal(bank2._musicEl.paused, false, 'ended restarts playback')
+  assert.equal(bank2._musicEl.currentTime, 0, 'ended near the known end rewinds to the start')
   // A premature `ended` (wrong duration) resumes from the current position
   // instead of cutting the song back to 0.
   bank2._musicEl.currentTime = 30
