@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, makeFacadeImageTexture } from './cityDressing.js'
+import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -315,6 +315,9 @@ export class City {
     this._facadeVariants = variants
     // Realism pass (tier 2): rooftop clutter + cornices (2 InstancedMeshes).
     addRoofDetail(group, buildings)
+    // Realism pass (tier 3): soft contact-shadow decals under vehicles +
+    // barricades (1 InstancedMesh) so props read as resting on the pavement.
+    addContactShadows(group)
 
     this.streetlightAnchors = addStreetlights(group)
     addStreetlightPools(group, this.streetlightAnchors)

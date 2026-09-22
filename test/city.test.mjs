@@ -367,11 +367,12 @@ test('roof detail: 2 InstancedMeshes (clutter + cornice), deterministic, headles
   const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   const inst = []
   c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
-  assert.equal(inst.length, 2, 'exactly 2 roof-detail InstancedMeshes, got ' + inst.length)
-  // Cornice has one instance per building; clutter is capped at 160.
+  assert.equal(inst.length, 3, 'exactly 3 InstancedMeshes (clutter + cornice + contact-shadow), got ' + inst.length)
+  // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
   assert.ok(counts.includes(160), 'clutter instance count is the 160 cap')
+  assert.ok(counts.includes(20), 'contact-shadow instance count is 20 (12 vehicles + 8 barricades)')
   // Headless: facade materials carry no maps (image + procedural all null).
   let checked = 0
   c.group.traverse(o => {
@@ -417,7 +418,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 386, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail instanced, got ' + meshes)
+  assert.equal(meshes, 387, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow, got ' + meshes)
   assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

@@ -516,3 +516,75 @@ export function makeFacadeImageTexture(env) {
     return null
   }
 }
+
+// Realism pass (tier 3): soft contact-shadow decals under grounded props.
+// One InstancedMesh of dark radial-gradient discs (1 mesh, 20 instances: 12
+// vehicles + 8 barricades) laid flat just above the ground, so props read as
+// resting on the pavement instead of floating. Uses the same additive-style
+// transparent material (normal blending, depthWrite off) so it darkens the
+// ground without new lights. Browser-only texture; headless keeps the mesh but
+// never renders it. No collision, no lights, no Math.random.
+function makeShadowDecalMap() {
+  if (typeof document === 'undefined') return null
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64
+  const g = c.getContext('2d')
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0, 'rgba(0,0,0,0.55)')
+  grad.addColorStop(0.5, 'rgba(0,0,0,0.28)')
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
+
+export function addContactShadows(group) {
+  const VEH = [
+    { x: 15.2, z: -50, vertical: true }, { x: 15.2, z: 20, vertical: true },
+    { x: 15.2, z: 45, vertical: true }, { x: 39.2, z: -20, vertical: true },
+    { x: 39.2, z: 0, vertical: true }, { x: -39.2, z: 0, vertical: true },
+    { x: -39.2, z: 40, vertical: true }, { x: -15.2, z: -20, vertical: true },
+    { x: -15.2, z: 45, vertical: true }, { x: 0, z: 39.2, vertical: false },
+    { x: 20, z: 39.2, vertical: false }, { x: 40, z: -15.2, vertical: false }
+  ]
+  const BAR = [
+    { x: -72, z: 24 }, { x: -72, z: 48 }, { x: -48, z: -72 }, { x: -24, z: 48 },
+    { x: 24, z: -24 }, { x: 24, z: 24 }, { x: 48, z: 24 }, { x: 72, z: -48 }
+  ]
+  const count = VEH.length + BAR.length
+  const geo = new THREE.PlaneGeometry(1, 1)
+  const map = makeShadowDecalMap()
+  const mat = new THREE.MeshBasicMaterial({
+    color: map ? 0xffffff : 0x000000,
+    map: map || null,
+    transparent: true,
+    opacity: map ? 1 : 0.4,
+    depthWrite: false
+  })
+  const mesh = new THREE.InstancedMesh(geo, mat, count)
+  mesh.rotation.x = -Math.PI / 2
+  mesh.position.y = 0.02
+  mesh.renderOrder = 1
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3()
+  let i = 0
+  for (const v of VEH) {
+    // Vehicle footprint ~1.8 x 4.5; pad the disc a little past it.
+    const sx = (v.vertical ? 1.8 : 4.5) * 1.5
+    const sz = (v.vertical ? 4.5 : 1.8) * 1.5
+    pos.set(v.x, 0, v.z)
+    scl.set(sx, sz, 1)
+    m.compose(pos, quat, scl)
+    mesh.setMatrixAt(i++, m)
+  }
+  for (const b of BAR) {
+    pos.set(b.x, 0, b.z)
+    scl.set(3.4, 2.0, 1)
+    m.compose(pos, quat, scl)
+    mesh.setMatrixAt(i++, m)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  group.add(mesh)
+  return mesh
+}

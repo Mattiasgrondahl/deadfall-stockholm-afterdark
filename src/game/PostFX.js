@@ -24,6 +24,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js'
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v))
 
@@ -70,12 +71,21 @@ export class PostFX {
     this.composer = null
     this.bloom = null
     this.grade = null
+    this.gtao = null
     this.strength = clamp01(Number.isFinite(opts.strength) ? opts.strength : 0.25)
     if (!(renderer instanceof THREE.WebGLRenderer)) return
     const size = renderer.getSize(new THREE.Vector2())
     this.composer = new EffectComposer(renderer)
     const renderPass = new RenderPass(scene, camera)
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), this.strength, 0.5, 0.0)
+    // Grounding AO (graphics tier 3): GTAO darkens corners, wall/floor junctions
+    // and the crevices behind props so the flat-lit scene reads with depth. It
+    // runs right after RenderPass and BEFORE grade + bloom, compositing AO onto
+    // the beauty buffer (output=Default) while keeping bloom as the final
+    // on-screen pass. blendIntensity is kept low (0.5) so it stays subtle.
+    this.gtao = new GTAOPass(scene, camera, size.x, size.y)
+    this.gtao.output = 0 // Default: beauty + AO blended
+    this.gtao.blendIntensity = 0.5
     // Grade pass BEFORE bloom: grain + vignette tint the scene, then bloom is
     // the LAST enabled pass so it renders straight to the screen (the composer
     // auto-sets renderToScreen on the last enabled pass). This preserves the
@@ -83,6 +93,7 @@ export class PostFX {
     // otherwise lose on the RT->screen re-encode.
     this.grade = new ShaderPass(GRADE_SHADER)
     this.composer.addPass(renderPass)
+    this.composer.addPass(this.gtao)
     this.composer.addPass(this.grade)
     this.composer.addPass(this.bloom)
     this.enabled = true
@@ -101,15 +112,20 @@ export class PostFX {
   }
 
   setSize(w, h) {
-    if (this.enabled) this.composer.setSize(w, h)
+    if (this.enabled) {
+      this.composer.setSize(w, h)
+      if (this.gtao) this.gtao.setSize(w, h)
+    }
   }
 
   dispose() {
     if (this.bloom) this.bloom.dispose()
     if (this.grade) this.grade.dispose()
+    if (this.gtao) this.gtao.dispose()
     if (this.composer) this.composer.dispose()
     this.bloom = null
     this.grade = null
+    this.gtao = null
     this.composer = null
     this.enabled = false
   }
