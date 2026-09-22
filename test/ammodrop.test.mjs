@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
-import { AmmoDrops, DROP_CHANCE, SHELLS_PER_DROP, PICKUP_RADIUS, LIFETIME, BLINK_AFTER, MAX_DROPS } from '../src/game/AmmoDrops.js'
+import { AmmoDrops, DROP_CHANCE, SHELLS_PER_DROP, BULLETS_PER_DROP, BULLET_CHANCE, PICKUP_RADIUS, LIFETIME, BLINK_AFTER, MAX_DROPS } from '../src/game/AmmoDrops.js'
 
 const fakeAudio = () => ({ pickup: () => {} })
 const fakePlayer = (x, z, isDead = false) => ({ position: new THREE.Vector3(x, 1.7, z), isDead })
@@ -15,6 +15,8 @@ function makeManager() {
 test('constants match the contract', () => {
   assert.equal(DROP_CHANCE, 0.55)
   assert.equal(SHELLS_PER_DROP, 8)
+  assert.equal(BULLETS_PER_DROP, 12)
+  assert.equal(BULLET_CHANCE, 0.5)
   assert.equal(PICKUP_RADIUS, 1.2)
   assert.equal(LIFETIME, 30)
   assert.equal(BLINK_AFTER, 25)
@@ -39,7 +41,36 @@ test('cap: at most 20 concurrent drops', () => {
   drops._rand = () => 0 // force every roll to hit
   for (let i = 0; i < 25; i++) drops.maybeSpawn(i, 0)
   assert.equal(drops.count, MAX_DROPS)
-  assert.equal(drops.maybeSpawn(99, 0), false)
+  assert.equal(drops.maybeSpawn(99, 0), null)
+  drops.dispose()
+})
+
+test('drops carry a kind: handgun bullets and shotgun shells both appear', () => {
+  const { drops } = makeManager()
+  // Default LCG: over many kills both kinds must appear (the kind roll is a
+  // second LCG draw), and each drop must carry 'bullets' or 'shells'.
+  const kinds = new Set()
+  for (let i = 0; i < 60; i++) {
+    const k = drops.maybeSpawn(i, 0)
+    if (k) kinds.add(k)
+  }
+  assert.ok(kinds.has('bullets'), 'handgun-bullet drops appear')
+  assert.ok(kinds.has('shells'), 'shotgun-shell drops appear')
+  for (const d of drops._drops) assert.ok(d.kind === 'bullets' || d.kind === 'shells')
+  drops.dispose()
+})
+
+test('bullet drops use the bullet material, shell drops the shell material', () => {
+  const { drops } = makeManager()
+  let seq = [0, 0] // drop roll 0 (<0.55 hits), kind roll 0 (<0.5 -> bullets)
+  drops._rand = () => seq.shift() ?? 0
+  drops.maybeSpawn(1, 1)
+  assert.equal(drops._drops[0].kind, 'bullets')
+  assert.equal(drops._drops[0].mesh.material, drops._bulletMat)
+  seq = [0, 0.9] // drop roll 0 hits, kind roll 0.9 (>=0.5 -> shells)
+  drops.maybeSpawn(2, 2)
+  assert.equal(drops._drops[1].kind, 'shells')
+  assert.equal(drops._drops[1].mesh.material, drops._shellMat)
   drops.dispose()
 })
 

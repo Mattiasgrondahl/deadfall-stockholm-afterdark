@@ -181,4 +181,22 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.strictEqual(player.velocity.y, 0)
 }
 
+{ // passive health regen: 1 hp/s after a 4 s no-damage delay; none during it
+  const { player } = makePlayer()
+  player.health = 50
+  player.damage(10) // health 40, regen countdown restarts
+  step(player, 60) // 1 s elapsed, still within the 4 s delay
+  assert.ok(player.health < 41, `no regen during the delay (health ${player.health.toFixed(2)})`)
+  step(player, 60 * 4) // pass the delay window
+  const before = player.health
+  step(player, 60) // 1 s of regen
+  assert.ok(player.health >= before + 0.9 && player.health <= before + 1.1,
+    `~1 hp/s regen after the delay (${before.toFixed(2)} -> ${player.health.toFixed(2)})`)
+  // Regen never exceeds maxHealth.
+  player.health = 99.5
+  player._regenDelay = 0
+  step(player, 60 * 3)
+  assert.ok(player.health <= player.maxHealth, `regen clamps at maxHealth (${player.health})`)
+}
+
 console.log('player OK')

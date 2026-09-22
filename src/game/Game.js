@@ -7,7 +7,7 @@ import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP } from './AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
@@ -19,6 +19,11 @@ import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
 import { PostFX } from './PostFX.js'
+
+// Soundtrack mp3 (YuE2 hard-rock zombie song), served from public/. Resolved
+// against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
+const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
+const SOUNDTRACK_URL = ASSET_BASE + 'assets/audio/soundtrack.mp3'
 
 export const GameState = Object.freeze({
   TITLE: 'title',
@@ -311,8 +316,11 @@ export class Game {
         if (this.hud) this.hud.killMarker()
         if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
       },
-      onDropPickup: () => {
-        if (this.weapon) this.weapon.shotgun.reserve += SHELLS_PER_DROP
+      onDropPickup: (d) => {
+        if (this.weapon) {
+          if (d && d.kind === 'bullets') this.weapon.pistol.reserve += BULLETS_PER_DROP
+          else this.weapon.shotgun.reserve += SHELLS_PER_DROP
+        }
         if (this.audio) this.audio.pickup?.()
       }
     }
@@ -354,7 +362,7 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
+    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playMusic(SOUNDTRACK_URL) }
     if (this.screens) this.screens.showGameplay()
     if (this.difficulty !== 'normal' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')

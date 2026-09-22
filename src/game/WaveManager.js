@@ -8,18 +8,22 @@
 // is dead; unspawned queue remainder is discarded (the debug
 // forceWaveClear / killAllZombies paths depend on this).
 //
-// Wave-5 finale: when the wave-5 queue is fully spawned AND every zombie is
-// dead, the wave is held open for BOSS_DELAY seconds and a `brute` boss
-// stomps in from the far north spawn point (onBossIncoming -> onBossSpawn
-// callbacks). Killing the boss clears wave 5 normally. A debug forceClear on
-// wave 5 skips the boss (it never arms the gate) and moves to wave 6.
+// Boss finale: at the end of every BOSS_EVERY-th wave (5, 10, 15, ...), once
+// that wave's queue is fully spawned AND every zombie is dead, the wave is held
+// open for BOSS_DELAY seconds and a `brute` boss stomps in from the far north
+// spawn point (onBossIncoming -> onBossSpawn callbacks). Killing the boss clears
+// the wave normally. Boss HP scales with the wave (1.12^wave), so the level-5
+// boss takes many shots and later bosses take progressively more. A debug
+// forceClear on a boss wave skips the boss (it never arms the gate) and moves on.
 
 const SPAWN_INTERVAL = 0.7 // seconds between spawns
 const INTERMISSION = 3.0   // seconds between waves
 
-/** The wave whose clear is followed by the boss (the user's "level 5"). */
-const BOSS_WAVE = 5
-/** Gap after the wave-5 queue is fully spawned and cleared before the boss
+/** A boss stomps in at the end of every BOSS_EVERY-th wave (5, 10, 15, ...). */
+const BOSS_EVERY = 5
+/** True when `wave` is a boss wave (a multiple of BOSS_EVERY). */
+const isBossWave = (wave) => wave > 0 && wave % BOSS_EVERY === 0
+/** Gap after a boss wave's queue is fully spawned and cleared before the boss
  *  stomps in — a short, dramatic pause instead of an instant spawn. */
 const BOSS_DELAY = 1.5
 /** Spawn point for the boss: index 3 of City.getSpawnPoints() = (0, 85), the
@@ -143,6 +147,12 @@ export class WaveManager {
         this.timer = 0
         this.queue = this.buildQueue(this.wave)
         this._prevAlive = 0
+        // Reset the boss gate for the new wave: with a boss every BOSS_EVERY
+        // waves, the previous boss wave's flags must not leak into the next.
+        this._bossArmed = false
+        this._bossPending = false
+        this._bossTimer = 0
+        this._bossSpawned = false
         this.cb.onWaveStart?.(this.wave)
         this.audio?.playWave?.(this.wave)
       }
@@ -176,19 +186,19 @@ export class WaveManager {
     if (this.spawned > 0 && alive === 0) {
       // Every live zombie is dead; discard the unspawned remainder.
       // Checked BEFORE spawning so a same-tick spawn cannot mask the clear.
-      if (this.wave === BOSS_WAVE && this.spawned >= this.total && !this._bossSpawned) {
-        // Wave 5 finished its whole queue and every zombie is down: hold the
-        // wave open for a short dramatic beat, then stomp in the boss.
+      if (isBossWave(this.wave) && this.spawned >= this.total && !this._bossSpawned) {
+        // A boss wave finished its whole queue and every zombie is down: hold
+        // the wave open for a short dramatic beat, then stomp in the boss.
         this._bossPending = true
         this._bossTimer = BOSS_DELAY
         this.cb.onBossIncoming?.(this.wave)
         this.audio?.playBossIncoming?.()
         return
       }
-      // A debug forceClear (or any kill-all path) on wave 5 skips the boss
+      // A debug forceClear (or any kill-all path) on a boss wave skips the boss
       // entirely: spawned === total and the boss is never armed, so jump
       // straight to the next wave instead of holding the wave open forever.
-      if (this.wave === BOSS_WAVE && !this._bossArmed) {
+      if (isBossWave(this.wave) && !this._bossArmed) {
         this.cb.onWaveCleared?.(this.wave)
         this.intermission = INTERMISSION
         return
@@ -203,7 +213,7 @@ export class WaveManager {
         const q = this.queue[this.spawned]
         this.cb.spawnZombie(q.type, q.x, q.z)
         this.spawned++
-        if (this.wave === BOSS_WAVE && this.spawned >= this.total) this._bossArmed = true
+        if (isBossWave(this.wave) && this.spawned >= this.total) this._bossArmed = true
         this.timer = SPAWN_INTERVAL
       }
     }
@@ -227,7 +237,7 @@ export class WaveManager {
     // consumes the boss — clearing an earlier wave must leave the finale
     // intact so the run still reaches its boss.
     this._bossPending = false
-    if (this.wave === BOSS_WAVE) this._bossSpawned = true
+    if (isBossWave(this.wave)) this._bossSpawned = true
     this.intermission = INTERMISSION
   }
 }

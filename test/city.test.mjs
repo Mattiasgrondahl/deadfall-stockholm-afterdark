@@ -387,12 +387,28 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 383, 'mesh count 319 + 64 dressing, got ' + meshes)
+  assert.equal(meshes, 384, 'mesh count 319 + 64 dressing + 1 wanted poster, got ' + meshes)
   assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 67, 'sprite count unchanged')
   city.dispose()
+})
+
+test('wanted poster mounted on the center building front face', () => {
+  const scene2 = new THREE.Scene()
+  const col2 = new CollisionWorld(180, 180)
+  const c2 = new City(scene2, col2, { canvasFactory: () => null })
+  assert.ok(c2._poster && c2._poster.isMesh, 'poster mesh present')
+  // Front face of the 8x4x9 center block sits at z = +2 (+0.02 nudge off the wall).
+  assert.ok(Math.abs(c2._poster.position.z - 2.02) < 1e-6, `poster z ${c2._poster.position.z}`)
+  assert.equal(c2._poster.position.x, 0, 'poster centred on the building x')
+  assert.ok(c2._poster.position.y > 1 && c2._poster.position.y < 9, 'poster at readable height')
+  // Headless (canvasFactory null): no image map, uses the flat fallback colour.
+  assert.equal(c2._poster.material.map, null, 'headless poster has no image map')
+  // The poster adds no collision AABBs.
+  assert.equal(col2.aabbs.length, 87, 'poster adds no collision')
+  c2.dispose()
 })
 
 

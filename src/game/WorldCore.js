@@ -80,9 +80,10 @@ export function updateWorld(dt, ws) {
     if (z.isDead && !z._killCounted) {
       z._killCounted = true
       if (ws.onKill) ws.onKill(z, z.lastDamager ?? null)
-      if (ws.drops && ws.drops.maybeSpawn(z.position.x, z.position.z)) {
+      const kind = ws.drops ? ws.drops.maybeSpawn(z.position.x, z.position.z) : null
+      if (kind) {
         if (ws.audio && ws.audio.drop) ws.audio.drop()
-        if (ws.onDropSpawn) ws.onDropSpawn(z.position.x, z.position.z)
+        if (ws.onDropSpawn) ws.onDropSpawn(z.position.x, z.position.z, kind)
       }
     }
     if (z.deadAndGone) {

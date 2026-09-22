@@ -1,19 +1,25 @@
 import * as THREE from 'three'
 
-// AmmoDrops — manages shotgun ammo drops left by killed zombies. A seeded-LCG
-// roll (~55%) spawns a drop at the corpse on each kill; the player picks one up
-// within 1.2 m to restock the shotgun reserve. Drops blink in their last 5 s,
-// expire at 30 s, and are capped at 20 concurrent. All RNG is a seeded LCG (no
-// Math.random); headless-safe (no DOM, audio optional).
+// AmmoDrops — manages ammo drops left by killed zombies. A seeded-LCG roll
+// (~55%) spawns a drop at the corpse on each kill; the drop is either shotgun
+// SHELLS or handgun BULLETS (a second LCG roll picks the kind). The player picks
+// one up within 1.2 m to restock the matching weapon's reserve. Drops blink in
+// their last 5 s, expire at 30 s, and are capped at 20 concurrent. All RNG is a
+// seeded LCG (no Math.random); headless-safe (no DOM, audio optional).
 
 const SEED = 1337
 export const DROP_CHANCE = 0.55
 export const SHELLS_PER_DROP = 8
+export const BULLETS_PER_DROP = 12
+export const BULLET_CHANCE = 0.5 // of drops, share that are handgun bullets (else shells)
 export const PICKUP_RADIUS = 1.2
 export const LIFETIME = 30
 export const BLINK_AFTER = 25
 export const MAX_DROPS = 20
 const DROP_Y = 0.1
+// Distinct visuals so the player can tell shells from bullets at a glance.
+const SHELL_COLOR = 0xffaa44, SHELL_EMISSIVE = 0x774400
+const BULLET_COLOR = 0x6fc2ff, BULLET_EMISSIVE = 0x1a4a77
 
 export class AmmoDrops {
   constructor(scene, audio) {
@@ -21,11 +27,14 @@ export class AmmoDrops {
     this.audio = audio
     this._seed = SEED
     this._drops = []
-    // Shared geometry/material across all drop meshes: flat mesh budget,
-    // each drop is just one mesh sharing one geo+mat.
+    // Shared geometry across all drop meshes (flat mesh budget); one material
+    // per kind so shells and bullets read differently without extra geometry.
     this._geo = new THREE.BoxGeometry(0.16, 0.09, 0.16)
-    this._mat = new THREE.MeshStandardMaterial({
-      color: 0xffaa44, emissive: 0x774400, emissiveIntensity: 0.6
+    this._shellMat = new THREE.MeshStandardMaterial({
+      color: SHELL_COLOR, emissive: SHELL_EMISSIVE, emissiveIntensity: 0.6
+    })
+    this._bulletMat = new THREE.MeshStandardMaterial({
+      color: BULLET_COLOR, emissive: BULLET_EMISSIVE, emissiveIntensity: 0.6
     })
   }
 
@@ -39,15 +48,18 @@ export class AmmoDrops {
 
   get count() { return this._drops.length }
 
-  /** Roll on a kill; spawn a drop at (x, z) if the roll hits and under cap. */
+  /** Roll on a kill; spawn a drop at (x, z) if the roll hits and under cap.
+   *  A second LCG roll picks the kind: 'bullets' (handgun) or 'shells'
+   *  (shotgun). Returns the spawned drop's kind, or null when no drop spawned. */
   maybeSpawn(x, z) {
-    if (this._drops.length >= MAX_DROPS) return false
-    if (this._rand() >= DROP_CHANCE) return false
-    const mesh = new THREE.Mesh(this._geo, this._mat)
+    if (this._drops.length >= MAX_DROPS) return null
+    if (this._rand() >= DROP_CHANCE) return null
+    const kind = this._rand() < BULLET_CHANCE ? 'bullets' : 'shells'
+    const mesh = new THREE.Mesh(this._geo, kind === 'bullets' ? this._bulletMat : this._shellMat)
     mesh.position.set(x, DROP_Y, z)
     this.scene.add(mesh)
-    this._drops.push({ x, z, t: 0, mesh })
-    return true
+    this._drops.push({ x, z, t: 0, mesh, kind })
+    return kind
   }
 
   /** Per frame: age, blink, expire, and pick up. onPickup(drop, player) per
@@ -88,6 +100,7 @@ export class AmmoDrops {
   dispose() {
     this.clear()
     this._geo.dispose()
-    this._mat.dispose()
+    this._shellMat.dispose()
+    this._bulletMat.dispose()
   }
 }

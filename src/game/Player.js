@@ -22,6 +22,11 @@ const SPAWN_X = 0, SPAWN_Y = 1.7, SPAWN_Z = 12
 // JUMP_V gives an apex of JUMP_V^2 / (2 * |GRAVITY|) ≈ 0.98 m.
 const GRAVITY = -19.6 // m/s^2
 const JUMP_V = 6.2    // m/s initial rise
+// Passive health regen: a slow 1 hp/s trickle once the player has gone
+// REGEN_DELAY seconds without taking damage. The delay keeps combat honest
+// (no instant heal mid-fight) while rewarding disengaging.
+const REGEN_RATE = 1     // hp per second
+const REGEN_DELAY = 4    // s since last damage before regen resumes
 
 export class Player {
   constructor(camera, inputState, collision, audio = null) {
@@ -40,6 +45,7 @@ export class Player {
     this.isDead = false
     this._bobPhase = 0
     this._bobAmp = 0
+    this._regenDelay = 0 // s remaining before passive regen resumes (reset on damage)
     this._onDeath = null
     this.camera.rotation.order = 'YXZ'
   }
@@ -103,6 +109,13 @@ export class Player {
     if (canSprint) this.stamina = Math.max(0, this.stamina - STAMINA_DRAIN * dt)
     else this.stamina = Math.min(100, this.stamina + STAMINA_REGEN * dt)
 
+    // Passive health regen: after REGEN_DELAY seconds without damage, health
+    // trickles back at REGEN_RATE hp/s up to maxHealth. Dead players never heal.
+    if (!this.isDead && this.health < this.maxHealth) {
+      if (this._regenDelay > 0) this._regenDelay = Math.max(0, this._regenDelay - dt)
+      else this.health = Math.min(this.maxHealth, this.health + REGEN_RATE * dt)
+    }
+
     // Head bob while moving (amplitude 0.05, frequency proportional to speed).
     if (speedNow > 0.5) {
       this._bobPhase += speedNow * dt * 2.2
@@ -120,6 +133,7 @@ export class Player {
   damage(amount, source) {
     if (this.isDead) return
     this.health -= amount
+    this._regenDelay = REGEN_DELAY // any hit restarts the regen countdown
     if (this._onDamaged) this._onDamaged(amount, source)
     if (this.health > 0) this.audio?.hitPlayer?.()
     if (this.health <= 0) {
@@ -148,6 +162,7 @@ export class Player {
     this.isDead = false
     this._bobPhase = 0
     this._bobAmp = 0
+    this._regenDelay = 0
     this.camera.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z)
     this.camera.rotation.set(0, 0, 0)
   }

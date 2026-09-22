@@ -151,7 +151,7 @@ test('ammo drops: nearest player picks up; ties go to roster order', () => {
   const a = m.getPlayer('A').weapon.shotgun
   const b = m.getPlayer('B').weapon.shotgun
   const place = (x) => {
-    const d = { x, z: 0, t: 0, mesh: new THREE.Mesh(m.drops._geo, m.drops._mat) }
+    const d = { x, z: 0, t: 0, kind: 'shells', mesh: new THREE.Mesh(m.drops._geo, m.drops._shellMat) }
     d.mesh.position.set(x, 0.1, 0)
     m.scene.add(d.mesh)
     m.drops._drops.push(d)

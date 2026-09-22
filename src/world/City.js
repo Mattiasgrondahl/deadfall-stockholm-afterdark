@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing } from './cityDressing.js'
+import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster } from './cityDressing.js'
 import { createSnow } from './snow.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
@@ -155,6 +155,8 @@ export class City {
   addOuterStrips(group)
   addGroundDressing(group, this.env && this.env.canvasFactory)
   addSigns(group, plazas)
+  // Wanted poster on the center-block building's front face (buildings[0]).
+  this._poster = addWantedPoster(group, buildings[0], this.env)
   this.plazas = plazas
   this.snow = createSnow()
   for (const p of this.snow.points) group.add(p)

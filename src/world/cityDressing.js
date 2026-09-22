@@ -357,3 +357,74 @@ export function addGroundDressing(group, canvasFactory) {
     }
   }
 }
+
+// Wanted poster: a weathered "WANTED — DEAD OR ALIVE" placard with a zombie
+// portrait, pinned to the front face of the center-block building. The face is
+// at z = +d/2 (facing +z, toward the player's south approach). It loads the
+// WanGP-generated poster image (browser-only, via TextureLoader); when the image
+// is unavailable (missing asset or headless Node) it falls back to a canvas-
+// drawn poster so the feature is always visible. No collision, no lights, no
+// Math.random. Returns the poster mesh (or null when no facade is available).
+export function addWantedPoster(group, building, env) {
+  if (!building || !building.mesh) return null
+  const { w, d, h } = building
+  const pw = Math.min(2.2, w * 0.5)
+  const ph = pw * 1.35
+  const map = makePosterTexture(env)
+  const mat = new THREE.MeshStandardMaterial({
+    map: map || null,
+    color: map ? 0xffffff : 0xd8c9a0,
+    roughness: 0.92,
+    metalness: 0.0,
+    emissive: 0x2a2016,
+    emissiveIntensity: map ? 0.25 : 0.6
+  })
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat)
+  mesh.castShadow = false
+  // Front face of the box is at local +z = d/2; nudge 0.02 off the wall so the
+  // poster never z-fights the facade. Vertically centred a bit above eye level.
+  mesh.position.set(building.mesh.position.x, Math.min(h - ph / 2 - 0.3, 1.7 + ph / 2), building.mesh.position.z + d / 2 + 0.02)
+  group.add(mesh)
+  return mesh
+}
+
+// Build the poster texture: prefer the generated image (browser), else draw a
+// WANTED placard on a canvas (browser or any canvasFactory), else null.
+function makePosterTexture(env) {
+  if (typeof document !== 'undefined') {
+    try {
+      const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
+      const url = base.replace(/\/$/, '') + '/assets/posters/poster.jpg'
+      const tex = new THREE.TextureLoader().load(url)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      return tex
+    } catch (err) { /* fall through to canvas */ }
+  }
+  const factory = env && env.canvasFactory
+  if (typeof factory !== 'function') return null
+  const c = factory()
+  if (!c) return null
+  c.width = 256; c.height = 340
+  const g = c.getContext('2d')
+  g.fillStyle = '#d8c9a0'; g.fillRect(0, 0, 256, 340)
+  g.fillStyle = '#2a2016'; g.fillRect(0, 0, 256, 8)
+  g.fillRect(0, 332, 256, 8)
+  g.textAlign = 'center'
+  g.fillStyle = '#1a140c'
+  g.font = 'bold 56px Georgia, serif'
+  g.fillText('WANTED', 128, 74)
+  // Zombie portrait: a pale skull-ish face with hollow eyes and a snarl.
+  g.fillStyle = '#7d8a72'
+  g.beginPath(); g.ellipse(128, 176, 58, 74, 0, 0, Math.PI * 2); g.fill()
+  g.fillStyle = '#10130f'
+  g.beginPath(); g.ellipse(104, 158, 15, 19, 0, 0, Math.PI * 2); g.fill()
+  g.beginPath(); g.ellipse(152, 158, 15, 19, 0, 0, Math.PI * 2); g.fill()
+  g.fillRect(104, 210, 48, 16) // open snarling mouth
+  g.fillStyle = '#1a140c'
+  g.font = 'bold 26px Georgia, serif'
+  g.fillText('DEAD OR ALIVE', 128, 288)
+  g.font = 'bold 22px Georgia, serif'
+  g.fillText('REWARD 500', 128, 318)
+  return new THREE.CanvasTexture(c)
+}

@@ -3,7 +3,7 @@ import { CollisionWorld } from '../game/CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Player } from '../game/Player.js'
 import { WeaponBank } from '../game/WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP } from '../game/AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP } from '../game/AmmoDrops.js'
 import { Zombie, ATTACK_RANGE, AIR_CLEAR, DIFFICULTY } from '../game/Zombie.js'
 import { WaveManager } from '../game/WaveManager.js'
 import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
@@ -252,8 +252,11 @@ export class Match {
       if (s.player === p) { slot = s; break }
     }
     if (!slot) return
-    slot.weapon.shotgun.reserve += SHELLS_PER_DROP
-    this.events.push({ k: 'pickup', pid: slot.id, x: d.x, z: d.z, shells: SHELLS_PER_DROP })
+    const bullets = d && d.kind === 'bullets'
+    const amount = bullets ? BULLETS_PER_DROP : SHELLS_PER_DROP
+    if (bullets) slot.weapon.pistol.reserve += amount
+    else slot.weapon.shotgun.reserve += amount
+    this.events.push({ k: 'pickup', pid: slot.id, x: d.x, z: d.z, bullets, amount })
   }
 
   /** Zombie state as the core will play it next tick:

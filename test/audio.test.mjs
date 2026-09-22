@@ -66,6 +66,8 @@ function makeFakeAudioContext() {
     type: 'sine',
     frequency: param(440),
     gain: param(1),
+    Q: param(1),
+    detune: param(0),
     connect(target) { this._children.push(target) },
     start() { this.started = true },
     stop() { this.stopped = true }
@@ -123,6 +125,25 @@ function bankWithFakeCtx() {
   const before = bank.ctx._created.length
   bank.shoot()
   assert.ok(bank.ctx._created.length - before >= 5)
+  bank.dispose()
+}
+{
+  // Improved voices: the shotgun blast is denser than the pistol crack, and the
+  // walker "urgh" growl routes through band-pass formant filters.
+  const bank = bankWithFakeCtx()
+  let b0 = bank.ctx._created.length
+  bank.shoot()
+  const shotgunNodes = bank.ctx._created.length - b0
+  b0 = bank.ctx._created.length
+  bank.pistolShot()
+  const pistolNodes = bank.ctx._created.length - b0
+  assert.ok(shotgunNodes > pistolNodes, `shotgun (${shotgunNodes}) heavier than pistol (${pistolNodes})`)
+  b0 = bank.ctx._created.length
+  bank.groan('walker', 2)
+  const bands = bank.ctx._created.slice(b0).filter(n => n.name === 'filter' && n.type === 'bandpass')
+  // The fake filter node defaults type 'sine'; _playFormant sets type bandpass.
+  const formantBands = bank.ctx._created.slice(b0).filter(n => n.name === 'filter')
+  assert.ok(formantBands.length >= 2, `walker growl uses >=2 formant filters (${formantBands.length})`)
   bank.dispose()
 }
 {
@@ -364,12 +385,14 @@ function bankWithFakeCtx() {
 
 // ---- V4P-2: positional audio (PannerNode for groans + attacks) -----------
 {
-  // Panned walker groan = exactly 6 nodes; panner at source, wired to master.
+  // Panned walker groan = 8 nodes (voiced "urgh": formant osc + 2 band-passes +
+  // env gain, plus a breath-noise src+filter+gain, plus the panner); panner at
+  // source, wired to master.
   const bank = bankWithFakeCtx()
   const before = bank.ctx._created.length
   bank._playGroanPanned('walker', 10, { x: 5, z: 0 })
-  assert.strictEqual(bank.ctx._created.length - before, 6)
-  const p = bank.ctx._created[bank.ctx._created.length - 6]
+  assert.strictEqual(bank.ctx._created.length - before, 8)
+  const p = bank.ctx._created[bank.ctx._created.length - 8]
   assert.strictEqual(p.name, 'panner')
   assert.strictEqual(p.position.x.value, 5)
   assert.strictEqual(p.position.z.value, 0)
@@ -394,7 +417,7 @@ function bankWithFakeCtx() {
 }
 {
   // Every scheduled groan fires exactly one panner at the zombie's position;
-  // node growth is exact and bounded (fresh bank, walker voice = 6 nodes).
+  // node growth is exact and bounded (fresh bank, walker "urgh" voice = 8 nodes).
   const bank = bankWithFakeCtx()
   const z = fakeZombie('walker', 3, 0)
   let fires = 0
@@ -408,7 +431,7 @@ function bankWithFakeCtx() {
     assert.strictEqual(p.position.z.value, 0)
   }
   // +2: master + limiter created by bankWithFakeCtx before the loop.
-  assert.strictEqual(bank.ctx._created.length, 2 + 6 * fires, 'unbounded node growth')
+  assert.strictEqual(bank.ctx._created.length, 2 + 8 * fires, 'unbounded node growth')
   bank.dispose()
 }
 {
@@ -487,6 +510,40 @@ function bankWithFakeCtx() {
   assert.strictEqual(bank.ctx._created.length - before, 10, 'bed size changed')
   bank.stopAmbient()
   bank.dispose()
+}
+{
+  // Soundtrack: headless playMusic is a no-op (no Audio element); with a stubbed
+  // Audio + createMediaElementSource it wires musicSrc -> musicGain -> master,
+  // loops, and obeys mute. dispose stops + clears it.
+  const bank = new AudioBank()
+  assert.equal(bank._musicEl, null, 'headless: no music element')
+  bank.playMusic('x.mp3') // must not throw headless
+  bank.stopMusic()
+  bank.dispose()
+
+  const bank2 = bankWithFakeCtx()
+  const ctxNode = (name) => ({ name, _children: [], connect(t) { this._children.push(t) } })
+  bank2.ctx.createMediaElementSource = function (el) { const n = ctxNode('media'); this._created.push(n); n._el = el; return n }
+  globalThis.Audio = function () { this.loop = false; this.preload = ''; this.src = ''; this.play = () => Promise.resolve(); this.pause = () => { this.paused = true } }
+  let before = bank2.ctx._created.length
+  bank2.playMusic('track.mp3')
+  assert.ok(bank2._musicEl, 'music element created')
+  assert.equal(bank2._musicEl.loop, true, 'track loops')
+  assert.equal(bank2._musicEl.src, 'track.mp3')
+  // +2 nodes: media source + music gain.
+  assert.equal(bank2.ctx._created.length - before, 2, 'music graph is src + gain')
+  assert.ok(bank2._musicGain._children.includes(bank2.master), 'music gain wired to master')
+  bank2.setMuted(true)
+  assert.equal(bank2._musicGain.gain.value, 0, 'mute silences music')
+  bank2.setMuted(false)
+  assert.equal(bank2._musicGain.gain.value, 0.5, 'unmute restores music')
+  bank2.setMusicVolume(0.2)
+  assert.equal(bank2._musicGain.gain.value, 0.2, 'setMusicVolume applies')
+  bank2.stopMusic()
+  assert.equal(bank2._musicOn, false)
+  bank2.dispose()
+  assert.equal(bank2._musicEl, null, 'dispose clears music element')
+  delete globalThis.Audio
 }
 
 console.log('audio OK')

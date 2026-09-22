@@ -313,15 +313,24 @@ stage('S7 full loop: clear 3 waves by shooting, then die', () =>
           if (g.debug.reserve() === 0) {
             // No reserve: walk to a nearby ammo drop (spawned on kills) and
             // pick it up; if none in reach, the harness resupplies reserve
-            // (S9 verifies drop mechanics deterministically).
+            // (S9 verifies drop mechanics deterministically). Drops are now
+            // type-aware: prefer a SHELLS drop so the shotgun the harness is
+            // firing refills; if only BULLETS are near, switch to the pistol.
             const drops = g.drops ? g.drops._drops : []
             let near = null
             let nd = Infinity
+            let nearIsShell = false
             for (const d of drops) {
               const dd = Math.hypot(d.x - p.x, d.z - p.z)
-              if (dd < nd) { nd = dd; near = d }
+              if (dd > 6) continue
+              const shell = !d.kind || d.kind === 'shells'
+              // Prefer shells; among the same kind take the closest.
+              if (near === null || (shell && !nearIsShell) || (shell === nearIsShell && dd < nd)) {
+                near = d; nd = dd; nearIsShell = shell
+              }
             }
-            if (near && nd <= 6) { g.debug.setPlayerPos(near.x, near.z); step(3) }
+            if (near && !nearIsShell) g.weapon.switchTo('pistol')
+            if (near) { g.debug.setPlayerPos(near.x, near.z); step(3) }
             else { g.weapon.shotgun.reserve += 30 }
           }
         }

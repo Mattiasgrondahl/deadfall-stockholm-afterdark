@@ -45,6 +45,15 @@ export class AudioBank {
     this._gustSrc = null
     this._humNodes = null
     this.shaper = null
+    // Soundtrack: a looping background music track (the YuE2 hard-rock song).
+    // Driven by an HTML <audio> element routed through a MediaElementSource ->
+    // musicGain -> master, so mute/volume follow the same graph as the SFX.
+    // Browser-only; headless leaves _musicEl null and every music call no-ops.
+    this._musicEl = null
+    this._musicSrc = null
+    this._musicGain = null
+    this._musicUrl = null
+    this._musicOn = false
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -143,11 +152,42 @@ export class AudioBank {
     osc.stop(t + duration + 0.05)
   }
 
+  // Voiced "urgh": a low sawtooth glottal carrier pushed through two band-pass
+  // formants (F1 ~ low back vowel, F2 ~ the "r"-colored second formant) plus a
+  // breath-noise layer. This is the growl's vowel core — a plain sine reads as a
+  // hum, whereas two resonant bands over a saw give an "urgh"/"grr" colour.
+  _playFormant({ freq, freqEnd = null, f1, f2, duration, gain, when = 0, dest = null }) {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime + when
+    const osc = this.ctx.createOscillator()
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(freq, t)
+    if (freqEnd !== null && freqEnd !== freq) osc.frequency.linearRampToValueAtTime(freqEnd, t + duration)
+    const env = this.ctx.createGain()
+    env.gain.setValueAtTime(gain, t)
+    env.gain.exponentialRampToValueAtTime(0.001, t + duration)
+    // Two parallel formant band-passes mix into the shared envelope.
+    const bp1 = this.ctx.createBiquadFilter()
+    bp1.type = 'bandpass'; bp1.frequency.value = f1; bp1.Q.value = 6
+    const bp2 = this.ctx.createBiquadFilter()
+    bp2.type = 'bandpass'; bp2.frequency.value = f2; bp2.Q.value = 8
+    osc.connect(bp1); bp1.connect(env)
+    osc.connect(bp2); bp2.connect(env)
+    env.connect(dest || this.master)
+    osc.start(t)
+    osc.stop(t + duration + 0.05)
+  }
+
   shoot() {
     if (!this.ctx) return
     this._resume()
-    this._playNoise({ duration: 0.08, filterType: 'lowpass', filterFreq: 1200, gain: 0.5 })
-    this._playTone({ type: 'sine', freq: 200, duration: 0.06, gain: 0.25 })
+    // Shotgun blast: a bright transient crack (the muzzle report), a punchy low
+    // body thump (the powder boom), and a short filtered tail — layered so it
+    // reads as a big-bore blast, clearly heavier than the pistol's tight crack.
+    this._playNoise({ duration: 0.04, filterType: 'highpass', filterFreq: 1400, gain: 0.55 })
+    this._playNoise({ duration: 0.16, filterType: 'lowpass', filterFreq: 900, gain: 0.5, when: 0.01 })
+    this._playTone({ type: 'sine', freq: 140, freqEnd: 55, duration: 0.14, gain: 0.4 })
+    this._playNoise({ duration: 0.22, filterType: 'bandpass', filterFreq: 500, gain: 0.18, when: 0.05 })
   }
 
   hitZombie() {
@@ -194,12 +234,14 @@ export class AudioBank {
   // methods may land without touching their call sites.
   // -----------------------------------------------------------------
 
-  // Axe whoosh: lowpassed sweep + falling low thud.
+  // Axe whoosh: a heavier, slower low sweep + a deep wooden/metallic impact thud.
   axeSwing() {
     if (!this.ctx) return
     this._resume()
-    this._playNoise({ duration: 0.12, filterType: 'lowpass', filterFreq: 700, gain: 0.3 })
-    this._playTone({ type: 'sine', freq: 110, freqEnd: 60, duration: 0.14, gain: 0.2 })
+    // Air displacement: broad low whoosh, then a weighty low thud on the strike.
+    this._playNoise({ duration: 0.16, filterType: 'lowpass', filterFreq: 600, gain: 0.34 })
+    this._playTone({ type: 'sine', freq: 120, freqEnd: 55, duration: 0.16, gain: 0.28, when: 0.06 })
+    this._playNoise({ duration: 0.05, filterType: 'bandpass', filterFreq: 300, gain: 0.2, when: 0.08 })
   }
 
   // Pistol shot: sharp short crack (highpassed noise) + brief falling ping.
@@ -211,12 +253,15 @@ export class AudioBank {
     this._playTone({ type: 'sine', freq: 900, freqEnd: 300, duration: 0.07, gain: 0.2 })
   }
 
-  // Sword swing: longer, lower whoosh than the axe + a deep metallic thud.
+  // Sword swing: a bright, fast blade whoosh + a short metallic ring. Sharper
+  // and higher than the axe so the two melee weapons read distinctly.
   swordSwing() {
     if (!this.ctx) return
     this._resume()
-    this._playNoise({ duration: 0.22, filterType: 'lowpass', filterFreq: 500, gain: 0.35 })
-    this._playTone({ type: 'sine', freq: 130, freqEnd: 70, duration: 0.2, gain: 0.25, when: 0.05 })
+    // Fast high whoosh (bandpassed air) then a brief metallic ring partial.
+    this._playNoise({ duration: 0.14, filterType: 'bandpass', filterFreq: 2600, gain: 0.32 })
+    this._playTone({ type: 'triangle', freq: 1500, freqEnd: 900, duration: 0.12, gain: 0.16, when: 0.04 })
+    this._playTone({ type: 'sine', freq: 2200, duration: 0.08, gain: 0.1, when: 0.06 })
   }
 
   // Ammo pickup: two short rising chirps.
@@ -347,16 +392,19 @@ export class AudioBank {
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain })
     } else if (type === 'brute') {
-      // Boss growl: a sub-bass rumble under a low growl tone.
+      // Boss "urgh": a sub-bass rumble under a voiced formant growl.
       this._playTone({ type: 'sine', freq: 45, freqEnd: 32, duration: spec.voice, gain })
-      this._playTone({ type: 'sawtooth', freq: 80, freqEnd: 55, duration: spec.voice * 0.7, gain: gain * 0.5 })
+      this._playFormant({ freq: 70, freqEnd: 50, f1: 320, f2: 900, duration: spec.voice * 0.8, gain: gain * 0.7 })
     } else {
-      this._playTone({ type: 'sine', freq: type === 'walker' ? 90 : 60, duration: spec.voice, gain })
+      // Walker/shambler: a voiced "urgh" — a low saw carrier through two formant
+      // bands plus a breath-noise layer, instead of a bare hum.
+      const base = type === 'walker' ? 95 : 62
+      this._playFormant({ freq: base, freqEnd: base * 0.85, f1: type === 'walker' ? 500 : 380, f2: type === 'walker' ? 1300 : 1000, duration: spec.voice, gain })
       this._playNoise({
         duration: spec.voice * 0.8,
         filterType: 'lowpass',
-        filterFreq: type === 'walker' ? 300 : 180,
-        gain: gain * 0.6
+        filterFreq: type === 'walker' ? 500 : 320,
+        gain: gain * 0.5
       })
     }
   }
@@ -414,14 +462,15 @@ export class AudioBank {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
     } else if (type === 'brute') {
       this._playTone({ type: 'sine', freq: 45, freqEnd: 32, duration: spec.voice, gain, dest })
-      this._playTone({ type: 'sawtooth', freq: 80, freqEnd: 55, duration: spec.voice * 0.7, gain: gain * 0.5, dest })
+      this._playFormant({ freq: 70, freqEnd: 50, f1: 320, f2: 900, duration: spec.voice * 0.8, gain: gain * 0.7, dest })
     } else {
-      this._playTone({ type: 'sine', freq: type === 'walker' ? 90 : 60, duration: spec.voice, gain, dest })
+      const base = type === 'walker' ? 95 : 62
+      this._playFormant({ freq: base, freqEnd: base * 0.85, f1: type === 'walker' ? 500 : 380, f2: type === 'walker' ? 1300 : 1000, duration: spec.voice, gain, dest })
       this._playNoise({
         duration: spec.voice * 0.8,
         filterType: 'lowpass',
-        filterFreq: type === 'walker' ? 300 : 180,
-        gain: gain * 0.6,
+        filterFreq: type === 'walker' ? 500 : 320,
+        gain: gain * 0.5,
         dest
       })
     }
@@ -593,12 +642,59 @@ export class AudioBank {
       this.master.gain.cancelScheduledValues(t)
       this.master.gain.setValueAtTime(this.muted ? 0 : 0.6, t)
     }
+    if (this._musicGain) this._musicGain.gain.value = this.muted ? 0 : 0.5
   }
 
   toggleMuted() { this.setMuted(!this.muted) }
 
+  /** Load + loop the soundtrack once (browser-only). `url` is the mp3 path.
+   *  The element is routed through a MediaElementSource into a dedicated
+   *  musicGain -> master so it obeys mute. Idempotent: repeated calls with the
+   *  same url only (re)start playback. No-op headless (no AudioContext/DOM). */
+  playMusic(url) {
+    if (!this.ctx || typeof Audio === 'undefined') return
+    if (!this._musicEl) {
+      const el = new Audio()
+      el.loop = true
+      el.preload = 'auto'
+      el.crossOrigin = 'anonymous'
+      this._musicEl = el
+      try {
+        this._musicSrc = this.ctx.createMediaElementSource(el)
+        this._musicGain = this.ctx.createGain()
+        this._musicGain.gain.value = this.muted ? 0 : 0.5
+        this._musicSrc.connect(this._musicGain)
+        this._musicGain.connect(this.master)
+      } catch (err) {
+        // createMediaElementSource unsupported: fall back to the element's own
+        // output (still looped), just not routed through the master graph.
+        this._musicSrc = null
+        this._musicGain = null
+      }
+    }
+    if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
+    this._musicOn = true
+    this._musicEl.play().catch(() => {}) // autoplay policy: first sound follows a gesture
+  }
+
+  stopMusic() {
+    this._musicOn = false
+    if (this._musicEl) { try { this._musicEl.pause() } catch (err) {} }
+  }
+
+  /** Set the music bus gain (0..1); mute overrides it to 0. */
+  setMusicVolume(v) {
+    if (this._musicGain) this._musicGain.gain.value = this.muted ? 0 : Math.max(0, Math.min(1, v))
+  }
+
   dispose() {
     this.stopAmbient()
+    this.stopMusic()
+    if (this._musicEl) { try { this._musicEl.src = '' } catch (err) {} }
+    this._musicEl = null
+    this._musicSrc = null
+    this._musicGain = null
+    this._musicUrl = null
     this._groanMap = new Map()
     this._groanVoices = []
     this._groanClock = 0

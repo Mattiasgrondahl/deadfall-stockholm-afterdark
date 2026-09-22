@@ -240,11 +240,13 @@ test('boss does not spawn when wave 5 is force-cleared (debug path)', () => {
   let guard = 0
   while (w2.wm.spawned < 3 && guard++ < 60) w2.step(1)
   w2.wm.forceClear(w2.game)
-  w2.step(3.1)
-  assert.equal(w2.wm.wave, 6)
+  // forceClear marks the boss consumed on the boss wave itself (before the
+  // intermission to wave 6 resets the gate for the next wave).
   assert.equal(w2.wm._bossSpawned, true, 'forceClear marks the boss consumed')
   assert.equal(w2.bossSpawn.length, 0)
   assert.equal(w2.bossIncoming.length, 0)
+  w2.step(3.1)
+  assert.equal(w2.wm.wave, 6)
   // forceClear is the debug path: it never fires onWaveCleared (the wave
   // advances via the intermission), so clears stays empty.
   assert.deepEqual(w2.clears, [])
@@ -366,6 +368,27 @@ test('HUD boss bar: hidden at rest, tracks health while the boss lives', () => {
   hud.update(null, null, { wave: 5, remaining: 1 })
   assert.ok(box.classList.contains('hidden'), 'hidden once the boss dies')
   hud.dispose()
+})
+
+test('boss appears every 5 waves: wave 10 spawns a higher-HP brute', () => {
+  const { wm, game, bossIncoming, bossSpawn, step, alive, killAll, spawnAll } = makeWave()
+  wm.reset()
+  // Advance to wave 10 via forceClear (debug path skips the boss gate each time).
+  for (let i = 0; i < 9; i++) { step(1); wm.forceClear(game); step(3.1) }
+  assert.equal(wm.wave, 10)
+  spawnAll()
+  killAll()
+  step(0.5)
+  assert.deepEqual(bossIncoming, [10], 'boss incoming fires on wave 10')
+  step(1.6)
+  assert.deepEqual(bossSpawn, [10], 'boss spawns on wave 10')
+  const boss = game.zombies.find(z => z.type === 'brute')
+  assert.ok(boss, 'brute spawned at wave 10')
+  // HP scales with the wave: more than the wave-5 boss (>=5 pistol shots at L5,
+  // and progressively more at 10/15).
+  assert.equal(boss.maxHealth, Math.round(360 * Math.pow(1.12, 9)))
+  assert.ok(boss.maxHealth > Math.round(360 * Math.pow(1.12, 4)), 'wave-10 boss is tougher than wave-5')
+  assert.equal(alive(), 1)
 })
 
 test('boss never decapitates (pool skips isBoss)', () => {
