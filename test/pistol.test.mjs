@@ -179,10 +179,10 @@ test('muzzle flash fades; camera kick via player', () => {
   assert.equal(p.flash.material.map, null)  // headless: no document -> no texture
 })
 
-test('view model + dispose: 4 weapon meshes; detach from camera; double-safe', () => {
+test('view model + dispose: 3 weapon meshes; detach from camera; double-safe', () => {
   const { camera, pistol: p } = makePistol()
   const meshes = p.view.children.filter((c) => c.isMesh)
-  assert.equal(meshes.length, 4, 'slide, frame, barrel, grip present')
+  assert.equal(meshes.length, 3, 'receiver, barrel, grip present')
   assert.ok(p.view.children.includes(p.flash), 'muzzle flash present')
   assert.ok(p.view.children.includes(p.flashLight), 'flash light present')
   p.dispose()

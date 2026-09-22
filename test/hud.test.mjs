@@ -63,7 +63,8 @@ function fakeBank(currentName) {
   const shotgun = mk('shotgun')
   const pistol = mk('pistol')
   const sword = mk('sword')
-  return { axe, shotgun, pistol, sword, current: { axe, shotgun, pistol, sword }[currentName] || shotgun }
+  const sniper = mk('sniper')
+  return { axe, shotgun, pistol, sword, sniper, current: { axe, shotgun, pistol, sword, sniper }[currentName] || shotgun }
 }
 
 const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
@@ -76,18 +77,24 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   const slots = hudRoot.children
     .filter((c) => c.classList.contains('hud-weapons'))
     .flatMap((w) => w.children.filter((c) => c.classList.contains('weapon-slot')))
-  assert.equal(slots.length, 4)
+  assert.equal(slots.length, 5)
   assert.equal(slots[0].classList.contains('active'), false)
   assert.equal(slots[1].classList.contains('active'), true) // shotgun is current
   assert.equal(slots[2].classList.contains('active'), false)
   assert.equal(slots[3].classList.contains('active'), false)
+  assert.equal(slots[4].classList.contains('active'), false)
   const names = slots.map((s) => find(s, 'weapon-name').textContent)
   const ammo = slots.map((s) => find(s, 'weapon-ammo').textContent)
-  assert.deepEqual(names, ['axe', 'shotgun', 'pistol', 'sword'])
-  assert.deepEqual(ammo, ['∞', '5 / 30', '5 / 30', '∞'])
+  assert.deepEqual(names, ['axe', 'shotgun', 'pistol', 'sword', 'sniper'])
+  assert.deepEqual(ammo, ['∞', '5 / 30', '5 / 30', '∞', '5 / 30'])
   assert.equal(find(hudRoot, 'hud-ammo').classList.contains('hidden'), true) // legacy hidden
   assert.equal(hudRoot.children.find((c) => c.classList.contains('hud-battery')).classList.contains('hidden'), true)
   assert.equal(hudRoot.children.find((c) => c.classList.contains('hud-score')).classList.contains('hidden'), true)
+  // HP bar shows the percentage of max health (health 50 / max 100 -> "50%").
+  const healthBox = hudRoot.children.find((c) => c.classList.contains('hud-health'))
+  const healthBar = healthBox.children[1] // the .bar wrapper holding the fill
+  assert.equal(healthBar.children[0].style.width, '50%', 'health fill width tracks pct')
+  assert.equal(healthBox.children[2].textContent, '50%', 'HP bar displays the percentage')
   hud.dispose()
 }
 

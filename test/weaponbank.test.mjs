@@ -226,9 +226,9 @@ test('reload() delegates to the current weapon; axe is a no-op', () => {
   bank.dispose()
 })
 
-test('dispose detaches all four view models; double-safe', () => {
+test('dispose detaches all five view models; double-safe', () => {
   const { bank, camera } = makeBank(fakePlayer(0, 0), [])
-  assert.equal(camera.children.length, 4) // axe + shotgun + pistol + sword views
+  assert.equal(camera.children.length, 5) // axe + shotgun + pistol + sword + sniper views
   bank.dispose()
   assert.equal(camera.children.length, 0)
   bank.dispose() // second call must not throw

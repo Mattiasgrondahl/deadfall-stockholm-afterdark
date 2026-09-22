@@ -140,7 +140,7 @@ function makeGame(doc, hud) {
   const wave = { wave: 3, remaining: 2 }
   hud.update(player, weapon, wave)
   assert.strictEqual(healthFill.style.width, '100%')
-  assert.strictEqual(healthValue.textContent, '100')
+  assert.strictEqual(healthValue.textContent, '100%', 'health shown as a percentage')
   assert.strictEqual(waveValue.textContent, 'WAVE 3')
   assert.strictEqual(threat.textContent, 'left: 2')
   assert.strictEqual(ammoValue.textContent, '12 / 60')

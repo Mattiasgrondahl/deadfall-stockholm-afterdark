@@ -235,6 +235,15 @@ export class AudioBank {
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.15 })
   }
 
+  // Limb severed by a bullet: a wet tear — a short lowpassed noise rip plus a
+  // quick descending squelch. Null-guarded for headless.
+  dismember() {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.09, filterType: 'bandpass', filterFreq: 900, gain: 0.3 })
+    this._playTone({ type: 'sawtooth', freq: 260, freqEnd: 90, duration: 0.12, gain: 0.22 })
+  }
+
   // Zombie melee hit on the player: a low groaning thud (filtered noise + low
   // sine). Wired from Zombie.update's attack branch (null-guarded there).
   // V4P-2: when a source position is passed, the voice pans to it.
@@ -251,6 +260,16 @@ export class AudioBank {
     this._resume()
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.3, when: 0 })
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.3, when: 0.15 })
+  }
+
+  // Sniper rifle crack: a sharp high-passed report transient + a deep body
+  // thump + a short rolling tail. Distinct from the shotgun/pistol voices.
+  sniperShot() {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 3200, gain: 0.5 })
+    this._playTone({ type: 'sine', freq: 160, freqEnd: 55, duration: 0.22, gain: 0.4 })
+    this._playNoise({ duration: 0.18, filterType: 'bandpass', filterFreq: 800, gain: 0.12, when: 0.03 })
   }
 
   playWave(n) {
@@ -773,6 +792,18 @@ export class AudioBank {
   stopMusic() {
     this._musicOn = false
     if (this._musicEl) { try { this._musicEl.pause() } catch (err) {} }
+  }
+
+  /** Per-level music: pick a track for a boss-cycle (a "level" = every 5 waves)
+   *  and switch to it. `urls` is a caller-resolved list of track URLs (already
+   *  prefixed with the asset base); `cycle` is the 0-based boss-cycle index.
+   *  The track cycles through the list, so each level gets a different song and
+   *  the set repeats once the list is exhausted. Delegates to playMusic so the
+   *  existing loop/watchdog/gain graph is reused. No-op headless. */
+  playLevelMusic(urls, cycle, seconds) {
+    if (!Array.isArray(urls) || urls.length === 0) return
+    const i = ((Math.floor(cycle) % urls.length) + urls.length) % urls.length
+    this.playMusic(urls[i], seconds)
   }
 
   /** Set the music bus gain (0..1); either mute flag overrides it to 0. */

@@ -2,10 +2,11 @@ import { Axe } from './Axe.js'
 import { Shotgun } from './Shotgun.js'
 import { Pistol } from './Pistol.js'
 import { Sword } from './Sword.js'
+import { Sniper } from './Sniper.js'
 
-// WeaponBank — owns the four weapons (axe, shotgun, pistol, sword) and
+// WeaponBank — owns the five weapons (axe, shotgun, pistol, sword, sniper) and
 // manages the current weapon, switching with a 0.25 s lockout, per-frame
-// input-edge routing (switch1..switch4), and view model visibility. The
+// input-edge routing (switch1..switch5), and view model visibility. The
 // HUD-compat getters let the HUD read the current weapon's ammo state.
 // Headless-safe, deterministic.
 
@@ -20,10 +21,12 @@ export class WeaponBank {
     this.shotgun = new Shotgun(scene, camera, collision, audio)
     this.pistol = new Pistol(scene, camera, collision, audio)
     this.sword = new Sword(scene, camera, audio)
+    this.sniper = new Sniper(scene, camera, collision, audio)
     this.axe.name = 'axe'
     this.shotgun.name = 'shotgun'
     this.pistol.name = 'pistol'
     this.sword.name = 'sword'
+    this.sniper.name = 'sniper'
     this._getZombies = null
     this._inputState = null
     this._onHit = null
@@ -35,6 +38,7 @@ export class WeaponBank {
     this.axe.view.visible = false
     this.pistol.view.visible = false
     this.sword.view.visible = false
+    this.sniper.view.visible = false
   }
 
   get getZombies() { return this._getZombies }
@@ -44,6 +48,7 @@ export class WeaponBank {
     this.shotgun.getZombies = fn
     this.pistol.getZombies = fn
     this.sword.getZombies = fn
+    this.sniper.getZombies = fn
   }
 
   get inputState() { return this._inputState }
@@ -53,6 +58,7 @@ export class WeaponBank {
     this.shotgun.inputState = st
     this.pistol.inputState = st
     this.sword.inputState = st
+    this.sniper.inputState = st
   }
 
   // Hit callback forwarded to all weapons; Game wires it to the HUD.
@@ -63,6 +69,7 @@ export class WeaponBank {
     this.shotgun.onHit = fn
     this.pistol.onHit = fn
     this.sword.onHit = fn
+    this.sniper.onHit = fn
   }
 
   // Fatal-headshot callback forwarded to all weapons; Game wires it to the
@@ -74,6 +81,7 @@ export class WeaponBank {
     this.shotgun.onDecapitate = fn
     this.pistol.onDecapitate = fn
     this.sword.onDecapitate = fn
+    this.sniper.onDecapitate = fn
   }
 
   // Owner player id, forwarded to all weapons so their hits can be attributed
@@ -85,6 +93,7 @@ export class WeaponBank {
     this.shotgun.owner = id
     this.pistol.owner = id
     this.sword.owner = id
+    this.sniper.owner = id
   }
 
   // HUD-compat: the HUD reads weapon.ammo/reserve/isReloading/magSize.
@@ -99,11 +108,12 @@ export class WeaponBank {
       name === 'axe' ? this.axe :
       name === 'shotgun' ? this.shotgun :
       name === 'pistol' ? this.pistol :
-      name === 'sword' ? this.sword : null
+      name === 'sword' ? this.sword :
+      name === 'sniper' ? this.sniper : null
     if (!target || target === this.current || this._swapT > 0) return false
     this._swapT = SWAP_TIME
     this.current = target
-    for (const w of [this.axe, this.shotgun, this.pistol, this.sword]) {
+    for (const w of [this.axe, this.shotgun, this.pistol, this.sword, this.sniper]) {
       w.view.visible = (w === target)
     }
     this.audio?.weaponSwitch?.() // voice lands with the audio task; null-safe
@@ -117,6 +127,7 @@ export class WeaponBank {
       case this.axe: return this.axe.swing()
       case this.sword: return this.sword.swing()
       case this.pistol: return this.pistol.shoot()
+      case this.sniper: return this.sniper.shoot()
       default: return this.shotgun.shoot()
     }
   }
@@ -129,6 +140,7 @@ export class WeaponBank {
       case this.axe: return true
       case this.sword: return true
       case this.pistol: return this.pistol.reload()
+      case this.sniper: return this.sniper.reload()
       default: return this.shotgun.reload()
     }
   }
@@ -141,6 +153,7 @@ export class WeaponBank {
       if (st.switch2) { st.switch2 = false; this.switchTo('shotgun') }
       if (st.switch3) { st.switch3 = false; this.switchTo('pistol') }
       if (st.switch4) { st.switch4 = false; this.switchTo('sword') }
+      if (st.switch5) { st.switch5 = false; this.switchTo('sniper') }
     }
     this.current.update(dt, player)
   }
@@ -150,8 +163,9 @@ export class WeaponBank {
     this.shotgun.reset()
     this.pistol.reset()
     this.sword.reset()
+    this.sniper.reset()
     this.current = this.shotgun
-    for (const w of [this.axe, this.shotgun, this.pistol, this.sword]) {
+    for (const w of [this.axe, this.shotgun, this.pistol, this.sword, this.sniper]) {
       w.view.visible = (w === this.shotgun)
     }
     this._swapT = 0
@@ -162,5 +176,6 @@ export class WeaponBank {
     this.shotgun.dispose()
     this.pistol.dispose()
     this.sword.dispose()
+    this.sniper.dispose()
   }
 }

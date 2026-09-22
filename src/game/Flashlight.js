@@ -6,9 +6,14 @@ import * as THREE from 'three'
 // (no Math.random); headless-safe (no DOM, audio optional, no shadows).
 
 const SEED = 9021
-const BASE_INTENSITY = 120 // cd — ~2.2x a streetlight at equal range (dimmed from 300; still reads in alleys)
-const CONE_ANGLE = 0.45 // rad (~26 deg cone)
-const PENUMBRA = 0.35
+// Dimmed to 55 cd: enough to clearly light a zombie's face at melee range
+// without blowing it out to flat white. The old 120 cd saturated the face
+// plane (and the scene-lit body) when the beam hit a zombie up close, washing
+// out the eyes/face texture. Physical decay (2) + a tighter cone keep the pool
+// readable in alleys while close faces stay detailed.
+const BASE_INTENSITY = 55 // cd
+const CONE_ANGLE = 0.4 // rad (~23 deg cone, tightened from 26)
+const PENUMBRA = 0.4
 const DISTANCE = 14 // m cutoff
 const DRAIN_SECONDS = 120 // full battery = 120 s of continuous use
 const LOW_AT = 0.25 // flicker threshold

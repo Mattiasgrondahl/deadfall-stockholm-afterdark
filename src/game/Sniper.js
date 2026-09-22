@@ -1,30 +1,37 @@
 import * as THREE from 'three'
 import { raySphere } from './ray.js'
 
-// Pistol: semi-automatic sidearm; one trigger pull = one round (own jitter,
-// wall occlusion, nearest-zombie hit). Fast fire, small spread, long range.
-// A fatal head hit fires the optional onDecapitate callback (Task E wires the
-// rolling-head pool to it). Mirrors the WeaponBank surface (update/shoot/
-// reload/reset/dispose, getZombies/inputState/blood/onHit).
-// Headless-safe; no Math.random (LCG seed 29, distinct from the shotgun's 13).
+// Sniper: bolt-action long-range rifle. One trigger pull = one high-damage
+// round (kills a regular zombie in one body shot, ~1/3 of the boss). Holding
+// right mouse (or Q) zooms the camera into a scope (FOV 75 -> 18) for precise
+// far shots; releasing returns to the normal view. Mirrors the WeaponBank
+// surface (update/shoot/reload/reset/dispose, getZombies/inputState/blood/
+// onHit/lamps/bulletHoles). Headless-safe; no Math.random (LCG seed 41).
+//
+// The rifle body carries a skin texture (assets/weapons/sniper.jpg) loaded in
+// the browser only; headless keeps a flat wood/steel material.
 
-const MAG = 12, RESERVE = 36, DMG = 26
-const HEAD_MULT = 2, RANGE = 24, SPREAD = 0.03
-const RELOAD_TIME = 1.1, FIRE_INTERVAL = 0.28
-const FLASH_TIME = 0.05, RECOIL_KICK = 0.02, RECOIL_DECAY = 0.12
-const KICK = 0.012
+const MAG = 5, RESERVE = 20, DMG = 90
+const HEAD_MULT = 2, RANGE = 80, SPREAD = 0.004
+const RELOAD_TIME = 1.6, FIRE_INTERVAL = 1.1
+const FLASH_TIME = 0.06, RECOIL_KICK = 0.05, RECOIL_DECAY = 0.18
+const KICK = 0.03
+const SCOPE_FOV = 18, NORMAL_FOV = 75, SCOPE_LERP = 220 // deg/s toward the target FOV (snappy ~0.3 s)
 const UP = new THREE.Vector3(0, 1, 0)
 
-export class Pistol {
+export class Sniper {
   constructor(scene, camera, collision, audio) {
     this.scene = scene
     this.camera = camera
     this.collision = collision
     this.audio = audio
     this.blood = null
+    this.bulletHoles = null
+    this.lamps = null
     this.getZombies = null
     this.inputState = null
     this.player = null
+    this.name = 'sniper'
     this.magSize = MAG
     this.ammo = MAG
     this.reserve = RESERVE
@@ -37,15 +44,16 @@ export class Pistol {
     this.flashTime = FLASH_TIME
     this.recoilKick = RECOIL_KICK
     this.isReloading = false
-    this.onDecapitate = null // (zombie, dir) -> Task E rolling-head pool
-    this.owner = null // player id for kill attribution (multiplayer); null in solo
+    this.scoped = false
     this._reloadT = 0
     this._fireT = 0
     this._time = 0
     this._flashT = 0
     this._recoil = 0
     this._bobPhase = 0
-    let s = 29
+    this._fov = NORMAL_FOV
+    this._baseFov = NORMAL_FOV
+    let s = 41
     this._rng = () => (s = (s * 48271) % 65537) / 65537
     this._dir = new THREE.Vector3()
     this._right = new THREE.Vector3()
@@ -53,62 +61,68 @@ export class Pistol {
     this._shot = new THREE.Vector3()
     this._hitP = new THREE.Vector3()
 
-    // View model: slide, frame, barrel, grip — camera-attached.
+    // View model: a single wooden stock+receiver box that carries the rifle skin —
+    // camera-attached. Deliberately ONE mesh so adding the sniper as a fifth
+    // weapon keeps the whole scene inside the 600-mesh budget.
     this.view = new THREE.Group()
-    this.view.position.set(0.2, -0.24, -0.55)
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2e3033, roughness: 0.5, metalness: 0.6 })
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a5157, roughness: 0.4, metalness: 0.7 })
-    // Receiver: one box spanning the slide + frame (kept to a single mesh so the
-    // scene stays inside the 600-mesh budget with the sniper as a fifth weapon).
-    const slide = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.3), bodyMat)
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8), steelMat)
-    barrel.rotation.x = Math.PI / 2
-    barrel.position.set(0, 0, -0.19)
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.08), bodyMat)
-    grip.position.set(0, -0.09, 0.12)
-    grip.rotation.x = 0.25
-    this.view.add(slide, barrel, grip)
+    this.view.position.set(0.22, -0.22, -0.6)
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.7, metalness: 0.1 })
+    // Receiver/stock box carries the rifle skin (loaded in the browser).
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.9), woodMat)
+    stock.position.set(0, 0, -0.2)
+    this.view.add(stock)
+    this._skinMat = woodMat
+    this._skinLoaded = false
 
-    // Muzzle flash: fading additive sprite + short-lived point light at barrel tip.
-    let flashMap = null
-    if (typeof document !== 'undefined') {
-      const c = document.createElement('canvas'); c.width = 64; c.height = 64
-      const g = c.getContext('2d')
-      const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30)
-      grad.addColorStop(0, 'rgba(255, 230, 180, 1)')
-      grad.addColorStop(0.4, 'rgba(255, 200, 130, 0.7)')
-      grad.addColorStop(1, 'rgba(255, 180, 100, 0)')
-      g.fillStyle = grad; g.fillRect(0, 0, 64, 64)
-      flashMap = new THREE.CanvasTexture(c)
-    }
-    this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffd9a0, map: flashMap, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }))
-    this.flash.position.set(0, 0, -0.26)
-    this.flash.scale.setScalar(0.2)
-    this.flash.visible = false
-    this.view.add(this.flash)
-    this.flashLight = new THREE.PointLight(0xffc988, 0, 6, 2)
-    this.flashLight.position.copy(this.flash.position)
-    this.view.add(this.flashLight)
+    // No muzzle-flash sprite/light: the bolt-action report is carried by the
+    // audio voice, and dropping the flash keeps the scene inside the mesh and
+    // light budgets with the sniper as a fifth weapon.
     this.camera.add(this.view)
     scene.add(this.camera)
+    this._loadSkin()
   }
 
-  /** Per frame: bob/recoil recovery, flash decay, reload progress, input edges. */
+  // Browser-only: load the rifle skin onto the stock material. Headless keeps
+  // the flat wood color. Color flips to white so the map renders at true color
+  // (MeshStandardMaterial multiplies map by color).
+  _loadSkin() {
+    if (typeof document === 'undefined') return
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
+      ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''
+    const loader = new THREE.TextureLoader()
+    loader.load(base + 'assets/weapons/sniper.jpg', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      this._skinMat.color.set(0xffffff)
+      this._skinMat.map = tex
+      this._skinMat.needsUpdate = true
+      this._skinLoaded = true
+    }, undefined, () => { /* keep flat wood */ })
+  }
+
+  /** Per frame: recoil recovery, flash decay, reload, scope FOV, input edges. */
   update(dt, player = null) {
     this._time += dt
     if (player) this.player = player
     const sp = this.player ? Math.hypot(this.player.velocity.x, this.player.velocity.z) : 0
     if (sp > 0.5) this._bobPhase += sp * dt * 2.2
     this._recoil = Math.max(0, this._recoil - (dt / RECOIL_DECAY) * RECOIL_KICK)
-    const bob = Math.sin(this._bobPhase) * 0.008
-    this.view.position.set(0.2, -0.24 + bob, -0.55 + this._recoil)
-    if (this._flashT > 0) {
-      this._flashT -= dt
-      const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
-      this.flash.material.opacity = 0.9 * f
-      this.flash.scale.setScalar(0.08 + 0.12 * f)
-      this.flashLight.intensity = 300 * f
-      if (this._flashT <= 0) this.flash.visible = false
+    const bob = Math.sin(this._bobPhase) * 0.006
+    // When scoped, pull the view model aside so it doesn't block the scope.
+    const scoped = !!(this.inputState && this.inputState.zoom)
+    this.scoped = scoped
+    const vx = scoped ? 0.0 : 0.22
+    const vy = scoped ? -0.5 : -0.22 + bob
+    this.view.position.set(vx, vy, -0.6 + this._recoil)
+    this.view.visible = !scoped
+    // Ease the camera FOV toward the scoped/normal target (deterministic).
+    const target = scoped ? SCOPE_FOV : this._baseFov
+    const step = SCOPE_LERP * dt
+    if (this._fov < target) this._fov = Math.min(target, this._fov + step)
+    else if (this._fov > target) this._fov = Math.max(target, this._fov - step)
+    if (Math.abs(this.camera.fov - this._fov) > 1e-4) {
+      this.camera.fov = this._fov
+      this.camera.updateProjectionMatrix()
     }
     if (this.isReloading) {
       this._reloadT -= dt
@@ -133,17 +147,12 @@ export class Pistol {
     this._recoil = RECOIL_KICK
     if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
-    this.flash.material.opacity = 0.9
-    this.flash.scale.setScalar(0.2)
-    this.flash.visible = true
-    this.flashLight.intensity = 300
     this.camera.getWorldDirection(this._dir)
     this._right.crossVectors(this._dir, UP)
     if (this._right.lengthSq() < 1e-8) this._right.set(1, 0, 0)
     this._right.normalize()
     this._up.crossVectors(this._right, this._dir).normalize()
     const o = this.camera.position
-    // Single round with its own jitter (deterministic LCG).
     this._shot.copy(this._dir)
       .addScaledVector(this._right, (this._rng() * 2 - 1) * SPREAD)
       .addScaledVector(this._up, (this._rng() * 2 - 1) * SPREAD)
@@ -166,21 +175,17 @@ export class Pistol {
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
       hitZ.damage(dmg, this._shot, this.owner)
-      // Limb damage: a hit near an arm/leg severs it (arm keeps it coming, a
-      // lost leg makes it limp). The boss ignores it.
       const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
       if (limb) this.audio?.dismember?.()
-      if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot) // fatal headshot
+      if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot)
       this.audio?.hitZombie?.()
-      this.onHit?.() // HUD hit marker
+      this.onHit?.()
     } else if (wall) {
-      // No zombie absorbed the round: break a lamp if the wall was one, else
-      // leave a bullet hole on the surface it hit.
       if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
         this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
       }
     }
-    this.audio?.pistolShot?.() // voice lands with the audio task; null-safe
+    this.audio?.sniperShot?.()
     if (this.ammo === 0) this.reload()
     return true
   }
@@ -199,28 +204,24 @@ export class Pistol {
     this.reserve = RESERVE
     this.isReloading = false
     this._flashT = 0
-    this.flash.material.opacity = 0.9
-    this.flash.scale.setScalar(0.2)
-    this.flash.visible = false
-    this.flashLight.intensity = 0
     this._recoil = 0
     this._fireT = this._time
+    this.scoped = false
+    this._fov = this._baseFov
+    if (Math.abs(this.camera.fov - this._baseFov) > 1e-4) {
+      this.camera.fov = this._baseFov
+      this.camera.updateProjectionMatrix()
+    }
   }
 
   dispose() {
     this.camera.remove(this.view)
     for (const m of this.view.children) {
-      // Guard: flashLight is a PointLight with no geometry/material.
       if (m.geometry && m.material) {
         m.geometry.dispose()
+        if (m.material.map) m.material.map.dispose()
         m.material.dispose()
       }
     }
-    // Sprite has no .geometry, so the child loop above skips it: dispose explicitly.
-    if (this.flash.material) {
-      if (this.flash.material.map) this.flash.material.map.dispose()
-      this.flash.material.dispose()
-    }
-    this.flashLight.dispose()
   }
 }

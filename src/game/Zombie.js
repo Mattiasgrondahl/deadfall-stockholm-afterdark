@@ -42,13 +42,17 @@ const EYEMAT = {
 const DEADEYEMAT = new THREE.MeshBasicMaterial({ color: 0x2a2a2a })
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
- *  wave-5 boss: ≈4× a shambler's base HP, slow shamble, heavy melee, and a
- *  short lunge (charge) when the player is within CHARGE_RANGE. */
+ *  wave-5 boss: a tanky 520-HP bruiser (≈5.8× a shambler's base HP), slow
+ *  shamble, heavy melee, and a short lunge (charge) when the player is within
+ *  CHARGE_RANGE. `shotgunArmor` is a damage multiplier the Shotgun applies to
+ *  each pellet that lands on this type — the boss's thick hide shrugs off most
+ *  buckshot (×0.4), so it takes ≥10 full blasts (9×6×22×0.4=475 < 520, 10×=528
+ *  ≥ 520) while the pistol (26/shot, no armor) needs exactly 20 body shots. */
 const TABLE = {
-  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9 },
-  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 },
-  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 },
-  brute: { speed: 0.7, hp: 360, melee: 30, cooldown: 1.6 }
+  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1 },
+  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1 },
+  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1 },
+  brute: { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4 }
 }
 
 /** Boss charge window: within this horizontal range the brute lunges instead
@@ -120,26 +124,71 @@ const FACEMAT = {
   ]
 }
 
-// Per-outfit clothing materials, shared across all zombie types. Outfit 0 =
-// suit (dark grey jacket + charcoal trousers), 1 = hoodie + sweatpants
-// (heather grey), 2 = blue tee + dark denim jeans. The torso wears the top
-// material and the legs the bottom; the arms stay bare (per-type MAT2 skin
-// color) and the head keeps the per-type color so the face still reads.
-// Base colors are the clothing colors so the
-// headless / not-yet-loaded state already looks clothed; when the texture
-// lands (browser only) the color flips to white, because
-// MeshStandardMaterial multiplies map by color (same reasoning as the faces).
+// Per-outfit clothing materials, shared across all zombie types. Nine distinct
+// archetypes so a crowd reads as varied people, not clones:
+//   0 lawyer/suit (charcoal jacket + white shirt + dark tie)
+//   1 mailman (navy uniform + grey trousers)
+//   2 police (dark navy jacket + black trousers + cap)
+//   3 fireman (tan turnout coat + dark trousers + helmet)
+//   4 woman in a dress (crimson dress, one-piece top+skirt)
+//   5 stripper (black top + pink skirt)
+//   6 schoolgirl (white blouse + plaid grey skirt)
+//   7 jogger (bright teal top + black shorts)
+//   8 gym guy (grey tank + black shorts)
+// The torso wears the top material and the legs the bottom; the arms stay bare
+// (per-type MAT2 skin color) and the head keeps the per-type color so the face
+// still reads. Base colors are the clothing colors so the headless /
+// not-yet-loaded state already looks clothed; when the texture lands (browser
+// only) the color flips to white, because MeshStandardMaterial multiplies map
+// by color. `acc` names an optional accessory prop (tie/cap/helmet/stripe)
+// built per archetype so the silhouette reads even without a texture.
 const OUTFITMATS = {
   tops: [
-    new THREE.MeshStandardMaterial({ color: 0x3b414a, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d4a66, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.85 }), // lawyer jacket
+    new THREE.MeshStandardMaterial({ color: 0x27324f, roughness: 0.85 }), // mailman navy
+    new THREE.MeshStandardMaterial({ color: 0x1c2436, roughness: 0.85 }), // police navy
+    new THREE.MeshStandardMaterial({ color: 0xb5854a, roughness: 0.9 }),  // fireman tan
+    new THREE.MeshStandardMaterial({ color: 0x8e1f2e, roughness: 0.8 }),  // dress crimson
+    new THREE.MeshStandardMaterial({ color: 0x17141a, roughness: 0.7 }),  // stripper black
+    new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.85 }), // schoolgirl blouse
+    new THREE.MeshStandardMaterial({ color: 0x1fa08f, roughness: 0.7 }),  // jogger teal
+    new THREE.MeshStandardMaterial({ color: 0x55595f, roughness: 0.7 })   // gym tank
   ],
   bottoms: [
-    new THREE.MeshStandardMaterial({ color: 0x333840, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x2e3d5c, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.9 }),  // lawyer trousers
+    new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.9 }),  // mailman grey
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.9 }),  // police black
+    new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.9 }),  // fireman dark
+    new THREE.MeshStandardMaterial({ color: 0x8e1f2e, roughness: 0.8 }),  // dress skirt (same)
+    new THREE.MeshStandardMaterial({ color: 0xd23b8f, roughness: 0.7 }),  // stripper pink
+    new THREE.MeshStandardMaterial({ color: 0x6b5140, roughness: 0.85 }), // schoolgirl plaid
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.85 }), // jogger shorts
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.85 })  // gym shorts
   ]
+}
+// Per-archetype accessory: a small prop that makes the silhouette read. No
+// archetype uses a separate accessory mesh — every outfit's identity (police
+// cap, fireman helmet, tie, hi-vis stripe, skirt) is carried by its top/bottom
+// texture, so no extra mesh is spent and the 600-mesh scene budget holds at the
+// 18-alive ceiling with the sniper as a fifth weapon. null = none.
+const OUTFIT_ACC = [null, null, null, null, null, null, null, null, null]
+const OUTFIT_COUNT = OUTFITMATS.tops.length
+// Shared accessory geometry + materials (built once, reused across zombies;
+// cheap boxes so the mesh budget is unaffected). tie = thin dark strip on the
+// chest; cap = flat police cap on the head; helmet = rounded fireman helmet;
+// stripe = hi-vis band across the chest. Each is parented to the torso/head so
+// it moves with the body and is removed with the group on death.
+const ACC_GEO = {
+  tie: new THREE.BoxGeometry(0.08, 0.5, 0.02),
+  cap: new THREE.BoxGeometry(0.3, 0.06, 0.3),
+  helmet: new THREE.BoxGeometry(0.32, 0.14, 0.32),
+  stripe: new THREE.BoxGeometry(0.58, 0.12, 0.36)
+}
+const ACC_MAT = {
+  tie: new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.7 }),
+  cap: new THREE.MeshStandardMaterial({ color: 0x141a2a, roughness: 0.7 }),
+  helmet: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.5, metalness: 0.2 }),
+  stripe: new THREE.MeshStandardMaterial({ color: 0xf2d43d, roughness: 0.6, emissive: 0x3a3200 })
 }
 
 let faceTexturesLoading = false
@@ -184,23 +233,34 @@ function loadFaceTextures() {
 
 // Browser-only lazy outfit texture loading (headless Node keeps the flat
 // colors). Each top/bottom pair is one file per outfit; .jpg is guaranteed by
-// tools/generate-outfit-textures.mjs.
+// tools/generate-outfit-textures.mjs. Nine archetypes, order matches OUTFITMATS.
 let outfitTexturesLoading = false
+const OUTFIT_FILES = [
+  'lawyer-top', 'lawyer-pants',
+  'mailman-top', 'mailman-pants',
+  'police-top', 'police-pants',
+  'fireman-top', 'fireman-pants',
+  'dress-top', 'dress-skirt',
+  'stripper-top', 'stripper-skirt',
+  'schoolgirl-top', 'schoolgirl-skirt',
+  'jogger-top', 'jogger-shorts',
+  'gym-top', 'gym-shorts'
+]
 function loadOutfitTextures() {
   if (outfitTexturesLoading || typeof document === 'undefined') return
   outfitTexturesLoading = true
   const loader = new THREE.TextureLoader()
-  const names = ['suit-top', 'suit-pants', 'hoodie-top', 'sweat-pants', 'tee-top', 'jeans-pants']
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < OUTFIT_COUNT; i++) {
     for (let j = 0; j < 2; j++) {
       const mat = (j === 0 ? OUTFITMATS.tops : OUTFITMATS.bottoms)[i]
-      loader.load(ASSET_BASE + 'assets/outfits/' + names[i * 2 + j] + '.jpg', (tex) => {
+      const file = OUTFIT_FILES[i * 2 + j]
+      loader.load(ASSET_BASE + 'assets/outfits/' + file + '.jpg', (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
         tex.anisotropy = 4
         mat.color.set(0xffffff)
         mat.map = tex
         mat.needsUpdate = true
-      }, () => console.warn(`outfit texture failed to load; keeping flat color (${names[i * 2 + j]})`))
+      }, () => console.warn(`outfit texture failed to load; keeping flat color (${file})`))
     }
   }
 }
@@ -387,12 +447,25 @@ export class Zombie {
     // scale by HITBOX_SCALE (the two-sphere contract and the per-type radii
     // 0.45/0.3 stay exact for the three regular types).
     this.isBoss = type === 'brute'
+    // Shotgun armor: the boss's hide shrugs off most buckshot (×0.4 per pellet),
+    // so it needs ≥10 full blasts; every other type is unarmored (×1). The
+    // pistol/axe/sword ignore this and apply full damage.
+    this.shotgunArmor = TABLE[type].shotgunArmor
     this._hitboxScale = this.isBoss ? 1.4 : 1
     // Charge (boss only): when the player is within CHARGE_RANGE the brute
     // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
     this._chargeT = 0
     this._chargeX = 0
     this._chargeZ = 0
+    // Limb damage: shot-off limbs. Arms lost (0/1/2) do not slow the zombie —
+    // it keeps coming with one or no arms. Legs lost (0/1) make it limp: a
+    // one-legged zombie hops on the remaining leg and moves at LIMPLESS_SPEED
+    // of its normal speed. The severed limb's mesh is hidden. The boss keeps
+    // all limbs (too tough to dismember) so its charge/melee are unaffected.
+    this.armsLost = 0
+    this.legsLost = 0
+    this._limp = false
+    this._hopPhase = 0
     this.position = new THREE.Vector3(x, 0, z) // group origin = feet (y 0)
     this.isDead = false
     this.deathTimer = 0
@@ -431,9 +504,9 @@ export class Zombie {
     const pose = POSE2[type]
     // Clothing outfit: an independent deterministic re-mapping of the spawn LCG
     // phase (offset so it does not track the face variant) selects one of the
-    // three shared top/bottom material pairs. No extra LCG draw, so the face
+    // nine shared top/bottom material pairs. No extra LCG draw, so the face
     // variant pick (below) is unaffected.
-    const outfit = Math.floor((((this._phase / (2 * Math.PI)) + 0.37) % 1) * 3)
+    const outfit = Math.floor((((this._phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
     this._outfit = outfit
     const topMat = OUTFITMATS.tops[outfit]
     const bottomMat = OUTFITMATS.bottoms[outfit]
@@ -489,6 +562,20 @@ export class Zombie {
       parts.push(leg)
       if (side === -1) this._legL = leg
       else this._legR = leg
+    }
+    // Outfit accessory prop (tie/cap/helmet/hi-vis stripe) so the silhouette
+    // reads as a specific profession even without a texture. Parented to the
+    // torso or head so it moves with the body; NOT in _parts, so hit-flash and
+    // death material swaps never touch it. Removed with the group on death.
+    const acc = OUTFIT_ACC[outfit]
+    if (acc) {
+      const prop = new THREE.Mesh(ACC_GEO[acc], ACC_MAT[acc])
+      if (acc === 'tie') { prop.position.set(0, 0.1, 0.18); torso.add(prop) }
+      else if (acc === 'stripe') { prop.position.set(0, 0.15, 0); torso.add(prop) }
+      else if (acc === 'cap') { prop.position.set(0, 0.19, 0.02); head.add(prop) }
+      else if (acc === 'helmet') { prop.position.set(0, 0.19, 0); head.add(prop) }
+      prop.castShadow = true
+      this._acc = prop
     }
     this.group.add(...parts)
     this.group.position.copy(this.position)
@@ -794,7 +881,7 @@ export class Zombie {
     if (this._slideX !== undefined) { dirX = this._slideX; dirZ = this._slideZ }
     const preX = this.position.x
     const preZ = this.position.z
-    const stepLen = this.speed * dt
+    const stepLen = this._effSpeed() * dt
     this.position.x += dirX * stepLen
     this.position.z += dirZ * stepLen
     collision.resolve(this.position, COLLIDER_RADIUS)
@@ -869,18 +956,24 @@ export class Zombie {
     const armRest = POSE2[this.type].armRest
     const t = this._time * 6 + this._phase
     const swing = Math.sin(t) * 0.42
-    const legSwing = Math.sin(t) * 0.5
+    let legSwing = Math.sin(t) * 0.5
+    // Limp: with a leg gone, the stride halves and the lost leg stays tucked up
+    // (a one-legged hop). The body bobs vertically on the hop cycle.
+    if (this._limp) {
+      legSwing = Math.sin(t) * 0.22
+      this._hopPhase = t
+    }
     // Legs: bigger stride, with a small knee-lift asymmetry via a second harmonic.
-    this._legL.rotation.x = legSwing + Math.sin(t * 2) * 0.06
-    this._legR.rotation.x = -legSwing + Math.sin(t * 2 + Math.PI) * 0.06
+    if (this._legL && this._legL.visible) this._legL.rotation.x = legSwing + Math.sin(t * 2) * 0.06
+    if (this._legR && this._legR.visible) this._legR.rotation.x = -legSwing + Math.sin(t * 2 + Math.PI) * 0.06
     // Arms: counter-swing the legs, with a slight outward droop so they hang.
-    this._armL.rotation.x = armRest - swing
-    this._armR.rotation.x = armRest + swing
-    this._armL.rotation.z = -0.12
-    this._armR.rotation.z = 0.12
+    if (this._armL && this._armL.visible) { this._armL.rotation.x = armRest - swing; this._armL.rotation.z = -0.12 }
+    if (this._armR && this._armR.visible) { this._armR.rotation.x = armRest + swing; this._armR.rotation.z = 0.12 }
     // Hips sway side to side + a forward lean tied to how fast it moves.
     this.group.rotation.z = Math.sin(t) * 0.05
-    this.group.rotation.x = Math.sin(this._time * 6) * 0.08 + Math.min(this.speed, 3) * 0.012 // bob + lean
+    let bob = Math.sin(this._time * 6) * 0.08 + Math.min(this.speed, 3) * 0.012
+    if (this._limp) bob = Math.abs(Math.sin(t)) * 0.12 // vertical hop on one leg
+    this.group.rotation.x = bob
     // Head counter-bobs against the body so the head stays steadier than the torso.
     if (this._head) this._head.rotation.z = Math.sin(t + Math.PI) * 0.04
     this.group.position.copy(this.position)
@@ -901,6 +994,56 @@ export class Zombie {
 
   /** Clothing outfit index (0 suit, 1 hoodie+sweatpants, 2 tee+jeans). */
   getOutfit() { return this._outfit }
+
+  /** Effective movement speed given limb loss: a one-legged zombie limps at
+   *  45% speed. Arms don't affect speed. Used by the chase step. */
+  _effSpeed() {
+    return this.legsLost > 0 ? this.speed * 0.45 : this.speed
+  }
+
+  /**
+   * Limb-damage hit test. Weapons call this with the world-space point where a
+   * bullet struck a zombie's body. If the point lands on an arm (near an arm
+   * mesh) or a leg (near a leg mesh), that limb is severed: its mesh is hidden
+   * and the counter increments. Arms keep the zombie moving normally; losing a
+   * leg makes it limp (slower + a one-legged hop). Returns 'arm' | 'leg' | null
+   * so the caller can play a dismember cue. The boss ignores limb damage.
+   * Deterministic (no Math.random): the hit point alone decides.
+   */
+  hitLimbAt(x, y, z) {
+    if (this.isDead || this.isBoss) return null
+    // Limb centers (local, before the group origin offset): arms hang at
+    // y≈1.42, ±0.34 in x; legs at y≈0.47, ±0.16 in x. A hit point within a
+    // small radius of a surviving limb's world center severs it. The boss is
+    // too tough to dismember, so it returns null. Deterministic: the point
+    // alone decides.
+    const ox = this.position.x, oz = this.position.z, oy = this.position.y
+    const near = (lx, ly, lz, r) => {
+      const dx = x - (ox + lx), dz = z - (oz + lz), dy = y - (oy + ly)
+      return Math.hypot(dx, dy, dz) <= r
+    }
+    // Check legs first (a leg hit shouldn't be stolen by an overlapping arm).
+    if (this.legsLost < 2) {
+      if (this._legL && this._legL.visible && near(-0.16, 0.47, 0, 0.34)) { this._severLeg(this._legL); return 'leg' }
+      if (this._legR && this._legR.visible && near(0.16, 0.47, 0, 0.34)) { this._severLeg(this._legR); return 'leg' }
+    }
+    if (this.armsLost < 2) {
+      if (this._armL && this._armL.visible && near(-0.34, 1.42, 0.1, 0.3)) { this._severArm(this._armL); return 'arm' }
+      if (this._armR && this._armR.visible && near(0.34, 1.42, 0.1, 0.3)) { this._severArm(this._armR); return 'arm' }
+    }
+    return null
+  }
+
+  _severArm(mesh) {
+    mesh.visible = false
+    this.armsLost++
+  }
+
+  _severLeg(mesh) {
+    mesh.visible = false
+    this.legsLost++
+    this._limp = true
+  }
 
   /** Contract signature; `dir` is accepted and ignored. `by` (optional) is
    *  the id of the player dealing the damage; it is recorded as lastDamager

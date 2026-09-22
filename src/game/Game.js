@@ -23,14 +23,20 @@ import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
 import { PostFX } from './PostFX.js'
 
-// Soundtrack mp3 (YuE2 hard-rock zombie song), served from public/. Resolved
+// Soundtrack mp3s (YuE2 hard-rock zombie songs), served from public/. Resolved
 // against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
-const SOUNDTRACK_URL = ASSET_BASE + 'assets/audio/soundtrack2.mp3'
-// Known true length of the soundtrack (seconds). Some browsers misreport an
-// mp3's `duration` and fire `ended` early, so the loop is driven off this
-// explicit length instead of the element's unreliable `duration`.
-const SOUNDTRACK_SECONDS = 120
+// Per-level music: one track per boss-cycle (a "level" = every 5 waves). The
+// set cycles, so each level starts on a different song and the list repeats
+// once exhausted. Tracks are resolved against the asset base.
+const LEVEL_TRACKS = [
+  ASSET_BASE + 'assets/audio/soundtrack.mp3',
+  ASSET_BASE + 'assets/audio/soundtrack2.mp3'
+]
+// Known true length of each track (seconds). Some browsers misreport an mp3's
+// `duration` and fire `ended` early, so the loop is driven off this explicit
+// length instead of the element's unreliable `duration`.
+const LEVEL_TRACK_SECONDS = 120
 
 export const GameState = Object.freeze({
   TITLE: 'title',
@@ -280,7 +286,14 @@ export class Game {
     this.flashlight = new Flashlight(this.camera, this.audio)
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
-      onWaveStart: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w) },
+      onWaveStart: (w) => {
+        if (this.screens) this.screens.showBanner('WAVE ' + w)
+        // A new boss-cycle (a "level") begins every 5 waves (waves 1, 6, 11...).
+        // Switch to that level's track so each level has its own song.
+        if (this.audio && (w - 1) % 5 === 0) {
+          this.audio.playLevelMusic(LEVEL_TRACKS, Math.floor((w - 1) / 5), LEVEL_TRACK_SECONDS)
+        }
+      },
       onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED'); if (this.audio) this.audio.playWaveCleared?.(w) },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
       onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
@@ -302,10 +315,13 @@ export class Game {
       this.weapon.axe.blood = this.blood
       this.weapon.pistol.blood = this.blood
       this.weapon.sword.blood = this.blood
+      this.weapon.sniper.blood = this.blood
       this.weapon.shotgun.bulletHoles = this.bulletHoles
       this.weapon.pistol.bulletHoles = this.bulletHoles
+      this.weapon.sniper.bulletHoles = this.bulletHoles
       this.weapon.shotgun.lamps = this.lamps
       this.weapon.pistol.lamps = this.lamps
+      this.weapon.sniper.lamps = this.lamps
       // WIRING:DECAPITATE (Task E): a fatal headshot spawns a rolling
       // severed head (shared geometry/materials; pool caps at 3).
       this.headPool = new DecapitatedHeadPool(this.scene)
@@ -391,7 +407,7 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playMusic(SOUNDTRACK_URL, SOUNDTRACK_SECONDS) }
+    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playLevelMusic(LEVEL_TRACKS, 0, LEVEL_TRACK_SECONDS) }
     if (this.screens) this.screens.showGameplay()
     if (this.difficulty !== 'normal' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')

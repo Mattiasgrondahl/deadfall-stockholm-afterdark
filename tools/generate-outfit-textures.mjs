@@ -35,19 +35,46 @@ BASE.loras_multipliers = '';
 
 const BG = 'plain solid very dark grey background color';
 const STYLE = 'flat 2D video game character texture, front view, garment fills the frame, flat clean shading, no text, no watermark';
+// Nine archetypes (order matches OUTFITMATS/OUTFIT_FILES in Zombie.js): a top
+// (512x1024) and a bottom (256x1600) each. The three original suit/hoodie/tee
+// outfits are replaced by the richer profession look-alikes.
 const VARIANTS = [
-  { name: 'suit-top', seed: 61, resolution: '512x1024',
-    prompt: `${STYLE}, headless torso only of an adult man wearing a dark grey business suit jacket with a white dress shirt and dark tie, straight shoulders, no arms, no hands, no head, no legs, ${BG}` },
-  { name: 'hoodie-top', seed: 62, resolution: '512x1024',
-    prompt: `${STYLE}, headless torso only of a man wearing a heather grey hooded sweatshirt with drawstrings and a front pocket, no arms, no hands, no head, no legs, ${BG}` },
-  { name: 'tee-top', seed: 63, resolution: '512x1024',
-    prompt: `${STYLE}, headless torso only of a man wearing a plain blue short-sleeve t-shirt, no arms, no hands, no head, no legs, ${BG}` },
-  { name: 'suit-pants', seed: 64, resolution: '256x1600',
-    prompt: `${STYLE}, front view of a single suit trouser leg, dark grey, straight leg from waistband to ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
-  { name: 'sweat-pants', seed: 65, resolution: '256x1600',
-    prompt: `${STYLE}, front view of a single sweatpants leg, heather grey, loose fit, ribbed cuff at the ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
-  { name: 'jeans-pants', seed: 66, resolution: '256x1600',
-    prompt: `${STYLE}, front view of a single jeans leg, dark blue denim, straight fit, subtle stitching detail, single leg only, no second leg, no torso, no head, no feet, ${BG}` }
+  { name: 'lawyer-top', seed: 71, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a man wearing a charcoal business suit jacket over a white dress shirt with a dark tie, straight shoulders, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'lawyer-pants', seed: 72, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single charcoal suit trouser leg, straight leg from waistband to ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'mailman-top', seed: 73, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a mail carrier wearing a navy blue short-sleeve uniform shirt with a chest pocket, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'mailman-pants', seed: 74, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single grey uniform trouser leg, straight leg from waistband to ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'police-top', seed: 75, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a police officer wearing a dark navy uniform jacket with shoulder epaulettes and a metal badge, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'police-pants', seed: 76, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single black police uniform trouser leg, straight leg from waistband to ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'fireman-top', seed: 77, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a firefighter wearing a tan turnout coat with reflective yellow stripes, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'fireman-pants', seed: 78, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single dark firefighter turnout trouser leg with a reflective stripe, straight leg from waistband to ankle, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'dress-top', seed: 79, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a woman wearing a crimson red dress bodice, fitted, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'dress-skirt', seed: 80, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single crimson red dress skirt panel, flowing fabric, single panel only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'stripper-top', seed: 81, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a woman wearing a black sparkly sequin top, fitted, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'stripper-skirt', seed: 82, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single bright pink short skirt panel, single panel only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'schoolgirl-top', seed: 83, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a schoolgirl wearing a white collared blouse with a small red bow tie, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'schoolgirl-skirt', seed: 84, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single brown plaid pleated schoolgirl skirt panel, single panel only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'jogger-top', seed: 85, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a jogger wearing a bright teal athletic running shirt, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'jogger-shorts', seed: 86, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single black athletic running short leg, short length ending at mid-thigh, single leg only, no second leg, no torso, no head, no feet, ${BG}` },
+  { name: 'gym-top', seed: 87, resolution: '512x1024',
+    prompt: `${STYLE}, headless torso only of a muscular man wearing a grey sleeveless gym tank top, no arms, no hands, no head, no legs, ${BG}` },
+  { name: 'gym-shorts', seed: 88, resolution: '256x1600',
+    prompt: `${STYLE}, front view of a single black gym short leg, short length ending at mid-thigh, single leg only, no second leg, no torso, no head, no feet, ${BG}` }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

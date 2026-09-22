@@ -608,6 +608,18 @@ function bankWithFakeCtx() {
   assert.equal(bank2._musicGain.gain.value, 0.2, 'setMusicVolume applies')
   bank2.setMusicMuted(true)
   assert.equal(bank2._musicGain.gain.value, 0, 'music mute overrides volume')
+  bank2.setMusicMuted(false)
+  // Per-level music: the cycle index selects a track and switches the src;
+  // the list wraps once exhausted so each level gets a different song.
+  bank2.playLevelMusic(['a.mp3', 'b.mp3'], 0, 120)
+  assert.equal(bank2._musicEl.src, 'a.mp3', 'cycle 0 picks the first track')
+  bank2.playLevelMusic(['a.mp3', 'b.mp3'], 1, 120)
+  assert.equal(bank2._musicEl.src, 'b.mp3', 'cycle 1 switches to the second track')
+  bank2.playLevelMusic(['a.mp3', 'b.mp3'], 2, 120)
+  assert.equal(bank2._musicEl.src, 'a.mp3', 'cycle 2 wraps back to the first track')
+  assert.equal(bank2._musicLen, 120, 'level track length drives the loop')
+  bank2.playLevelMusic([], 0, 120) // empty list is a no-op, keeps the last src
+  assert.equal(bank2._musicEl.src, 'a.mp3', 'empty track list does not clear the src')
   bank2.stopMusic()
   assert.equal(bank2._musicOn, false)
   bank2.dispose()

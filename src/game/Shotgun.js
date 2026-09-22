@@ -161,9 +161,17 @@ export class Shotgun {
         }
       }
       if (hitZ) {
+        // Boss armor: the brute's hide shrugs off most buckshot (shotgunArmor
+        // < 1), so a full blast deals far less than 6×22 — the boss needs many
+        // blasts. Regular zombies are unarmored (×1).
+        const armor = hitZ.shotgunArmor != null ? hitZ.shotgunArmor : 1
+        const dmg = this.damage * (head ? this.headMultiplier : 1) * armor
         this._hitP.copy(o).addScaledVector(this._pellet, bestT)
-        this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, this.damage * (head ? this.headMultiplier : 1), head, this._pellet)
-        hitZ.damage(this.damage * (head ? this.headMultiplier : 1), this._pellet, this.owner)
+        this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._pellet)
+        hitZ.damage(dmg, this._pellet, this.owner)
+        // Limb damage: a pellet landing near an arm/leg severs it.
+        const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
+        if (limb) this.audio?.dismember?.()
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
       } else if (wall) {
         // No zombie absorbed this pellet: break a lamp if the wall was one,

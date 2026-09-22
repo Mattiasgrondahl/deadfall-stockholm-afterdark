@@ -26,9 +26,9 @@ function makeZombie(type, x, z, wave = 1) {
 }
 
 test('stats: TABLE values exact, wave scaling rounds base * 1.12', () => {
-  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 50, melee: 8, cooldown: 0.9 })
-  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 })
-  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 })
+  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 50, melee: 8, cooldown: 0.9 , shotgunArmor: 1 })
+  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 , shotgunArmor: 1 })
+  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 , shotgunArmor: 1 })
   const { zombie } = makeZombie('walker', 0, 0, 1)
   assert.equal(zombie.maxHealth, 50)
   const { zombie: w2 } = makeZombie('walker', 0, 0, 2)
@@ -246,7 +246,11 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
     const { zombie } = makeZombie(type, 1, 1, 1)
     const head = zombie.group.children[1]
     assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
-    assert.equal(head.children.length, 3, `${type}: eye + face count`)
+    // Eyes + face are always the first three head children; a head-mounted
+    // accessory (police cap / fireman helmet) is appended after them, so the
+    // count is 3 for no-accessory outfits and 4 when the head wears one.
+    const headAcc = zombie._acc && head.children.includes(zombie._acc) ? 1 : 0
+    assert.equal(head.children.length, 3 + headAcc, `${type}: eye + face count`)
     assert.equal(head.children[0].position.x, -0.075)
     assert.equal(head.children[0].position.z, 0.14)
     assert.equal(head.children[1].position.x, 0.075)
@@ -339,14 +343,14 @@ test('death resets limbs to rest pose', () => {
 
 test('outfits: deterministic clothing materials per spawn; flash/death logic intact; headless-safe', () => {
   const scene = new THREE.Scene()
-  // Mappings precomputed with the same spawn LCG + 0.37 offset:
-  // (-85,0) -> 0 (suit), (-40,0) -> 1 (hoodie + sweatpants), (-70,0) -> 2 (tee + jeans)
+  // Mappings precomputed with the same spawn LCG + 0.37 offset (9 archetypes):
+  // (-85,0) -> 1 (mailman), (-40,0) -> 4 (dress), (-70,0) -> 8 (gym)
   const a = new Zombie(scene, 'walker', -85, 0, 1)
   const b = new Zombie(scene, 'walker', -40, 0, 1)
   const c = new Zombie(scene, 'walker', -70, 0, 1)
-  assert.equal(a.getOutfit(), 0)
-  assert.equal(b.getOutfit(), 1)
-  assert.equal(c.getOutfit(), 2)
+  assert.equal(a.getOutfit(), 1)
+  assert.equal(b.getOutfit(), 4)
+  assert.equal(c.getOutfit(), 8)
 
   for (const z of [a, b, c]) {
     const o = z.getOutfit()
@@ -364,11 +368,11 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   a.damage(5, null)
   for (const p of a._parts) assert.equal(p.material, HITMAT)
   a.update(0.2, null, [], null, null)
-  assert.equal(a._parts[0].material, OUTFITMATS.tops[0])
+  assert.equal(a._parts[0].material, OUTFITMATS.tops[1])
   assert.equal(a._parts[1].material, MAT2.walker)
   assert.equal(a._parts[2].material, MAT2.walker) // bare arm restored to skin color
   assert.equal(a._parts[3].material, MAT2.walker)
-  assert.equal(a._parts[4].material, OUTFITMATS.bottoms[0])
+  assert.equal(a._parts[4].material, OUTFITMATS.bottoms[1])
 
   // Death behavior unchanged: every part (including clothing) -> DEADMAT
   b.damage(200, null)
@@ -420,4 +424,46 @@ test('melee skips a player jumping above arm reach; hits once grounded', () => {
   player.position.y = 1.7 // lands back on the ground
   for (let i = 0; i < 60; i++) zombie.update(1 / 60, player, [zombie], collision, null)
   assert.equal(player.health, 992) // one 8-damage hit after landing
+})
+
+// ---- limb damage -------------------------------------------------------------
+
+test('limb damage: shooting an arm severs it and the zombie keeps coming', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  const armWorld = new THREE.Vector3(0 - 0.34, 1.42, 0 + 0.1) // left arm center
+  const r = zombie.hitLimbAt(armWorld.x, armWorld.y, armWorld.z)
+  assert.equal(r, 'arm', 'a hit on the arm severs it')
+  assert.equal(zombie.armsLost, 1)
+  assert.equal(zombie._armL.visible, false, 'severed arm hidden')
+  assert.equal(zombie.isDead, false, 'losing an arm does not kill it')
+  // A second arm hit severs the other arm; still alive, still full speed.
+  assert.equal(zombie.hitLimbAt(0.34, 1.42, 0.1), 'arm')
+  assert.equal(zombie.armsLost, 2)
+  assert.equal(zombie._effSpeed(), zombie.speed, 'arms do not slow the zombie')
+})
+
+test('limb damage: shooting a leg makes the zombie limp and slower', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  assert.equal(zombie.hitLimbAt(-0.16, 0.47, 0), 'leg', 'a hit on the leg severs it')
+  assert.equal(zombie.legsLost, 1)
+  assert.equal(zombie._legL.visible, false)
+  assert.equal(zombie._limp, true)
+  assert.ok(zombie._effSpeed() < zombie.speed, 'a one-legged zombie is slower')
+  assert.ok(Math.abs(zombie._effSpeed() - zombie.speed * 0.45) < 1e-9)
+  assert.equal(zombie.isDead, false, 'losing a leg does not kill it')
+})
+
+test('limb damage: the boss cannot be dismembered', () => {
+  const { zombie } = makeZombie('brute', 0, 0, 5)
+  assert.equal(zombie.hitLimbAt(-0.34, 1.42, 0.1), null, 'boss arms are immune')
+  assert.equal(zombie.hitLimbAt(-0.16, 0.47, 0), null, 'boss legs are immune')
+  assert.equal(zombie.armsLost, 0)
+  assert.equal(zombie.legsLost, 0)
+})
+
+test('limb damage: a hit on the torso severs nothing', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  assert.equal(zombie.hitLimbAt(0, 1.2, 0), null, 'torso hit is not a limb')
+  assert.equal(zombie.armsLost, 0)
+  assert.equal(zombie.legsLost, 0)
 })

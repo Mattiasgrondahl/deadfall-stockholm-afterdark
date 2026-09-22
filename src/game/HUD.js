@@ -90,8 +90,10 @@ export class HUD {
     this._slotB = slot('SHOTGUN')
     this._slotC = slot('PISTOL')
     this._slotD = slot('SWORD')
+    this._slotE = slot('SNIPER')
     weapons.appendChild(this._slotA.box); weapons.appendChild(this._slotB.box)
     weapons.appendChild(this._slotC.box); weapons.appendChild(this._slotD.box)
+    weapons.appendChild(this._slotE.box)
     this._legacyAmmo = d.createElement('div'); this._legacyAmmo.className = 'hud-ammo hidden'
     this._ammoValue = d.createElement('div'); this._ammoValue.className = 'hud-value'; this._ammoValue.textContent = '0 / 0'
     const reload = d.createElement('div'); reload.className = 'hud-reload'
@@ -176,7 +178,8 @@ export class HUD {
       const maxH = player.maxHealth || 1
       const pct = Math.max(0, Math.min(1, player.health / maxH))
       this._healthFill.style.width = (pct * 100) + '%'
-      this._healthValue.textContent = String(Math.max(0, Math.ceil(player.health)))
+      // HP bar shows the percentage of max health remaining (rounded), e.g. "82%".
+      this._healthValue.textContent = Math.round(pct * 100) + '%'
       // Damage vignette (V5P-2): hook-driven peak with a health-drop fallback;
       // fades over 0.45 s.
       if (this._lastHealth !== null && player.health < this._lastHealth && !this._dmgHitPending) {
@@ -203,13 +206,14 @@ export class HUD {
 
     if (weapon) {
       if (weapon.axe && weapon.shotgun) {
-        // WeaponBank: four slots, active one highlighted.
+        // WeaponBank: five slots, active one highlighted.
         this._slotA.box.classList.remove('hidden')
         this._slotB.box.classList.remove('hidden')
         this._slotC.box.classList.remove('hidden')
         this._slotD.box.classList.remove('hidden')
+        this._slotE.box.classList.remove('hidden')
         this._legacyAmmo.classList.add('hidden')
-        // Unrolled (no per-frame array literal): four fixed slots.
+        // Unrolled (no per-frame array literal): five fixed slots.
         let w = weapon.axe, s = this._slotA
         s.name.textContent = w.name || 'weapon'
         s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
@@ -234,12 +238,19 @@ export class HUD {
         s.box.classList.toggle('active', w === weapon.current)
         s.box.classList.toggle('reloading', !!w.isReloading)
         s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
+        w = weapon.sniper; s = this._slotE
+        s.name.textContent = w.name || 'weapon'
+        s.ammo.textContent = w.infiniteAmmo ? '∞' : w.ammo + ' / ' + w.reserve
+        s.box.classList.toggle('active', w === weapon.current)
+        s.box.classList.toggle('reloading', !!w.isReloading)
+        s.box.classList.toggle('empty', !w.infiniteAmmo && w.ammo === 0)
       } else {
         // Legacy single weapon (pre-bank compatibility).
         this._slotA.box.classList.add('hidden')
         this._slotB.box.classList.add('hidden')
         this._slotC.box.classList.add('hidden')
         this._slotD.box.classList.add('hidden')
+        this._slotE.box.classList.add('hidden')
         this._legacyAmmo.classList.remove('hidden')
         this._ammoValue.textContent = weapon.ammo + ' / ' + weapon.reserve
         this._ammoBox.classList.toggle('reloading', !!weapon.isReloading)

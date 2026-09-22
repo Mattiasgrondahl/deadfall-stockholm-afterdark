@@ -35,7 +35,8 @@ const BASE = JSON.parse(fs.readFileSync(path.join(RESEARCH, 'zimage_mattias.json
 // because these become box-face materials.
 const VARIANTS = [
   { name: 'sword', seed: 13, prompt: 'seamless full-frame extreme macro close-up texture of a weathered forged dark steel sword blade surface, the metal fills the entire frame edge to edge, no background, no border, no margin, no object, dense fine scratches and wear marks, faint etched rune symbols along one edge, light dried blood spatter near the top edge, moderate dramatic side lighting, photorealistic, no text, no hands, no logo' },
-  { name: 'axe', seed: 14, prompt: 'seamless full-frame extreme macro close-up texture of a weathered forged dark steel battle axe head surface, the metal fills the entire frame edge to edge, no background, no border, no margin, no object, a beveled cutting edge crossing the frame, chips and pitting, fine scratches, dried blood streaks along the edge, moderate dramatic side lighting, photorealistic, no text, no hands, no logo' }
+  { name: 'axe', seed: 14, prompt: 'seamless full-frame extreme macro close-up texture of a weathered forged dark steel battle axe head surface, the metal fills the entire frame edge to edge, no background, no border, no margin, no object, a beveled cutting edge crossing the frame, chips and pitting, fine scratches, dried blood streaks along the edge, moderate dramatic side lighting, photorealistic, no text, no hands, no logo' },
+  { name: 'sniper', seed: 15, prompt: 'seamless full-frame close-up texture of a bolt-action sniper rifle stock and receiver, dark walnut wood grain blended with matte blued steel, the surface fills the entire frame edge to edge, no background, no border, no margin, no hands, subtle wear and scratches, matte finish, photorealistic, no text, no logo' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
