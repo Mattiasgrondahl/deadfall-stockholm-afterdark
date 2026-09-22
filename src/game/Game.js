@@ -23,11 +23,11 @@ import { PostFX } from './PostFX.js'
 // Soundtrack mp3 (YuE2 hard-rock zombie song), served from public/. Resolved
 // against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
-const SOUNDTRACK_URL = ASSET_BASE + 'assets/audio/soundtrack.mp3'
+const SOUNDTRACK_URL = ASSET_BASE + 'assets/audio/soundtrack2.mp3'
 // Known true length of the soundtrack (seconds). Some browsers misreport an
 // mp3's `duration` and fire `ended` early, so the loop is driven off this
 // explicit length instead of the element's unreliable `duration`.
-const SOUNDTRACK_SECONDS = 60
+const SOUNDTRACK_SECONDS = 120
 
 export const GameState = Object.freeze({
   TITLE: 'title',
