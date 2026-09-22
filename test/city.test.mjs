@@ -342,6 +342,8 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
     assert.equal(mats[0].emissiveIntensity, 1.5, 'window emissiveIntensity 1.5 (V3P-10: lit windows read as beacons)')
     assert.equal(mats[0].map, null, 'headless: no color map')
     assert.equal(mats[0].emissiveMap, null, 'headless: no emissive map')
+    assert.equal(mats[0].normalMap, null, 'headless: no normal map')
+    assert.equal(mats[0].roughnessMap, null, 'headless: no roughness map')
     assert.ok(mats[2] === mats[3], 'top/bottom share the roof material')
     roofs.add(mats[2])
   }
@@ -359,6 +361,34 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   assert.ok(new Set(vs).size >= 2, 'more than one variant used')
   city.dispose()
   city2.dispose()
+})
+
+test('roof detail: 2 InstancedMeshes (clutter + cornice), deterministic, headless-safe maps', () => {
+  const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
+  const inst = []
+  c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
+  assert.equal(inst.length, 2, 'exactly 2 roof-detail InstancedMeshes, got ' + inst.length)
+  // Cornice has one instance per building; clutter is capped at 160.
+  const counts = inst.map(m => m.count).sort((a, b) => a - b)
+  assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
+  assert.ok(counts.includes(160), 'clutter instance count is the 160 cap')
+  // Headless: facade materials carry no maps (image + procedural all null).
+  let checked = 0
+  c.group.traverse(o => {
+    if (o.isMesh && Array.isArray(o.material) && o.material.length === 6) {
+      assert.equal(o.material[0].map, null, 'headless hero: no image map')
+      assert.equal(o.material[0].normalMap, null, 'headless: no normal map')
+      assert.equal(o.material[0].roughnessMap, null, 'headless: no roughness map')
+      checked++
+    }
+  })
+  assert.equal(checked, 67, 'all 67 facade buildings checked')
+  // Deterministic: a twin instance produces identical instance matrices.
+  const c2 = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
+  const a = inst[0].instanceMatrix.array
+  const b = c2.group.children.filter(o => o.isInstancedMesh)[0].instanceMatrix.array
+  assert.deepEqual(Array.from(a), Array.from(b), 'roof clutter placement is deterministic')
+  c.dispose(); c2.dispose()
 })
 
 test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk bands, 8 drifts, no new collision', () => {
@@ -387,7 +417,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 384, 'mesh count 319 + 64 dressing + 1 wanted poster, got ' + meshes)
+  assert.equal(meshes, 386, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail instanced, got ' + meshes)
   assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

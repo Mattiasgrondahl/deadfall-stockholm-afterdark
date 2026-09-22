@@ -428,3 +428,91 @@ function makePosterTexture(env) {
   g.fillText('REWARD 500', 128, 318)
   return new THREE.CanvasTexture(c)
 }
+
+// Realism pass (graphics tier 2): rooftop clutter + cornices as two InstancedMeshes.
+// Each InstancedMesh counts as ONE mesh toward the 600-mesh budget, so this adds
+// exactly 2 meshes while giving every building a broken-up silhouette (AC units,
+// vents, water tanks) and a roofline lip. Deterministic placement from a fresh
+// LCG (no Math.random); headless-safe (geometry/material still built, just never
+// rendered). Returns the two meshes so City can add them to the group.
+export function addRoofDetail(group, buildings) {
+  if (!buildings || !buildings.length) return []
+  let s = 4242
+  const rnd = () => (s = (s * 48271) % 65537) / 65537
+
+  // Rooftop clutter: small boxes scattered on tops. Cap instances at a fixed
+  // count; unused instances are collapsed to zero scale.
+  const MAX_CLUTTER = 160
+  const clutterGeo = new THREE.BoxGeometry(1, 1, 1)
+  const clutterMat = new THREE.MeshStandardMaterial({ color: 0x2a3140, roughness: 0.9, metalness: 0.1 })
+  const clutter = new THREE.InstancedMesh(clutterGeo, clutterMat, MAX_CLUTTER)
+  clutter.castShadow = true
+  clutter.receiveShadow = false
+  clutter.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+
+  // Cornice: a thin horizontal lip near the roofline of each building.
+  const corniceGeo = new THREE.BoxGeometry(1, 0.5, 1)
+  const corniceMat = new THREE.MeshStandardMaterial({ color: 0x1a2130, roughness: 0.92, metalness: 0.04 })
+  const cornice = new THREE.InstancedMesh(corniceGeo, corniceMat, buildings.length)
+  cornice.castShadow = true
+  cornice.receiveShadow = false
+  cornice.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const scl = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+
+  let ci = 0
+  for (const b of buildings) {
+    const bx = b.mesh.position.x
+    const bz = b.mesh.position.z
+    const top = b.h
+    // 2-4 clutter pieces per building, within the footprint.
+    const n = 2 + Math.floor(rnd() * 3)
+    for (let k = 0; k < n && ci < MAX_CLUTTER; k++) {
+      const cw = 0.6 + rnd() * 1.2
+      const cd = 0.6 + rnd() * 1.2
+      const ch = 0.5 + rnd() * 1.4
+      const ox = (rnd() - 0.5) * Math.max(0, b.w - cw)
+      const oz = (rnd() - 0.5) * Math.max(0, b.d - cd)
+      pos.set(bx + ox, top + ch / 2, bz + oz)
+      scl.set(cw, ch, cd)
+      m.compose(pos, quat, scl)
+      clutter.setMatrixAt(ci++, m)
+    }
+    // Cornice lip: slightly wider/deeper than the footprint, just under the top.
+    pos.set(bx, top - 0.25, bz)
+    scl.set(b.w + 0.4, 0.5, b.d + 0.4)
+    m.compose(pos, quat, scl)
+    cornice.setMatrixAt(buildings.indexOf(b), m)
+  }
+  // Collapse unused clutter instances to zero scale (harmless, invisible).
+  for (; ci < MAX_CLUTTER; ci++) {
+    pos.set(0, -9999, 0); scl.set(0, 0, 0)
+    m.compose(pos, quat, scl)
+    clutter.setMatrixAt(ci, m)
+  }
+  clutter.instanceMatrix.needsUpdate = true
+  cornice.instanceMatrix.needsUpdate = true
+  group.add(clutter, cornice)
+  return [clutter, cornice]
+}
+
+// Realism pass (tier 4): WanGP-generated photoreal facade image (browser-only,
+// via TextureLoader). Returns a loaded texture, or null in headless Node so the
+// procedural canvas facade stays in place. The caller repeats it per building.
+export function makeFacadeImageTexture(env) {
+  if (typeof document === 'undefined') return null
+  try {
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
+    const url = base.replace(/\/$/, '') + '/assets/facades/facade.jpg'
+    const tex = new THREE.TextureLoader().load(url)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 4
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    return tex
+  } catch (err) {
+    return null
+  }
+}
