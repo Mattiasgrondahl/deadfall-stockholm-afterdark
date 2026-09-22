@@ -18,6 +18,9 @@ export class Lighting {
     this.renderer = renderer
     this.quality = quality || 'high'
     this.anchors = city.streetlightAnchors
+    // Shootable lamps: a broken lamp must not claim a pool light. The lamps
+    // array (from city.lamps) is indexed in the same order as the anchors.
+    this.lamps = city.lamps || null
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.2
@@ -71,15 +74,22 @@ export class Lighting {
     s.sort((p, q) => p.d2 - q.d2)
 
     const n = this.quality === 'high' ? POINTS_HIGH : POINTS_LOW
-    for (let k = 0; k < this.lights.length; k++) {
+    // Walk the nearest-first list and assign pool lights to the nearest LIT
+    // (non-broken) anchors; broken lamps are skipped so their light goes dark.
+    let k = 0
+    for (let j = 0; j < s.length && k < this.lights.length; j++) {
+      const idx = s[j].i
+      if (this.lamps && this.lamps[idx] && this.lamps[idx].broken) continue
+      const anchor = a[idx]
       if (k < n) {
-        const anchor = a[s[k].i]
         this.lights[k].position.set(anchor.x, anchor.y, anchor.z)
         this.lights[k].intensity = POLE_INTENSITY
       } else {
         this.lights[k].intensity = 0
       }
+      k++
     }
+    for (; k < this.lights.length; k++) this.lights[k].intensity = 0
   }
 
   setQuality(q) {

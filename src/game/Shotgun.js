@@ -147,7 +147,7 @@ export class Shotgun {
         .addScaledVector(this._right, (this._rng() * 2 - 1) * SPREAD)
         .addScaledVector(this._up, (this._rng() * 2 - 1) * SPREAD)
         .normalize()
-      const wall = this.collision.castRay({ x: o.x, z: o.z }, this._pellet, this.range)
+      const wall = this.collision.castRay({ x: o.x, z: o.z, y: o.y }, this._pellet, this.range)
       const wallT = wall ? wall.dist : this.range
       const zombies = this.getZombies ? this.getZombies() : []
       let hitZ = null
@@ -162,9 +162,15 @@ export class Shotgun {
       }
       if (hitZ) {
         this._hitP.copy(o).addScaledVector(this._pellet, bestT)
-        this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, this.damage * (head ? this.headMultiplier : 1), head)
+        this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, this.damage * (head ? this.headMultiplier : 1), head, this._pellet)
         hitZ.damage(this.damage * (head ? this.headMultiplier : 1), this._pellet, this.owner)
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
+      } else if (wall) {
+        // No zombie absorbed this pellet: break a lamp if the wall was one,
+        // otherwise leave a bullet hole on the surface it hit.
+        if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
+          this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+        }
       }
     }
     for (const z of hitSet) this.audio?.hitZombie?.()

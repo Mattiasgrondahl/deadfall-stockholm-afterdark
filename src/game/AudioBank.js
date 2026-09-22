@@ -185,20 +185,47 @@ export class AudioBank {
   shoot() {
     if (!this.ctx) return
     this._resume()
-    // Shotgun blast — big-bore, explosive, LOUD. Stacked so it clearly dwarfs
-    // the pistol: a hard bright crack (muzzle report), a wide low body boom, a
-    // deep sub-bass thump that hits the chest, and a longer rolling tail. Gains
-    // are pushed toward the limiter so the blast reads as a wall of sound.
+    // Shotgun blast — big-bore, explosive, LOUD, and now grittier. A fast-attack
+    // noise burst is run through a WaveShaper for a hard clip (the powder crack),
+    // a second lowpassed body layer gives the heavy boom, two sub-bass sines
+    // thump the chest, and a long rolling lowpass tail lingers. Gains are pushed
+    // toward the limiter so the blast reads as a wall of sound.
     // 1) Bright transient crack — the sharp muzzle report.
     this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 1200, gain: 0.9 })
-    // 2) Wide mid/body boom — the main powder blast, lowpassed so it's heavy.
-    this._playNoise({ duration: 0.28, filterType: 'lowpass', filterFreq: 1100, gain: 0.85, when: 0.005 })
+    // 2) Clipped body boom — a lowpassed noise burst pushed through a soft
+    //    WaveShaper curve so the powder blast has a hard, saturated edge.
+    this._playShotgunBody()
     // 3) Deep sub-bass thump — the chest-thumping low end of a big-bore shot.
     this._playTone({ type: 'sine', freq: 120, freqEnd: 40, duration: 0.30, gain: 0.7 })
     // 4) A second, even lower sine for weight and decay.
     this._playTone({ type: 'sine', freq: 70, freqEnd: 30, duration: 0.42, gain: 0.5, when: 0.02 })
     // 5) Rolling filtered tail — the room-shaking rumble that lingers.
     this._playNoise({ duration: 0.5, filterType: 'lowpass', filterFreq: 400, gain: 0.4, when: 0.06 })
+  }
+
+  // The shotgun's mid/body layer: a lowpassed noise burst fed through a
+  // WaveShaper (soft-clip curve) into a fast-attack, two-stage-decay gain, so
+  // the blast has a saturated crack rather than a soft puff. Falls back to a
+  // plain lowpassed burst if the WaveShaper curve cannot be built.
+  _playShotgunBody() {
+    const t = this.ctx.currentTime
+    const src = this.ctx.createBufferSource()
+    src.buffer = this._noiseBuffer
+    const lp = this.ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 1100
+    const shaper = this.ctx.createWaveShaper()
+    shaper.curve = shotgunCurve()
+    shaper.oversample = '2x'
+    const g = this.ctx.createGain()
+    src.connect(lp); lp.connect(shaper); shaper.connect(g); g.connect(this.master)
+    // Fast attack, then a two-stage decay (a quick snap then a slower body).
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.linearRampToValueAtTime(0.9, t + 0.004)
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.08)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
+    src.start(t)
+    src.stop(t + 0.35)
   }
 
   hitZombie() {
@@ -306,6 +333,23 @@ export class AudioBank {
     this._playNoise({ duration: 0.02, filterType: 'highpass', filterFreq: 2500, gain: 0.35, when: 0 })
     this._playNoise({ duration: 0.02, filterType: 'highpass', filterFreq: 2500, gain: 0.35, when: 0.06 })
     this._playTone({ type: 'sine', freq: 180, duration: 0.08, gain: 0.2, when: 0.06 })
+  }
+
+  // Glass shatter (a broken streetlamp): a bright highpassed noise burst for the
+  // initial crack, a scatter of short descending high tones for individual
+  // shards ringing, and a faint highpassed rattle as fragments settle.
+  glassBreak() {
+    if (!this.ctx) return
+    this._resume()
+    // The crack: a sharp bright noise transient.
+    this._playNoise({ duration: 0.08, filterType: 'highpass', filterFreq: 3500, gain: 0.5, when: 0 })
+    // Ringing shards: a few short high tones sliding down, spread in time.
+    this._playTone({ type: 'triangle', freq: 2600, freqEnd: 1400, duration: 0.12, gain: 0.22, when: 0.01 })
+    this._playTone({ type: 'triangle', freq: 3400, freqEnd: 1900, duration: 0.10, gain: 0.18, when: 0.05 })
+    this._playTone({ type: 'sine', freq: 4200, freqEnd: 2600, duration: 0.09, gain: 0.14, when: 0.09 })
+    this._playTone({ type: 'sine', freq: 2000, freqEnd: 1100, duration: 0.14, gain: 0.12, when: 0.12 })
+    // Settling rattle: a soft highpassed tail.
+    this._playNoise({ duration: 0.18, filterType: 'bandpass', filterFreq: 5000, gain: 0.12, when: 0.14 })
   }
 
   // -----------------------------------------------------------------
@@ -777,4 +821,20 @@ export class AudioBank {
       this._noiseBuffer = null
     }
   }
+}
+
+// Soft-clip WaveShaper curve for the shotgun body: a tanh-like saturation that
+// adds harmonic grit to the powder blast without full square-wave harshness.
+// Cached so repeated shots reuse one Float32Array.
+let _shotgunCurve = null
+function shotgunCurve() {
+  if (_shotgunCurve) return _shotgunCurve
+  const n = 1024
+  const curve = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1
+    curve[i] = Math.tanh(x * 2.2)
+  }
+  _shotgunCurve = curve
+  return curve
 }

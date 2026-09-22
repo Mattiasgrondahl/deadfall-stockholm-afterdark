@@ -90,7 +90,7 @@ test('streetlight halos: 40 orange (0xffb066) sprites share one SpriteMaterial (
 })
 
 test('city aabbs: 87 total, bounds, key points walkable', () => {
-  assert.equal(collision.aabbs.length, 87, `expected 87 aabbs, got ${collision.aabbs.length}`)
+  assert.equal(collision.aabbs.length, 127, `expected 127 aabbs, got ${collision.aabbs.length}`)
   for (const a of collision.aabbs) {
     assert.ok(a.minX >= -90 && a.maxX <= 90 && a.minZ >= -90 && a.maxZ <= 90, `out of bounds: ${JSON.stringify(a)}`)
   }
@@ -209,7 +209,7 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
     haloSeen.add(key)
     assert.ok(Math.abs(Math.abs(h.position.x) - 84) < 1e-6 && Math.abs(Math.abs(h.position.z) - 84) < 1e-6 && Math.abs(h.position.y - 7) < 1e-6, `beacon halo position ${h.position}`)
   }
-  assert.equal(collision.aabbs.length, 87, `aabbs changed: ${collision.aabbs.length}`)
+  assert.equal(collision.aabbs.length, 127, `aabbs changed (87 + 40 lamp AABBs): ${collision.aabbs.length}`)
 })
 
 test('dispose removes group from scene and all city aabbs', () => {
@@ -237,7 +237,7 @@ test('plaza halos: 22 shared amber (0xffd9a5) ground halos at plaza centers; 87 
     assert.ok(h.scale.x === 6 && h.scale.y === 6 && h.scale.z === 1, `halo scale ${h.scale.x},${h.scale.y},${h.scale.z}`)
     assert.ok(centers.some(c => Math.abs(c.x - h.position.x) < 1e-6 && Math.abs(c.z - h.position.z) < 1e-6), `halo (${h.position.x},${h.position.z}) not a plaza center`)
   }
-  assert.equal(collision.aabbs.length, 87, `expected 87 aabbs, got ${collision.aabbs.length}`)
+  assert.equal(collision.aabbs.length, 127, `expected 127 aabbs, got ${collision.aabbs.length}`)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 87, `expected 87 total sprites (67 + 20 light shafts), got ${sprites}`)
@@ -284,7 +284,7 @@ test('V3P-1b: 24 red strips total; 4 central-cross danger strips at exact positi
     assert.equal(p.castShadow, false, 'post castShadow')
   }
   assert.equal(new Set(posts.map(p => p.material)).size, 1, 'posts share one material')
-  assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
+  assert.equal(collision.aabbs.length, 127, 'expected 127 aabbs, got ' + collision.aabbs.length)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 87, 'expected 87 total sprites (67 + 20 light shafts), got ' + sprites)
@@ -318,7 +318,7 @@ test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs,
   for (const [ex, ez] of expected) {
     assert.ok(strips.some(s => Math.abs(s.position.x - ex) < 1e-6 && Math.abs(s.position.z - ez) < 1e-6), 'missing outer strip at (' + ex + ',' + ez + ')')
   }
-  assert.equal(collision.aabbs.length, 87, 'expected 87 aabbs, got ' + collision.aabbs.length)
+  assert.equal(collision.aabbs.length, 127, 'expected 127 aabbs, got ' + collision.aabbs.length)
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 87, 'expected 87 total sprites (67 + 20 light shafts), got ' + sprites)
@@ -348,7 +348,7 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
     roofs.add(mats[2])
   }
   assert.equal(roofs.size, 1, 'one shared roof material for all buildings')
-  assert.equal(collision.aabbs.length, 87, 'layout unchanged: 87 aabbs')
+  assert.equal(collision.aabbs.length, 127, 'layout: 87 + 40 lamp AABBs = 127')
   assert.equal(city.getPlazaCenters().length, 22, 'layout unchanged: 22 plazas')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
@@ -363,16 +363,17 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   city2.dispose()
 })
 
-test('roof detail: 2 InstancedMeshes (clutter + cornice), deterministic, headless-safe maps', () => {
+test('roof detail + car glass/lights: 4 InstancedMeshes, deterministic, headless-safe maps', () => {
   const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   const inst = []
   c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
-  assert.equal(inst.length, 3, 'exactly 3 InstancedMeshes (clutter + cornice + contact-shadow), got ' + inst.length)
+  assert.equal(inst.length, 4, 'exactly 4 InstancedMeshes (clutter + cornice + contact-shadow + car glass/lights), got ' + inst.length)
   // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
   assert.ok(counts.includes(160), 'clutter instance count is the 160 cap')
   assert.ok(counts.includes(20), 'contact-shadow instance count is 20 (12 vehicles + 8 barricades)')
+  assert.ok(counts.includes(60), 'car glass+lights instance pool is 60 (12 glass + 24 head + 24 tail)')
   // Headless: facade materials carry no maps (image + procedural all null).
   let checked = 0
   c.group.traverse(o => {
@@ -440,8 +441,8 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 387, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow, got ' + meshes)
-  assert.equal(collision.aabbs.length, 87, 'dressing adds no collision')
+  assert.equal(meshes, 388, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow + 1 car glass/lights, got ' + meshes)
+  assert.equal(collision.aabbs.length, 127, 'dressing adds no collision (lamps do: 127)')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })
   assert.equal(sprites, 87, 'sprite count: 67 base + 20 shafts')
@@ -459,8 +460,8 @@ test('wanted poster mounted on the center building front face', () => {
   assert.ok(c2._poster.position.y > 1 && c2._poster.position.y < 9, 'poster at readable height')
   // Headless (canvasFactory null): no image map, uses the flat fallback colour.
   assert.equal(c2._poster.material.map, null, 'headless poster has no image map')
-  // The poster adds no collision AABBs.
-  assert.equal(col2.aabbs.length, 87, 'poster adds no collision')
+  // The poster adds no collision (lamps: 127) AABBs.
+  assert.equal(col2.aabbs.length, 127, 'poster adds no collision (lamps: 127)')
   c2.dispose()
 })
 

@@ -11,6 +11,9 @@ import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
+import { BulletHoles } from './BulletHoles.js'
+import { Lamps } from './Lamps.js'
+import { GlassShards } from './GlassShards.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
 import { Zombie, DIFFICULTY } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
@@ -287,11 +290,22 @@ export class Game {
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
     // WIRING:BLOOD (V10) — every weapon sprays blood
     this.blood = new Blood(this.scene)
+    // WIRING:BULLETHOLES — gun shots that hit a wall leave a scorch decal.
+    this.bulletHoles = new BulletHoles(this.scene)
+    // WIRING:LAMPS — shootable streetlamps that break dark and relight after 60 s.
+    this.glassShards = new GlassShards(this.scene)
+    this.lamps = new Lamps(this.city ? this.city.lamps : [])
+    this.lamps.audio = this.audio
+    this.lamps.shards = this.glassShards
     if (this.weapon) {
       this.weapon.shotgun.blood = this.blood
       this.weapon.axe.blood = this.blood
       this.weapon.pistol.blood = this.blood
       this.weapon.sword.blood = this.blood
+      this.weapon.shotgun.bulletHoles = this.bulletHoles
+      this.weapon.pistol.bulletHoles = this.bulletHoles
+      this.weapon.shotgun.lamps = this.lamps
+      this.weapon.pistol.lamps = this.lamps
       // WIRING:DECAPITATE (Task E): a fatal headshot spawns a rolling
       // severed head (shared geometry/materials; pool caps at 3).
       this.headPool = new DecapitatedHeadPool(this.scene)
@@ -367,6 +381,9 @@ export class Game {
     if (this.flashlight) this.flashlight.reset()
     if (this.score) this.score.reset()
     if (this.blood) this.blood.clear()
+    if (this.bulletHoles) this.bulletHoles.clear()
+    if (this.glassShards) this.glassShards.clear()
+    if (this.lamps) this.lamps.reset()
     if (this.headPool) this.headPool.clear()
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
@@ -428,6 +445,9 @@ export class Game {
     if (this.blood) this.blood.update(dt)
     // WIRING:DECAPITATE (Task E)
     if (this.headPool) this.headPool.update(dt)
+    // WIRING:LAMPS — advance relight timers + shard animation.
+    if (this.lamps) this.lamps.update(dt)
+    if (this.glassShards) this.glassShards.update(dt)
     // WIRING:FLASH (V7)
     if (this.flashlight) this.flashlight.update(dt, this.inputState)
     // WIRING:UPDATE — the shared authoritative core (see WorldCore.js):

@@ -340,6 +340,9 @@ function bankWithFakeCtx() {
   before = bank.ctx._created.length
   bank.weaponSwitch() // two clicks (6) + thud (2)
   assert.ok(bank.ctx._created.length - before >= 8)
+  before = bank.ctx._created.length
+  bank.glassBreak() // crack noise (3) + 4 ringing shard tones (8) + rattle noise (3)
+  assert.ok(bank.ctx._created.length - before >= 14, 'glassBreak builds the full shatter stack')
   bank.dispose()
 }
 {

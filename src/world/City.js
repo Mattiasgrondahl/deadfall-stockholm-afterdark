@@ -292,6 +292,7 @@ export class City {
     const roofMat = new THREE.MeshStandardMaterial({ color: 0x1d2430, roughness: 0.95, metalness: 0.02 })
     let fv = 113
     const variants = []
+    this._flickerMats = []
     for (const b of buildings) {
       const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 4)
       variants.push(v)
@@ -332,6 +333,10 @@ export class City {
         facade.map = im
       }
       b.mesh.material = [facade, facade, roofMat, roofMat, facade, facade]
+      // Window flicker: track each facade with a deterministic phase so a few
+      // lit windows pulse slowly over time (no Math.random). Only a subset
+      // flickers; the rest stay steady.
+      this._flickerMats.push({ mat: facade, base: facade.emissiveIntensity, phase: (v * 1.7 + b.mesh.position.x * 0.13 + b.mesh.position.z * 0.29) })
     }
     this._facadeVariants = variants
     // Realism pass (tier 2): rooftop clutter + cornices (2 InstancedMeshes).
@@ -340,7 +345,11 @@ export class City {
     // barricades (1 InstancedMesh) so props read as resting on the pavement.
     addContactShadows(group)
 
-    this.streetlightAnchors = addStreetlights(group)
+    const streetlights = addStreetlights(group, collision)
+    this.streetlightAnchors = streetlights.anchors
+    this.lamps = streetlights.lamps
+    // Lamp head AABBs are collision too — track them so dispose removes them.
+    for (const l of this.lamps) if (l.aabb) this._aabbs.push(l.aabb)
     addStreetlightPools(group, this.streetlightAnchors)
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
@@ -365,7 +374,20 @@ export class City {
 
   setSnowCount(n) { this.snow.setCount(n) }
 
-  update(playerPos, dt = 0) { this.snow.update(playerPos, dt) }
+  update(playerPos, dt = 0) {
+    this.snow.update(playerPos, dt)
+    // Deterministic window flicker: a subset of facades pulse their emissive
+    // intensity slowly (a living-city feel). No Math.random; phase is derived
+    // from the building's variant + position. dt is the frame delta.
+    this._flickerT = (this._flickerT || 0) + dt
+    const ft = this._flickerT
+    for (let i = 0; i < this._flickerMats.length; i += 3) {
+      const f = this._flickerMats[i]
+      // Slow pulse + a rare deep dip (a bulb flickering) via a second harmonic.
+      const pulse = Math.sin(ft * 0.6 + f.phase) * 0.18 + Math.sin(ft * 7.3 + f.phase * 2) * 0.06
+      f.mat.emissiveIntensity = f.base + pulse
+    }
+  }
 
   dispose() {
     if (this._disposed) return

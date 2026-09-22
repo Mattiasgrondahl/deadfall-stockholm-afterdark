@@ -324,10 +324,17 @@ test('death resets limbs to rest pose', () => {
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, player, [zombie], collision, null)
   zombie.damage(zombie.maxHealth + 10)
   for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
-  assert.equal(zombie._armL.rotation.x, POSE2.walker.armRest)
-  assert.equal(zombie._armR.rotation.x, POSE2.walker.armRest)
-  assert.equal(zombie._legL.rotation.x, 0)
-  assert.equal(zombie._legR.rotation.x, 0)
+  // Death plays a deterministic flop (limbs splay + head lolls), NOT a freeze
+  // mid-swing. At 30 frames deathTimer = 0.5 s, flop = min(0.5/1.5, 1) = 1/3.
+  const flop = Math.min((30 / 60) / 1.5, 1)
+  const armRest = POSE2.walker.armRest
+  assert.equal(zombie._armL.rotation.x, armRest - flop * 0.7)
+  assert.equal(zombie._armR.rotation.x, armRest + flop * 0.5)
+  assert.equal(zombie._legL.rotation.x, flop * 0.4)
+  assert.equal(zombie._legR.rotation.x, -flop * 0.3)
+  assert.equal(zombie._head.rotation.x, flop * 0.5)
+  // Limbs are splayed (not the rest pose) — the corpse reads dead, not frozen.
+  assert.notEqual(zombie._armL.rotation.x, armRest)
 })
 
 test('outfits: deterministic clothing materials per spawn; flash/death logic intact; headless-safe', () => {

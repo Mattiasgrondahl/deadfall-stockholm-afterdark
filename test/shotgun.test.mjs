@@ -142,3 +142,53 @@ test('muzzle flash fades; camera kick via player', () => {
   assert.equal(player._pitchKick, 0)
   assert.equal(s.flash.material.map, null)  // headless: no document -> no texture
 })
+
+test('shoot OVER a low car: a high shot passes above a 1.1 m obstacle', () => {
+  const { camera, collision, shotgun: s } = makeShotgun()
+  collision.addAABB(-2, 5.5, 2, 6.5, 1.1) // a low car across the lane at z 5.5..6.5
+  const z = fakeZombie(0, 8)              // behind the car from camera at z=12
+  s.getZombies = () => [z]
+  s.inputState = { fire: false, reload: false, sprint: false }
+  s.update(0)
+  // Aim at the zombie's head (y=2.0): the shot clears the 1.1 m car top on the
+  // way in (bullet height ~2.15 m at the car) yet still reaches the head.
+  camera.lookAt(0, 2.0, 8)
+  fireOnce(s)
+  assert.equal(s.ammo, 4, 'blast still fires')
+  assert.ok(z.hits.length > 0, `pellets cleared the low car and hit the zombie (${z.hits.length})`)
+})
+
+test('bullet hole spawned when a pellet hits a wall (no zombie)', () => {
+  const { camera, collision, shotgun: s } = makeShotgun()
+  collision.addAABB(-2, 6, 2, 8, 23) // tall wall across the lane
+  s.getZombies = () => []            // nothing to absorb the pellets
+  const holes = []
+  s.bulletHoles = { spawn: (x, y, z, n) => holes.push({ x, y, z, n }) }
+  s.inputState = { fire: false, reload: false, sprint: false }
+  s.update(0)
+  camera.lookAt(0, 1.2, 4) // aim past the wall so every pellet strikes its near face
+  fireOnce(s)
+  assert.ok(holes.length > 0, `wall hit leaves bullet holes (${holes.length})`)
+  // The shooter is at z=12, the box spans z 6..8, so the near face is z=8 and
+  // its normal points back toward the shooter (+z).
+  assert.ok(holes.every((h) => h.z >= 7.9 && h.z <= 8.1), `holes on the near wall face (z=${holes[0].z})`)
+  assert.ok(holes.every((h) => h.n && h.n.z > 0), 'hole normals face the shooter (+z)')
+})
+
+test('shooting up at a lamp head breaks it (lamps.hitAt called, no bullet hole)', () => {
+  const { camera, collision, shotgun: s } = makeShotgun()
+  collision.addAABB(-0.3, 9.7, 0.3, 10.3, 5.3) // a lamp pole/head column at (0,10)
+  collision.aabbs[collision.aabbs.length - 1].shootable = true
+  s.getZombies = () => []
+  const holes = []
+  const breaks = []
+  s.bulletHoles = { spawn: () => holes.push(1) }
+  s.lamps = { hitAt: (x, y, z) => { breaks.push({ x, y, z }); return true } }
+  s.inputState = { fire: false, reload: false, sprint: false }
+  s.update(0)
+  camera.lookAt(0, 5.2, 10) // aim up at the lamp head
+  fireOnce(s)
+  assert.ok(breaks.length > 0, `lamp head shot breaks a lamp (${breaks.length})`)
+  assert.ok(breaks.every((b) => Math.abs(b.y - 5.2) < 2.0), 'break point is near the head height')
+  assert.equal(holes.length, 0, 'a lamp hit leaves no bullet hole')
+})

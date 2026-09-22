@@ -148,7 +148,7 @@ export class Pistol {
       .addScaledVector(this._right, (this._rng() * 2 - 1) * SPREAD)
       .addScaledVector(this._up, (this._rng() * 2 - 1) * SPREAD)
       .normalize()
-    const wall = this.collision.castRay({ x: o.x, z: o.z }, this._shot, this.range)
+    const wall = this.collision.castRay({ x: o.x, z: o.z, y: o.y }, this._shot, this.range)
     const wallT = wall ? wall.dist : this.range
     const zombies = this.getZombies ? this.getZombies() : []
     let hitZ = null
@@ -164,11 +164,17 @@ export class Pistol {
     if (hitZ) {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
-      this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head)
+      this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
       hitZ.damage(dmg, this._shot, this.owner)
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot) // fatal headshot
       this.audio?.hitZombie?.()
       this.onHit?.() // HUD hit marker
+    } else if (wall) {
+      // No zombie absorbed the round: break a lamp if the wall was one, else
+      // leave a bullet hole on the surface it hit.
+      if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
+        this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+      }
     }
     this.audio?.pistolShot?.() // voice lands with the audio task; null-safe
     if (this.ammo === 0) this.reload()

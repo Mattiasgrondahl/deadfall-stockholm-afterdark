@@ -12,10 +12,13 @@ import * as THREE from 'three'
  */
 
 const GEO2 = {
-  torso: new THREE.BoxGeometry(0.5, 1.0, 0.4),
-  head: new THREE.BoxGeometry(0.3, 0.3, 0.3),
-  arm: new THREE.BoxGeometry(0.12, 0.55, 0.12),
-  leg: new THREE.BoxGeometry(0.14, 0.9, 0.14)
+  // Improved humanoid proportions (shared by every zombie — no per-instance
+  // geometry). A broader, slightly tapered torso, a smaller head, and longer,
+  // slimmer limbs read as a body rather than stacked cubes.
+  torso: new THREE.BoxGeometry(0.56, 1.05, 0.34),
+  head: new THREE.BoxGeometry(0.26, 0.3, 0.26),
+  arm: new THREE.BoxGeometry(0.13, 0.62, 0.13),
+  leg: new THREE.BoxGeometry(0.16, 0.95, 0.16)
 }
 
 const MAT2 = {
@@ -444,6 +447,7 @@ export class Zombie {
     head.position.set(0, 1.8, 0)
     head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
     head.rotation.x = pose.headR
+    this._head = head
     parts.push(head)
     // Eye glow: two small unlit boxes nested under the head; local +z faces the
     // player (group.rotation.y = atan2(dx, dz)). Shared per-type material. Eyes
@@ -472,7 +476,7 @@ export class Zombie {
       // Bare arms: the top texture/color is torso-only; arms keep the
       // per-type skin color so the cloth reads as a jacket/shirt on the body.
       const arm = new THREE.Mesh(GEO2.arm, mat)
-      arm.position.set(0.33 * side, 1.45, 0.12)
+      arm.position.set(0.34 * side, 1.42, 0.1)
       arm.rotation.x = pose.armRest
       parts.push(arm)
       if (side === -1) this._armL = arm
@@ -480,7 +484,7 @@ export class Zombie {
     }
     for (const side of [-1, 1]) {
       const leg = new THREE.Mesh(GEO2.leg, bottomMat)
-      leg.position.set(0.15 * side, 0.45, 0)
+      leg.position.set(0.16 * side, 0.47, 0)
       leg.scale.set(pose.legS[0], pose.legS[1], pose.legS[2])
       parts.push(leg)
       if (side === -1) this._legL = leg
@@ -671,13 +675,19 @@ export class Zombie {
       this._setSkinState('death')
       this.deathTimer += dt
       this.position.y = -Math.min(this.deathTimer * 0.35, 0.8) // sink
-      this.group.rotation.x = -Math.min(this.deathTimer / 1.5, 1) * 1.2 // fall over
-      // Reset limbs to rest pose so corpses do not freeze mid-swing.
+      const flop = Math.min(this.deathTimer / 1.5, 1)
+      this.group.rotation.x = -flop * 1.2 // fall over
+      this.group.rotation.z = flop * 0.25 // loll to one side as it collapses
+      // Splay the limbs as it collapses so the corpse reads dead, not frozen:
+      // arms flung out, legs askew, head lolling back.
       const armRest = POSE2[this.type].armRest
-      this._armL.rotation.x = armRest
-      this._armR.rotation.x = armRest
-      this._legL.rotation.x = 0
-      this._legR.rotation.x = 0
+      this._armL.rotation.x = armRest - flop * 0.7
+      this._armR.rotation.x = armRest + flop * 0.5
+      this._armL.rotation.z = -flop * 0.6
+      this._armR.rotation.z = flop * 0.6
+      this._legL.rotation.x = flop * 0.4
+      this._legR.rotation.x = -flop * 0.3
+      if (this._head) this._head.rotation.x = flop * 0.5 // head lolls back
       this.group.position.copy(this.position)
       return
     }
@@ -853,15 +863,26 @@ export class Zombie {
     // targets are hidden once a skin is attached, so it stays harmless.
     this._setSkinState(this.speed >= 2 ? 'run' : 'walk')
     // Walk cycle, synchronized with the bob below (same frequency 6): arms
-    // swing around the per-type rest pose, legs around 0, exactly opposite
-    // phase per pair. Deterministic: _phase is the fixed-seed LCG value.
+    // counter-swing the legs, the hips sway, and the head counter-bobs, so the
+    // gait reads as a lurching shamble rather than a rigid slide. Deterministic:
+    // _phase is the fixed-seed LCG value; no Math.random.
     const armRest = POSE2[this.type].armRest
-    const swing = Math.sin(this._time * 6 + this._phase) * 0.35
-    this._armL.rotation.x = armRest + swing
-    this._armR.rotation.x = armRest - swing
-    this._legL.rotation.x = swing * 1.2
-    this._legR.rotation.x = -swing * 1.2
-    this.group.rotation.x = Math.sin(this._time * 6) * 0.08 // bob
+    const t = this._time * 6 + this._phase
+    const swing = Math.sin(t) * 0.42
+    const legSwing = Math.sin(t) * 0.5
+    // Legs: bigger stride, with a small knee-lift asymmetry via a second harmonic.
+    this._legL.rotation.x = legSwing + Math.sin(t * 2) * 0.06
+    this._legR.rotation.x = -legSwing + Math.sin(t * 2 + Math.PI) * 0.06
+    // Arms: counter-swing the legs, with a slight outward droop so they hang.
+    this._armL.rotation.x = armRest - swing
+    this._armR.rotation.x = armRest + swing
+    this._armL.rotation.z = -0.12
+    this._armR.rotation.z = 0.12
+    // Hips sway side to side + a forward lean tied to how fast it moves.
+    this.group.rotation.z = Math.sin(t) * 0.05
+    this.group.rotation.x = Math.sin(this._time * 6) * 0.08 + Math.min(this.speed, 3) * 0.012 // bob + lean
+    // Head counter-bobs against the body so the head stays steadier than the torso.
+    if (this._head) this._head.rotation.z = Math.sin(t + Math.PI) * 0.04
     this.group.position.copy(this.position)
   }
 

@@ -34,7 +34,7 @@ test('boots headless with 2 players: shared city, wave 1, clean snapshot', () =>
   const m = makeMatch([{ id: 'A', x: 12, z: 0 }, { id: 'B', x: -12, z: 0 }])
   assert.equal(typeof document, 'undefined', 'no DOM in this runtime')
   assert.equal(m.players.size, 2)
-  assert.equal(m.collision.aabbs.length, 87, 'same city AABBs as the client (city.test)')
+  assert.equal(m.collision.aabbs.length, 127, 'same city AABBs as the client (87 + 40 lamp AABBs)')
   assert.equal(m.spawnPoints.length, 12)
   assert.equal(m.wave.wave, 1)
   const snap = m.snapshot()

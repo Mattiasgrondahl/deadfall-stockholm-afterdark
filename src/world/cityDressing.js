@@ -43,37 +43,53 @@ function makeShaftMap() {
   return new THREE.CanvasTexture(c)
 }
 
-export function addStreetlights(group) {
+export function addStreetlights(group, collision) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
   const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
   const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
   const haloMap = makeGlowMap()
-const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
   // Realism pass: a shared vertical light-shaft sprite under each lamp head for
   // a soft volumetric beam in the night air.
   const shaftMap = makeShaftMap()
   const shaftMat = new THREE.SpriteMaterial({ color: 0xffc27a, map: shaftMap, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })
   const anchors = []
+  const lamps = []
   const place = (x, z, shaft) => {
     const pole = new THREE.Mesh(poleGeo, poleMat)
     pole.castShadow = true
     pole.position.set(x, 2.5, z)
     group.add(pole)
-    const head = new THREE.Mesh(headGeo, headMat)
+    // Each head gets its OWN material clone so a broken lamp can go dark
+    // independently while the rest stay lit.
+    const hm = headMat.clone()
+    const head = new THREE.Mesh(headGeo, hm)
     head.position.set(x, 5.2, z)
     group.add(head)
     const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(2.2, 2.2, 1); group.add(halo)
     // Shaft hangs from the head down toward the pavement (tall, narrow). Only
     // the vertical-street lamps get one, to stay inside the mesh/sprite budget.
+    let shaftSprite = null
     if (shaft) {
-      const s = new THREE.Sprite(shaftMat); s.position.set(x, 2.6, z); s.scale.set(1.6, 5.2, 1); group.add(s)
+      shaftSprite = new THREE.Sprite(shaftMat); shaftSprite.position.set(x, 2.6, z); shaftSprite.scale.set(1.6, 5.2, 1); group.add(shaftSprite)
     }
     anchors.push(new THREE.Vector3(x, 5.2, z))
+    // Shootable: a small AABB around the head so a bullet can hit + break it.
+    // Flagged `shootable` so it blocks bullets but NOT the player (a thin pole
+    // should not trap movement), and it is excluded from the light pool when
+    // broken.
+    let aabb = null
+    if (collision && collision.addAABB) {
+      collision.addAABB(x - 0.3, z - 0.3, x + 0.3, z + 0.3, 5.3)
+      aabb = collision.aabbs[collision.aabbs.length - 1]
+      aabb.shootable = true
+    }
+    lamps.push({ x, z, head, halo, shaft: shaftSprite, material: hm, aabb, broken: false, timer: 0 })
   }
   for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z, true) // vertical streets (with shafts)
   for (const z of STREETS) for (const x of POLES) place(x, z + OFFSET, false) // horizontal streets (no shafts)
-  return anchors
+  return { anchors, lamps }
 }
 
 export function cityDressingMeshes(group) {
@@ -107,7 +123,28 @@ export function addVehicles(group, collision) {
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333b46, roughness: 0.6, metalness: 0.25 })
   const cabinMat = new THREE.MeshStandardMaterial({ color: 0x3d4656, roughness: 0.65, metalness: 0.2 })
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.5, metalness: 0.35 })
+  // Realism pass: glass windshields + head/tail lights. A SINGLE shared
+  // InstancedMesh (one draw call) covers all 12 cars — 12 dark glass panels +
+  // 24 warm headlights + 24 red taillights — so the mesh budget grows by only
+  // 1. Per-instance color drives the look: glass is a dark glossy tone, lights
+  // are bright (picked up by bloom). Head/tail lights sit at the cabin front/rear.
+  const carGeo = new THREE.BoxGeometry(1.5, 0.5, 0.06)
+  const carMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.15, metalness: 0.5 })
+  const carMesh = new THREE.InstancedMesh(carGeo, carMat, 60)
+  carMesh.frustumCulled = false
+  carMesh.castShadow = false
+  carMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  group.add(carMesh)
+  const _m = new THREE.Matrix4()
+  const _q = new THREE.Quaternion()
+  const _e = new THREE.Euler()
+  const _s = new THREE.Vector3(1, 1, 1)
+  const _p = new THREE.Vector3()
+  const GLASS = new THREE.Color(0x0a0e14)
+  const HEAD = new THREE.Color(0xfff2cf)
+  const TAIL = new THREE.Color(0xff2a1e)
   const aabbs = []
+  let ci = 0
   for (const v of TABLE) {
     const bodyGeo = v.vertical ? bodyGeoV : bodyGeoH
     const cabinGeo = v.vertical ? cabinGeoV : cabinGeoH
@@ -121,6 +158,25 @@ export function addVehicles(group, collision) {
     if (v.vertical) cabin.position.set(v.x, 1.45, v.z + 1.0)
     else cabin.position.set(v.x + 1.0, 1.45, v.z)
     group.add(cabin)
+    // Windshield + lights as instances of the shared car mesh. Vertical cars run
+    // along z; horizontal cars along x (windshield rotated 90° about Y).
+    if (v.vertical) {
+      _e.set(0, 0, 0); _q.setFromEuler(_e)
+      _p.set(v.x, 1.5, v.z + 2.2); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, GLASS)
+      _s.set(0.28, 0.14, 1); _p.set(v.x - 0.55, 0.7, v.z + 2.2); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, HEAD)
+      _p.set(v.x + 0.55, 0.7, v.z + 2.2); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, HEAD)
+      _p.set(v.x - 0.55, 0.7, v.z - 2.2); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, TAIL)
+      _p.set(v.x + 0.55, 0.7, v.z - 2.2); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, TAIL)
+      _s.set(1, 1, 1)
+    } else {
+      _e.set(0, Math.PI / 2, 0); _q.setFromEuler(_e)
+      _p.set(v.x + 2.2, 1.5, v.z); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, GLASS)
+      _s.set(0.28, 0.14, 1); _p.set(v.x + 2.2, 0.7, v.z - 0.55); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, HEAD)
+      _p.set(v.x + 2.2, 0.7, v.z + 0.55); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, HEAD)
+      _p.set(v.x - 2.2, 0.7, v.z - 0.55); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, TAIL)
+      _p.set(v.x - 2.2, 0.7, v.z + 0.55); _m.compose(_p, _q, _s); carMesh.setMatrixAt(ci, _m); carMesh.setColorAt(ci++, TAIL)
+      _s.set(1, 1, 1)
+    }
     // wheels: 0.9 off-center along the width axis, 1.6 along the long axis
     for (const sW of [-1, 1]) {
       for (const sL of [-1, 1]) {
@@ -349,8 +405,14 @@ export function addGroundDressing(group, canvasFactory) {
       tex.wrapT = THREE.RepeatWrapping
       tex.repeat.set(3, 3) // 512 px tile = 60 m; the ground is 180 m
       tex.needsUpdate = true
-      ground.material.map = tex
-      ground.material.color.set(0xffffff) // the map carries the base color
+      // Only apply the snow-compaction noise when no photoreal asphalt map is
+      // already present (City.js loads an asphalt image first in the browser).
+      // This stops the snow canvas from clobbering the wet-asphalt color map —
+      // the "ground reads as snow instead of asphalt" conflict.
+      if (!ground.material.map) {
+        ground.material.map = tex
+        ground.material.color.set(0xffffff) // the map carries the base color
+      }
     }
   }
   // Crosswalks: 4 intersections at (+-36, +-36), 2 bands per street. Additive
