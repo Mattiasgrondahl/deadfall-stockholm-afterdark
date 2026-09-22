@@ -42,6 +42,11 @@ function drawFacadeTexture(c, variant, emissiveOnly) {
   g.fillStyle = emissiveOnly ? '#000000' : '#ffffff'
   g.fillRect(0, 0, 256, 256)
   const lit = facadeGrid(variant)
+  // Per-window interior color variance (deterministic LCG, no Math.random):
+  // the emissive map multiplies the material's amber emissive, so a cooler
+  // (bluer) map pixel reads as a cool-lit room and a warmer one as tungsten.
+  let ws = 9001 + variant * 53
+  const wrnd = () => (ws = (ws * 48271) % 65537) / 65537
   for (let r = 0; r < 8; r++) {
     for (let col = 0; col < 4; col++) {
       const isLit = lit[r * 4 + col]
@@ -49,7 +54,13 @@ function drawFacadeTexture(c, variant, emissiveOnly) {
       const y = r * 32 + 8
       if (emissiveOnly) {
         if (!isLit) continue
-        g.fillStyle = '#ffffff'
+        const t = wrnd()
+        // ~60% warm (near-white, reads amber), ~40% cool (bluish, reads cyan-white).
+        if (t < 0.6) {
+          g.fillStyle = 'rgb(255,244,224)' // warm tungsten
+        } else {
+          g.fillStyle = 'rgb(210,226,255)' // cool fluorescent
+        }
       } else {
         g.fillStyle = isLit ? '#d9e2ee' : '#1e2229'
       }

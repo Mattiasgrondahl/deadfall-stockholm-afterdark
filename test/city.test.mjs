@@ -392,6 +392,28 @@ test('roof detail: 2 InstancedMeshes (clutter + cornice), deterministic, headles
   c.dispose(); c2.dispose()
 })
 
+test('facade emissive windows vary warm/cool (deterministic interior color)', () => {
+  // Recording canvasFactory: capture every fillStyle so we can assert the
+  // emissive map draws BOTH warm and cool window tints (not flat white).
+  const rec = []
+  const recFactory = () => {
+    const ctx = { _fs: '', fillRect() {}, fill() {}, fillText() {}, beginPath() {}, ellipse() {}, stroke() {}, moveTo() {}, lineTo() {}, textAlign: "", font: "", createLinearGradient: () => ({ addColorStop() {} }) }
+    Object.defineProperty(ctx, 'fillStyle', { get() { return ctx._fs }, set(v) { rec.push(v); ctx._fs = v } })
+    return { width: 0, height: 0, getContext: () => ctx }
+  }
+  const city = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: recFactory })
+  // The emissive map canvas should contain both warm and cool fills.
+  const warm = rec.some(s => s === 'rgb(255,244,224)')
+  const cool = rec.some(s => s === 'rgb(210,226,255)')
+  assert.ok(warm, 'warm window tint drawn')
+  assert.ok(cool, 'cool window tint drawn')
+  // Both tints recur across the 4 variants' emissive maps (variance, not flat).
+  const warmCount = rec.filter(s => s === 'rgb(255,244,224)').length
+  const coolCount = rec.filter(s => s === 'rgb(210,226,255)').length
+  assert.ok(warmCount >= 4 && coolCount >= 4, 'both tints recur across variants')
+  city.dispose()
+})
+
 test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk bands, 8 drifts, no new collision', () => {
   const scene = new THREE.Scene()
   const collision = new CollisionWorld(180, 180)
