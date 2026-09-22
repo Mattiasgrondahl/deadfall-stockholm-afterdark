@@ -257,6 +257,12 @@ export class Game {
     this.audio = new AudioBank()
     if (this.player) this.player.audio = this.audio
     if (this.input) this.input.on('mute', () => this.audio.toggleMuted())
+    // N toggles ONLY the soundtrack; keep the HUD button label in sync.
+    if (this.input) this.input.on('musicMute', () => {
+      if (!this.audio) return
+      this.audio.toggleMusicMuted()
+      if (this.hud) this.hud.setMusicMuted(this.audio._musicMuted)
+    })
     // WIRING:WEAPON
     this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
     this.weapon.getZombies = () => this.zombies
@@ -293,6 +299,8 @@ export class Game {
       this.screens = new Screens(this.env.document.getElementById('screens-root'), this)
       if (this.flashlight) this.hud.flashlight = this.flashlight // V7: reveals the battery box
       if (this.score) this.hud.score = this.score // V9: reveals the score box
+      // Music-mute button: toggles ONLY the soundtrack (SFX stay audible).
+      if (this.hud) this.hud.onToggleMusic = (muted) => { if (this.audio) this.audio.setMusicMuted(muted) }
     }
     // V5P-1: weapon hit -> HUD marker (no-op headless: hud is null there)
     if (this.weapon) this.weapon.onHit = () => { if (this.hud) this.hud.hitMarker() }

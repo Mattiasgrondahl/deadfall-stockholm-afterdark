@@ -28,7 +28,14 @@ function makeNode() {
       const i = n.children.indexOf(c)
       if (i >= 0) n.children.splice(i, 1)
       return c
-    }
+    },
+    _listeners: {},
+    addEventListener(ev, fn) { (n._listeners[ev] = n._listeners[ev] || []).push(fn) },
+    removeEventListener(ev, fn) {
+      if (n._listeners[ev]) n._listeners[ev] = n._listeners[ev].filter(f => f !== fn)
+    },
+    // Fire a registered listener (test helper for click handlers).
+    _fire(ev, arg) { for (const f of (n._listeners[ev] || [])) f(arg) }
   }
   return n
 }
@@ -160,6 +167,30 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   hud.score.value = 175
   hud.update(fakePlayer, fakeBank('shotgun'), null)
   assert.equal(box.children[1].textContent, '175')
+  hud.dispose()
+}
+
+// --- music-mute button: click toggles label + fires the callback; setMusicMuted
+//     reflects external state (N-key) without re-firing the callback ---
+{
+  const { hud, hudRoot } = makeHUD()
+  const btn = hudRoot.children.find((c) => c.classList.contains('hud-music-btn'))
+  assert.ok(btn, 'music button mounted')
+  assert.equal(btn.textContent, '♪ Music: On', 'starts un-muted')
+  let fired = null
+  hud.onToggleMusic = (muted) => { fired = muted }
+  btn._fire('click')
+  assert.equal(btn.textContent, '♪ Music: Off', 'click mutes + relabels')
+  assert.equal(btn.classList.contains('muted'), true, 'muted class applied')
+  assert.equal(fired, true, 'callback fired with muted=true')
+  btn._fire('click')
+  assert.equal(btn.textContent, '♪ Music: On', 'second click unmutes')
+  assert.equal(fired, false, 'callback fired with muted=false')
+  // setMusicMuted reflects external state (N-key) and does NOT re-fire.
+  fired = 'untouched'
+  hud.setMusicMuted(true)
+  assert.equal(btn.textContent, '♪ Music: Off', 'setMusicMuted relabels')
+  assert.equal(fired, 'untouched', 'setMusicMuted does not fire the callback')
   hud.dispose()
 }
 

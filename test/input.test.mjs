@@ -132,6 +132,21 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.dispose()
 }
 
+// --- music-mute edge (KeyN) fires once per press; repeat ignored ---
+{
+  const env = makeEnv(); const { input } = makeInput(env)
+  let musicMutes = 0
+  const cb = () => musicMutes++
+  input.on('musicMute', cb)
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 1)
+  key(env, 'KeyN', 'keydown', true); assert.strictEqual(musicMutes, 1) // repeat ignored
+  key(env, 'KeyN', 'keyup')
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 2) // new press edge
+  input.off('musicMute', cb)
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 2) // unsubscribed
+  input.dispose()
+}
+
 // --- v2 edges: flashlight toggle, weapon switch 1/2, repeat suppression, stale clear
 {
   const env = makeEnv(); const { input, st } = makeInput(env)

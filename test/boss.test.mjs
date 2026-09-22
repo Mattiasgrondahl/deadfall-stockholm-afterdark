@@ -337,6 +337,11 @@ function makeNode() {
       const i = n.children.indexOf(c)
       if (i >= 0) n.children.splice(i, 1)
       return c
+    },
+    _listeners: {},
+    addEventListener(ev, fn) { (n._listeners[ev] = n._listeners[ev] || []).push(fn) },
+    removeEventListener(ev, fn) {
+      if (n._listeners[ev]) n._listeners[ev] = n._listeners[ev].filter(f => f !== fn)
     }
   }
   return n

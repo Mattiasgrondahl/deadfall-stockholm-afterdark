@@ -121,6 +121,25 @@ export class HUD {
     this._scoreBox = scoreBox
     this._hudRoot.appendChild(scoreBox)
 
+    // Music-mute button (top-right, under the score): a clickable toggle that
+    // mutes ONLY the soundtrack (SFX stay audible). The click handler is wired
+    // by Game via onToggleMusic; the label reflects the current state.
+    const musicBtn = d.createElement('button')
+    musicBtn.className = 'hud-music-btn'
+    musicBtn.type = 'button'
+    musicBtn.textContent = '♪ Music: On'
+    musicBtn.title = 'Toggle soundtrack (Mute/Unmute music)'
+    this._musicBtn = musicBtn
+    this._musicMuted = false
+    this.onToggleMusic = null // set by Game wiring
+    musicBtn.addEventListener('click', () => {
+      this._musicMuted = !this._musicMuted
+      musicBtn.textContent = this._musicMuted ? '♪ Music: Off' : '♪ Music: On'
+      musicBtn.classList.toggle('muted', this._musicMuted)
+      if (this.onToggleMusic) this.onToggleMusic(this._musicMuted)
+    })
+    this._hudRoot.appendChild(musicBtn)
+
     // Crosshair (static; spread FX deferred)
     const ch = d.createElement('div'); ch.className = 'crosshair'
     const dot = d.createElement('div'); dot.className = 'ch-dot'
@@ -262,6 +281,16 @@ export class HUD {
 
   show() { this._hudRoot.classList.add('visible') }
   hide() { this._hudRoot.classList.remove('visible') }
+
+  /** Reflect the music-mute state on the button (called by the N-key path so
+   *  the label stays in sync with AudioBank without re-firing the callback). */
+  setMusicMuted(muted) {
+    this._musicMuted = !!muted
+    if (this._musicBtn) {
+      this._musicBtn.textContent = this._musicMuted ? '♪ Music: Off' : '♪ Music: On'
+      this._musicBtn.classList.toggle('muted', this._musicMuted)
+    }
+  }
 
   hitMarker() {
     this._markerT = 0.25

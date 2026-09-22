@@ -54,6 +54,10 @@ export class AudioBank {
     this._musicGain = null
     this._musicUrl = null
     this._musicOn = false
+    this._musicMuted = false
+    this._onMusicEnded = null
+    this._onMusicTimeUpdate = null
+    this._musicDur = 0
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -181,13 +185,20 @@ export class AudioBank {
   shoot() {
     if (!this.ctx) return
     this._resume()
-    // Shotgun blast: a bright transient crack (the muzzle report), a punchy low
-    // body thump (the powder boom), and a short filtered tail — layered so it
-    // reads as a big-bore blast, clearly heavier than the pistol's tight crack.
-    this._playNoise({ duration: 0.04, filterType: 'highpass', filterFreq: 1400, gain: 0.55 })
-    this._playNoise({ duration: 0.16, filterType: 'lowpass', filterFreq: 900, gain: 0.5, when: 0.01 })
-    this._playTone({ type: 'sine', freq: 140, freqEnd: 55, duration: 0.14, gain: 0.4 })
-    this._playNoise({ duration: 0.22, filterType: 'bandpass', filterFreq: 500, gain: 0.18, when: 0.05 })
+    // Shotgun blast — big-bore, explosive, LOUD. Stacked so it clearly dwarfs
+    // the pistol: a hard bright crack (muzzle report), a wide low body boom, a
+    // deep sub-bass thump that hits the chest, and a longer rolling tail. Gains
+    // are pushed toward the limiter so the blast reads as a wall of sound.
+    // 1) Bright transient crack — the sharp muzzle report.
+    this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 1200, gain: 0.9 })
+    // 2) Wide mid/body boom — the main powder blast, lowpassed so it's heavy.
+    this._playNoise({ duration: 0.28, filterType: 'lowpass', filterFreq: 1100, gain: 0.85, when: 0.005 })
+    // 3) Deep sub-bass thump — the chest-thumping low end of a big-bore shot.
+    this._playTone({ type: 'sine', freq: 120, freqEnd: 40, duration: 0.30, gain: 0.7 })
+    // 4) A second, even lower sine for weight and decay.
+    this._playTone({ type: 'sine', freq: 70, freqEnd: 30, duration: 0.42, gain: 0.5, when: 0.02 })
+    // 5) Rolling filtered tail — the room-shaking rumble that lingers.
+    this._playNoise({ duration: 0.5, filterType: 'lowpass', filterFreq: 400, gain: 0.4, when: 0.06 })
   }
 
   hitZombie() {
@@ -642,27 +653,33 @@ export class AudioBank {
       this.master.gain.cancelScheduledValues(t)
       this.master.gain.setValueAtTime(this.muted ? 0 : 0.6, t)
     }
-    if (this._musicGain) this._musicGain.gain.value = this.muted ? 0 : 0.5
+    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : 0.5
   }
 
   toggleMuted() { this.setMuted(!this.muted) }
 
-  /** Load + loop the soundtrack once (browser-only). `url` is the mp3 path.
+  /** Load + loop the soundtrack (browser-only). `url` is the mp3 path.
    *  The element is routed through a MediaElementSource into a dedicated
-   *  musicGain -> master so it obeys mute. Idempotent: repeated calls with the
-   *  same url only (re)start playback. No-op headless (no AudioContext/DOM). */
+   *  musicGain -> master so it obeys mute. No-op headless (no AudioContext/DOM).
+   *
+   *  Looping is done manually (loop=false + an `ended` -> seek(0)+play handler)
+   *  rather than via the element's `loop` flag: some browsers report a wrong
+   *  (too-short) `duration` for mp3s and fire `ended` early, which made the
+   *  track restart around the 30 s mark instead of playing to the end. We
+   *  re-arm playback on `ended` only once the real duration is known, so the
+   *  full song always plays through before it loops. */
   playMusic(url) {
     if (!this.ctx || typeof Audio === 'undefined') return
     if (!this._musicEl) {
       const el = new Audio()
-      el.loop = true
+      el.loop = false // manual loop: replay on `ended` so the whole track plays
       el.preload = 'auto'
       el.crossOrigin = 'anonymous'
       this._musicEl = el
       try {
         this._musicSrc = this.ctx.createMediaElementSource(el)
         this._musicGain = this.ctx.createGain()
-        this._musicGain.gain.value = this.muted ? 0 : 0.5
+        this._musicGain.gain.value = this._musicMuted || this.muted ? 0 : 0.5
         this._musicSrc.connect(this._musicGain)
         this._musicGain.connect(this.master)
       } catch (err) {
@@ -670,6 +687,32 @@ export class AudioBank {
         // output (still looped), just not routed through the master graph.
         this._musicSrc = null
         this._musicGain = null
+      }
+      // Manual loop, robust against browsers that misreport an mp3's duration:
+      // track the real duration via `timeupdate`, and on `ended` only rewind to
+      // 0 when we're actually near the end. If `ended` fires early (a wrong,
+      // too-short duration), resume from the current position instead of cutting
+      // the song — so the full track always plays before it loops.
+      this._musicDur = 0
+      this._onMusicTimeUpdate = () => {
+        const d = this._musicEl && this._musicEl.duration
+        if (typeof d === 'number' && isFinite(d) && d > 0 && d > this._musicDur) this._musicDur = d
+      }
+      this._onMusicEnded = () => {
+        if (!this._musicOn || !this._musicEl) return
+        try {
+          const t = this._musicEl.currentTime || 0
+          const dur = this._musicDur
+          // Near the true end (or duration unknown): loop from the start.
+          // Otherwise `ended` fired early — resume where we stopped.
+          if (dur > 0 && t < dur - 1.5) this._musicEl.currentTime = t
+          else this._musicEl.currentTime = 0
+          this._musicEl.play().catch(() => {})
+        } catch (err) {}
+      }
+      if (typeof el.addEventListener === 'function') {
+        el.addEventListener('ended', this._onMusicEnded)
+        el.addEventListener('timeupdate', this._onMusicTimeUpdate)
       }
     }
     if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
@@ -682,19 +725,36 @@ export class AudioBank {
     if (this._musicEl) { try { this._musicEl.pause() } catch (err) {} }
   }
 
-  /** Set the music bus gain (0..1); mute overrides it to 0. */
+  /** Set the music bus gain (0..1); either mute flag overrides it to 0. */
   setMusicVolume(v) {
-    if (this._musicGain) this._musicGain.gain.value = this.muted ? 0 : Math.max(0, Math.min(1, v))
+    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : Math.max(0, Math.min(1, v))
   }
+
+  /** Mute/unmute ONLY the soundtrack (SFX stay audible). Independent of the
+   *  global mute: either flag silences the music bus. */
+  setMusicMuted(on) {
+    this._musicMuted = !!on
+    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : 0.5
+  }
+
+  toggleMusicMuted() { this.setMusicMuted(!this._musicMuted) }
 
   dispose() {
     this.stopAmbient()
     this.stopMusic()
-    if (this._musicEl) { try { this._musicEl.src = '' } catch (err) {} }
+    if (this._musicEl) {
+      if (this._onMusicEnded) { try { this._musicEl.removeEventListener('ended', this._onMusicEnded) } catch (err) {} }
+      if (this._onMusicTimeUpdate) { try { this._musicEl.removeEventListener('timeupdate', this._onMusicTimeUpdate) } catch (err) {} }
+      try { this._musicEl.src = '' } catch (err) {}
+    }
     this._musicEl = null
     this._musicSrc = null
     this._musicGain = null
     this._musicUrl = null
+    this._onMusicEnded = null
+    this._onMusicTimeUpdate = null
+    this._musicDur = 0
+    this._musicMuted = false
     this._groanMap = new Map()
     this._groanVoices = []
     this._groanClock = 0

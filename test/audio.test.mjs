@@ -132,12 +132,21 @@ function bankWithFakeCtx() {
   // walker "urgh" growl routes through band-pass formant filters.
   const bank = bankWithFakeCtx()
   let b0 = bank.ctx._created.length
+  const shotgunStart = b0
   bank.shoot()
   const shotgunNodes = bank.ctx._created.length - b0
   b0 = bank.ctx._created.length
   bank.pistolShot()
   const pistolNodes = bank.ctx._created.length - b0
   assert.ok(shotgunNodes > pistolNodes, `shotgun (${shotgunNodes}) heavier than pistol (${pistolNodes})`)
+  // The big-bore blast stacks 5 layers and includes a deep sub-bass sine (<=120 Hz)
+  // for chest-thump; the crack gain is pushed loud (>=0.85).
+  const shotgunNodes2 = bank.ctx._created.slice(shotgunStart, shotgunStart + shotgunNodes)
+  const oscs = shotgunNodes2.filter(n => n.name === 'osc')
+  assert.ok(oscs.length >= 2, `shotgun has >=2 sine layers (${oscs.length})`)
+  assert.ok(oscs.some(o => o.frequency.value <= 120), 'shotgun has a sub-bass layer <=120 Hz')
+  // A low sub-bass tone layer ramps down to a very low end (chest-thump decay).
+  assert.ok(oscs.some(o => o.frequency.value <= 120 && o._children.length >= 1), 'sub-bass layer wired to a gain')
   b0 = bank.ctx._created.length
   bank.groan('walker', 2)
   const bands = bank.ctx._created.slice(b0).filter(n => n.name === 'filter' && n.type === 'bandpass')
@@ -514,7 +523,9 @@ function bankWithFakeCtx() {
 {
   // Soundtrack: headless playMusic is a no-op (no Audio element); with a stubbed
   // Audio + createMediaElementSource it wires musicSrc -> musicGain -> master,
-  // loops, and obeys mute. dispose stops + clears it.
+  // uses manual looping (loop=false + an `ended` -> seek(0)+play handler so the
+  // whole track plays before restarting), and obeys both the global mute and the
+  // dedicated music-mute flag. dispose stops + clears it.
   const bank = new AudioBank()
   assert.equal(bank._musicEl, null, 'headless: no music element')
   bank.playMusic('x.mp3') // must not throw headless
@@ -524,25 +535,76 @@ function bankWithFakeCtx() {
   const bank2 = bankWithFakeCtx()
   const ctxNode = (name) => ({ name, _children: [], connect(t) { this._children.push(t) } })
   bank2.ctx.createMediaElementSource = function (el) { const n = ctxNode('media'); this._created.push(n); n._el = el; return n }
-  globalThis.Audio = function () { this.loop = false; this.preload = ''; this.src = ''; this.play = () => Promise.resolve(); this.pause = () => { this.paused = true } }
+  let endedHandlers = []
+  let timeHandlers = []
+  globalThis.Audio = function () {
+    this.loop = true // constructor default; playMusic must override to false
+    this.preload = ''; this.src = ''; this.currentTime = 0; this.paused = false; this.duration = NaN
+    this.play = () => { this.paused = false; return Promise.resolve() }
+    this.pause = () => { this.paused = true }
+    this.addEventListener = (ev, fn) => {
+      if (ev === 'ended') endedHandlers.push(fn)
+      else if (ev === 'timeupdate') timeHandlers.push(fn)
+    }
+    this.removeEventListener = (ev, fn) => {
+      if (ev === 'ended') endedHandlers = endedHandlers.filter(h => h !== fn)
+      else if (ev === 'timeupdate') timeHandlers = timeHandlers.filter(h => h !== fn)
+    }
+  }
   let before = bank2.ctx._created.length
   bank2.playMusic('track.mp3')
   assert.ok(bank2._musicEl, 'music element created')
-  assert.equal(bank2._musicEl.loop, true, 'track loops')
+  assert.equal(bank2._musicEl.loop, false, 'manual loop: element loop flag is off')
   assert.equal(bank2._musicEl.src, 'track.mp3')
+  assert.equal(endedHandlers.length, 1, 'an ended handler is registered')
+  assert.equal(timeHandlers.length, 1, 'a timeupdate handler is registered')
   // +2 nodes: media source + music gain.
   assert.equal(bank2.ctx._created.length - before, 2, 'music graph is src + gain')
   assert.ok(bank2._musicGain._children.includes(bank2.master), 'music gain wired to master')
+  // timeupdate records the real duration once known.
+  bank2._musicEl.duration = 60
+  bank2._musicEl.currentTime = 12
+  timeHandlers[0]()
+  assert.equal(bank2._musicDur, 60, 'timeupdate records the true duration')
+  // Manual loop: firing `ended` near the true end rewinds to 0 and replays.
+  bank2._musicEl.currentTime = 59
+  endedHandlers[0]()
+  assert.equal(bank2._musicEl.currentTime, 0, 'ended near the end rewinds to the start')
+  assert.equal(bank2._musicEl.paused, false, 'ended restarts playback')
+  // A premature `ended` (wrong duration) resumes from the current position
+  // instead of cutting the song back to 0.
+  bank2._musicEl.currentTime = 30
+  endedHandlers[0]()
+  assert.equal(bank2._musicEl.currentTime, 30, 'early ended resumes instead of restarting')
+  // After stopMusic, an ended event must NOT restart (music is off).
+  bank2.stopMusic()
+  bank2._musicEl.currentTime = 40
+  endedHandlers[0]()
+  assert.equal(bank2._musicEl.currentTime, 40, 'ended is ignored once stopped')
+  bank2.playMusic('track.mp3') // re-arm
+  // Global mute silences the music bus.
   bank2.setMuted(true)
-  assert.equal(bank2._musicGain.gain.value, 0, 'mute silences music')
+  assert.equal(bank2._musicGain.gain.value, 0, 'global mute silences music')
   bank2.setMuted(false)
   assert.equal(bank2._musicGain.gain.value, 0.5, 'unmute restores music')
+  // Dedicated music-mute silences ONLY the music, leaving the master (SFX) intact.
+  bank2.toggleMusicMuted()
+  assert.equal(bank2._musicMuted, true, 'music mute toggled on')
+  assert.equal(bank2._musicGain.gain.value, 0, 'music mute silences the music bus')
+  assert.equal(bank2.master.gain.value, 0.6, 'SFX master unaffected by music mute')
+  bank2.toggleMusicMuted()
+  assert.equal(bank2._musicMuted, false, 'music mute toggled off')
+  assert.equal(bank2._musicGain.gain.value, 0.5, 'music restored')
   bank2.setMusicVolume(0.2)
   assert.equal(bank2._musicGain.gain.value, 0.2, 'setMusicVolume applies')
+  bank2.setMusicMuted(true)
+  assert.equal(bank2._musicGain.gain.value, 0, 'music mute overrides volume')
   bank2.stopMusic()
   assert.equal(bank2._musicOn, false)
   bank2.dispose()
   assert.equal(bank2._musicEl, null, 'dispose clears music element')
+  assert.equal(endedHandlers.length, 0, 'dispose removes the ended listener')
+  assert.equal(timeHandlers.length, 0, 'dispose removes the timeupdate listener')
   delete globalThis.Audio
 }
 

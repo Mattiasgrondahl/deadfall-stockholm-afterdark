@@ -30,7 +30,7 @@ export class Input {
     this.down = {}                          // e.code -> true while physically held
     this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false, jump: false }
     this._listeners = null                  // [target, event, handler] triples
-    this._events = { lock: [], unlock: [], mute: [] }
+    this._events = { lock: [], unlock: [], mute: [], musicMute: [] }
     this._wasLocked = false
     this._lastX = 0
     this._lastY = 0
@@ -136,6 +136,7 @@ export class Input {
         if (code === 'KeyR') { this.inputState.reload = true; this._edgeHeld.reload = true }
         else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = true; this._edgeHeld.pause = true }
         else if (code === 'KeyM') this._emit('mute')
+        else if (code === 'KeyN') this._emit('musicMute')
         else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
         else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }
         else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true }
