@@ -11,6 +11,7 @@
     "preview": "vite preview --host",
     "test": "node --test",
     "verify": "node tools/verify-game.mjs",
+    "server": "node server/server.js",
     "graft": "graft",
     "graft-map": "graft map",
     "graft-build": "graft build .",
@@ -19,7 +20,8 @@
     "zg-index": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg index --embedding local/potion-code-16m-v2 ."
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@nanonets/graft": "^0.18.0",

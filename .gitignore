@@ -40,3 +40,8 @@ docs/spec-*.md
 # zvec-grep local index + embedding model cache — regenerable, not committed
 .zvec-grep/
 .zvec-home/
+
+# local ML checkpoints + scratch artifacts (regenerable / huge, not committed)
+/ckpts/
+/outputs/
+/.baseline-head/

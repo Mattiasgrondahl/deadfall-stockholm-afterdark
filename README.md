@@ -194,3 +194,26 @@ and regenerable; they are never part of the game build.
   game-over → restart) and asserts there are no console or page errors; it
   needs a Playwright Chromium (`node node_modules/playwright-core/cli.js
   install chromium`).
+
+## Multiplayer (server-authoritative co-op)
+
+Up to 8 players share one room over WebSockets (see `MULTIPLAYER_PLAN.md`).
+The server owns the simulation (20 Hz tick) and broadcasts 10 Hz snapshots;
+clients predict their own movement and interpolate everyone else.
+
+- **Run the server:** `npm run server` (defaults to `PORT=8080`). It serves the
+  built `dist/` over HTTP **and** the WebSocket on the same origin at `/ws`
+  (single-origin hosting). Build first with `npm run build`, or point it at a
+  dev build.
+- **Join a room:** a client opens a `WebSocket` to `ws://<host>:8080/ws`, sends
+  a `hello` frame, receives a `welcome` with its assigned `pid`, then streams
+  `input` frames and consumes `snap` frames. `src/net/NetClient.js` implements
+  this; `src/net/protocol.js` defines the wire schemas.
+- **Headless netcode tests:** `test/server-room.test.mjs`,
+  `test/net-client.test.mjs`, `test/match-flow.test.mjs`, and
+  `test/remote-player.test.mjs` (8-player mesh budget) run the whole server +
+  client + match-flow path without a browser.
+- **Hosting:** GitHub Pages cannot run a persistent WebSocket server, so the
+  socket server needs an always-on host (a small VPS, Railway/Render/Fly, or a
+  home machine with a public port). The static game can stay on Pages while the
+  server runs elsewhere — the client just needs the server URL.

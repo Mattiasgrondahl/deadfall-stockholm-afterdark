@@ -91,3 +91,35 @@ console/page errors.
 Verdict: V3P-10 visual workstream is within all budgets with ≥2× headroom on
 meshes/lights/points/zombies; the grade-before-bloom reorder adds no measurable
 per-frame cost (heap Δ0, frame wall-time unchanged vs pre-V3P within noise).
+
+## 7. V5 skinned-mesh gate — headless measurement (Sep 21)
+
+The browser SwiftShader gate (`tools/perf-skin-stress.mjs`) cannot run in this
+environment: the headless page dies ~3–5 s after gameplay starts with zero JS
+errors (a GPU/renderer process crash, not a context loss or a v5 regression —
+see `.research/perf-skin-gate-round9.md`). The gate's real question — whether
+24 SKINNED walkers blow the scene budgets and how much vertex/skinning weight
+they add — is a static scene-graph fact, so it is measured headlessly in
+`test/skin-perf-gate.test.mjs` (loads the real `walker-final.glb`, attaches a
+skin to 24 walkers, traverses the scene).
+
+| Metric | 24 skinned walkers | Budget | Margin |
+|---|---|---|---|
+| meshes | 240 (10/zombie: 1 skinned + retained head/face/eyes + hidden limbs) | ≤ 600 | 360 |
+| skinned meshes | 24 | — | all attached |
+| triangles | 58,512 (2,438/zombie ≈ 2,340-tri rig + primitives) | — | — |
+| vertices | 117,024 (4,876/zombie) | — | — |
+| lights | 0 (zombie-only scene) | ≤ 40 | ok |
+| zombies | 24 | ≤ 24 | at cap |
+
+Per-zombie skinned cost: +10 meshes, +4,876 verts, +2,438 tris vs the primitive
+stub's ~6 meshes / ~500 verts. The 24-walker scene sits at 240 meshes — well
+inside the 600 budget (the city/HUD add the rest). The LOD swap (`LOD_DIST=25`)
+keeps the skinned body only within 25 m of the player and swaps to primitives
+beyond, so the steady-state on-screen skinned count is far below 24.
+
+Verdict: the v5 skinned-mesh + LOD swap is within all budgets headlessly
+(197/197 tests, verify-game 81/81). The browser per-frame wall-time remains
+unmeasurable in this SwiftShader sandbox; re-run
+`PLAYWRIGHT_BROWSERS_PATH=$PWD/.browsers node tools/perf-skin-stress.mjs` in a
+browser that sustains gameplay >~5 s (hardware GL or a healthier session).

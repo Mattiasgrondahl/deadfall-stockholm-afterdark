@@ -204,6 +204,127 @@ function loadOutfitTextures() {
 
 export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
 
+// --- Browser-only skinned-mesh layer (v5 upgrade) ---------------------------
+// When a rigged+animated GLB is available (browser only), a zombie's primitive
+// body is swapped for a SkinnedMesh driven by an AnimationMixer. Headless Node
+// (and any zombie whose asset has not loaded yet) keeps the primitive stub, so
+// the deterministic movement/hitbox tests are unaffected.
+//
+// LOD: skinned within LOD_DIST of the player (camera proxy), primitive stub
+// beyond. Both bodies always exist; only visibility toggles, so no allocation
+// churn and the primitive fallback is instant. The player stands in for the
+// camera because the game is first-person and the camera tracks the player.
+const LOD_DIST = 25
+//
+// Per-state clip mapping (clip names come from the retargeted rig, e.g. the
+// Mixamo/RobotExpressive humanoid): idle->Idle, walk->Walking, run->Running,
+// attack->Punch, hurt->No, death->Death. A missing clip falls back to Idle, so
+// a rig without every clip still animates.
+const SKIN_CLIPS = { idle: 'Idle', walk: 'Walking', run: 'Running', attack: 'Punch', hurt: 'No', death: 'Death' }
+// Per-type tint applied to the shared baked body material so the types read
+// distinctly (the bake merged torso/legs into one material, so a per-type color
+// multiply is the variant mechanism that mirrors MAT2). The brute is also
+// scaled up ~1.4x for its boss silhouette.
+const SKIN_TINT = {
+  walker: 0xb9c4ad, shambler: 0xc4b39c, screamer: 0xd89aa6, brute: 0xa8b39a
+}
+// Per-type asset path under assets/zombies/. A type without a file keeps the
+// primitive body (the loader warns and leaves the stub in place).
+const SKIN_ASSET = { walker: 'walker-final.glb', shambler: 'walker-final.glb', screamer: 'walker-final.glb', brute: 'walker-final.glb' }
+// Shared per-type loaded rig (geometry + clips + skeleton template). One GLB
+// parse per type is shared by every zombie of that type; each zombie clones the
+// skinned mesh and gets its own mixer (cloning a SkinnedMesh shares geometry,
+// and Skeleton.clone gives an independent pose).
+const skinCache = {} // type -> { scene, animations } | 'loading' | 'missing'
+let skinLoader = null
+// v5 skinned-rig swap is DISABLED: the walker-final.glb rig is corrupted (all
+// bones collapsed to the origin and skin weights mis-assigned to the wrong
+// bones — the Head bone drives the torso, the arms are weighted to finger
+// bones). That made the body render small, the face sit mid-body, and the arms
+// disappear. Until the rig is re-authored from source, the full-size primitive
+// body (torso/head/arms/legs + face) is the visual. Flip this to true to
+// re-enable the skinned path.
+const USE_SKINNED_RIG = false
+
+function loadSkin(type, onReady) {
+  if (!USE_SKINNED_RIG) return // primitive body is the visual; skip the rig
+  if (typeof document === 'undefined') return // headless: never load
+  const entry = skinCache[type]
+  if (entry && entry !== 'loading') {
+    if (entry !== 'missing') onReady(entry)
+    return
+  }
+  if (entry === 'loading') {
+    // A load is already in flight for this type; poll cheaply on the next tick
+    // via the microtask queue once it resolves (the shared scene is set below).
+    const wait = () => {
+      const e = skinCache[type]
+      if (e && e !== 'loading') { if (e !== 'missing') onReady(e); return }
+      Promise.resolve().then(wait)
+    }
+    wait()
+    return
+  }
+  skinCache[type] = 'loading'
+  if (!skinLoader) {
+    // GLTFLoader lives under three's examples/jsm; import it lazily so the
+    // headless bundle never pulls it in.
+    import('three/examples/jsm/loaders/GLTFLoader.js').then((m) => {
+      skinLoader = new m.GLTFLoader()
+      start()
+    }).catch(() => { skinCache[type] = 'missing' })
+  } else {
+    start()
+  }
+  function start() {
+    const url = ASSET_BASE + 'assets/zombies/' + SKIN_ASSET[type]
+    skinLoader.load(url, (gltf) => {
+      const rec = { scene: gltf.scene, animations: gltf.animations }
+      skinCache[type] = rec
+      onReady(rec)
+    }, undefined, () => {
+      skinCache[type] = 'missing'
+      console.warn(`skinned mesh failed to load; keeping primitive body (${type})`)
+    })
+  }
+}
+
+/** Clone a loaded rig scene into a per-zombie skinned mesh + mixer. Cloning the
+ *  SkinnedMesh shares geometry but gives each instance an independent Skeleton
+ *  (so one zombie's animation never poses another's). Returns the skinned mesh,
+ *  the mixer, and a name->clip map, or null if no skinned mesh was found.
+ *
+ *  three.js `Object3D.clone(true)` copies the SkinnedMesh but NOT its Skeleton:
+ *  the clone keeps a reference to the ORIGINAL armature's bones, which live in
+ *  the (unrendered) source scene. Binding to those leaves the body unposed and
+ *  unrendered (the "no zombie body" bug). We rebuild the skeleton from the
+ *  CLONED bones (matched by name) so every instance poses independently and
+ *  its bones are actually in the rendered tree. */
+function buildSkin(rec) {
+  const root = rec.scene.clone(true)
+  let skinned = null
+  root.traverse((o) => { if (o.isSkinnedMesh && !skinned) skinned = o })
+  if (!skinned) return null
+  // Map each cloned bone by name so we can rebind the cloned mesh to the
+  // cloned armature instead of the shared source skeleton.
+  const boneMap = {}
+  root.traverse((o) => { if (o.isBone && !(o.name in boneMap)) boneMap[o.name] = o })
+  const srcBones = skinned.skeleton.bones
+  const bones = srcBones.map((b) => boneMap[b.name]).filter(Boolean)
+  if (bones.length === srcBones.length && bones.length > 0) {
+    const skeleton = new THREE.Skeleton(bones)
+    skinned.skeleton = skeleton
+    skinned.bind(skeleton, root.matrixWorld)
+  }
+  // Skinned meshes are deformed past their bind-pose bounding sphere, so the
+  // default frustum culling can drop the whole body when it moves/animates.
+  skinned.frustumCulled = false
+  const mixer = new THREE.AnimationMixer(root)
+  const clips = {}
+  for (const c of rec.animations) clips[c.name] = c
+  return { root, skinned, mixer, clips }
+}
+
 const ATTACK_RANGE = 1.3
 const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
 const SEPARATION_DIST = 0.9
@@ -376,11 +497,178 @@ export class Zombie {
     this._flashT = 0
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
+    // v5: try to swap in a rigged skinned mesh (browser-only, async). Until it
+    // arrives the primitive body above is the visual; headless never swaps.
+    this._skin = null // { root, skinned, mixer, clips, actions, current }
+    this._skinState = 'idle'
+    loadSkin(type, (rec) => this._attachSkin(rec))
+  }
+
+  /** Swap the primitive body for a cloned skinned mesh + mixer once the rigged
+   *  GLB loads. Hides the primitives (kept for hit-flash/death material swaps
+   *  and the face/eyes) and parents the face + eyes to the rig's head bone if
+   *  present. No-op if a skin is already attached or none was found. */
+  _attachSkin(rec) {
+    if (this._skin || this.isDead) return
+    const built = buildSkin(rec)
+    if (!built) return
+    const { root, skinned, mixer, clips } = built
+    // The rig GLB is authored upright at ~1.8 m; scale to this type's silhouette
+    // height so the skinned body matches the primitive anchors. The brute gets a
+    // 1.4x boss silhouette on top of its type height.
+    const h = this._skinHeight()
+    const dim = new THREE.Box3().setFromObject(skinned).getSize(new THREE.Vector3())
+    const bb = new THREE.Box3().setFromObject(skinned)
+    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? 1.4 : 1) : 1
+    root.scale.setScalar(scale)
+    // The rig's origin sits at its hips/center, so its bind-pose feet are at a
+    // negative local y (≈ -0.88 m). The group origin is the FEET (y 0), so
+    // without a lift the body hangs half-buried with its head-top far below the
+    // head primitive (the "body too small / misaligned with the head" bug).
+    // Lift the root so the scaled feet land on y 0; the scaled top then reaches
+    // the target height, aligning the skinned head with the head primitive.
+    root.position.set(0, -bb.min.y * scale, 0)
+    // Per-instance material clone tinted to the type so shared-rig zombies of
+    // different types read distinctly. Cloning keeps the baked map but gives this
+    // zombie its own color (and lets hit-flash / death swap it safely).
+    const srcMat = Array.isArray(skinned.material) ? skinned.material[0] : skinned.material
+    const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
+    bodyMat.color.setHex(SKIN_TINT[this.type])
+    skinned.material = bodyMat
+    this._skinRestMat = bodyMat
+    // The rig GLB already contains its own head (the skinned mesh spans up to
+    // the head crown), so keeping the primitive head box visible produced a
+    // DOUBLE head (the rig head + the primitive box) and made the body read
+    // short because the primitive box floated above the rig head. Re-parent the
+    // face portrait + eyes onto the rig's Head bone so they ride the animated
+    // head, then hide the primitive head entirely.
+    let headBone = null
+    root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !headBone) headBone = o })
+    if (headBone) {
+      // Move the face + eyes off the primitive head onto the rig head bone.
+      // The face sat at local z 0.155 on the primitive head; on the bone we
+      // place it just in front of the rig head's face plane.
+      if (this._face && this._face.parent) this._face.parent.remove(this._face)
+      // Remember both placements so the LOD swap can move them back.
+      this._faceOnBone = new THREE.Vector3(0, 0.02, 0.13)
+      this._faceOnHead = new THREE.Vector3(0, 0, 0.155)
+      this._eyeOnBone = new THREE.Vector3(0.07, 0.05, 0.12)
+      this._eyeOnHead = new THREE.Vector3(0.075, 0.03, 0.14)
+      if (this._face) {
+        this._face.position.copy(this._faceOnBone)
+        headBone.add(this._face)
+      }
+      for (const eye of this._eyes || []) {
+        if (eye.parent) eye.parent.remove(eye)
+        eye.userData.side = eye.position.x < 0 ? -1 : 1
+        eye.position.set(this._eyeOnBone.x * eye.userData.side, this._eyeOnBone.y, this._eyeOnBone.z)
+        headBone.add(eye)
+      }
+      this._headBone = headBone
+    }
+    // Hide the primitive limbs AND the primitive head (the rig head shows now).
+    this._parts[0].visible = false // torso
+    this._parts[2].visible = false // armL
+    this._parts[3].visible = false // armR
+    this._parts[4].visible = false // legL
+    this._parts[5].visible = false // legR
+    this._parts[1].visible = false // head (face/eyes re-parented to the rig)
+    this._headVisible = false
+    this._lodSkinned = true
+    // The skinned root is a CHILD of this.group, which already sits at the feet
+    // position (group.position = this.position). The root therefore stays at the
+    // group's LOCAL x/z origin (0) — copying the world position would
+    // double-offset the body away from the head (the "floating head, no body"
+    // bug). The y-lift set above is preserved (do NOT reset it here).
+    this.group.add(root)
+    // Build one action per mapped state, falling back to Idle for missing clips.
+    const actions = {}
+    for (const state of Object.keys(SKIN_CLIPS)) {
+      const clip = clips[SKIN_CLIPS[state]] || clips.Idle
+      if (!clip) continue
+      const a = mixer.clipAction(clip)
+      a.enabled = true
+      actions[state] = a
+    }
+    this._skin = { root, skinned, mixer, clips, actions, current: null }
+    this._setSkinState('idle')
+    this._applyLOD(this.position, null)
+  }
+
+  /** LOD: show the skinned body within LOD_DIST of the player (camera proxy)
+   *  and the primitive stub beyond. Toggles visibility only — both bodies
+   *  always exist, so swapping is allocation-free and instant. The head
+   *  primitive (which carries the face + eyes) stays visible when LOD'd out so
+   *  the face still reads at distance. No-op when no skin is attached. */
+  _applyLOD(playerPos) {
+    if (!this._skin) return
+    let near = true
+    if (playerPos) {
+      const dx = playerPos.x - this.position.x
+      const dz = playerPos.z - this.position.z
+      near = (dx * dx + dz * dz) <= LOD_DIST * LOD_DIST
+    }
+    if (near === this._lodSkinned) return
+    this._lodSkinned = near
+    this._skin.root.visible = near
+    // Limbs: visible only when LOD'd out (primitive body).
+    this._parts[0].visible = !near // torso
+    this._parts[2].visible = !near // armL
+    this._parts[3].visible = !near // armR
+    this._parts[4].visible = !near // legL
+    this._parts[5].visible = !near // legR
+    // The face + eyes ride the rig's Head bone when skinned (near) and move
+    // back onto the primitive head when LOD'd out (far), so the face reads at
+    // any distance and there is never a double head.
+    const host = near ? this._headBone : this._parts[1]
+    if (host) {
+      if (this._face && this._face.parent !== host) {
+        if (this._face.parent) this._face.parent.remove(this._face)
+        this._face.position.copy(near ? this._faceOnBone : this._faceOnHead)
+        host.add(this._face)
+      }
+      for (const eye of this._eyes || []) {
+        if (eye.parent !== host) {
+          if (eye.parent) eye.parent.remove(eye)
+          eye.position.copy(near ? this._eyeOnBone : this._eyeOnHead)
+          eye.position.x = Math.abs(eye.position.x) * (eye.userData.side || 1)
+          host.add(eye)
+        }
+      }
+    }
+    this._parts[1].visible = !near // primitive head only when LOD'd out
+  }
+
+  /** Target standing height for the skinned body (matches the primitive
+   *  silhouette so the head/hitbox anchors line up). */
+  _skinHeight() {
+    const pose = POSE2[this.type]
+    // Primitive head center sits at y 1.8 * head scale; approximate the visible
+    // top as 1.8 + half head, and feet at 0. Keep it simple and deterministic.
+    return 1.8 * (pose.headS ? pose.headS[1] : 1)
+  }
+
+  /** Cross-fade the mixer to the action for `state` (idle/walk/run/attack/hurt/
+   *  death). Falls back to idle when the state has no action. */
+  _setSkinState(state) {
+    if (!this._skin) return
+    const next = this._skin.actions[state] || this._skin.actions.idle
+    if (!next || this._skin.current === next) return
+    next.reset()
+    next.setEffectiveWeight(1)
+    next.play()
+    if (this._skin.current) next.crossFadeFrom(this._skin.current, 0.2, false)
+    this._skin.current = next
+    this._skinState = state
   }
 
   /** State update. No randomness. `audio` may be null (headless). */
   update(dt, player, zombies, collision, audio) {
+    // Advance the skinned-mixer (browser-only) on every frame, including dead /
+    // stagger frames, so a death animation plays out and clips stay in sync.
+    if (this._skin) this._skin.mixer.update(dt)
     if (this.isDead) {
+      this._setSkinState('death')
       this.deathTimer += dt
       this.position.y = -Math.min(this.deathTimer * 0.35, 0.8) // sink
       this.group.rotation.x = -Math.min(this.deathTimer / 1.5, 1) * 1.2 // fall over
@@ -399,6 +687,7 @@ export class Zombie {
       this._flashT -= dt
       if (this._flashT <= 0) {
         for (let i = 0; i < this._parts.length; i++) this._parts[i].material = this._restMats[i]
+        if (this._skin) this._skin.skinned.material = this._skinRestMat
       }
     }
     if (!player || player.isDead) return
@@ -407,6 +696,7 @@ export class Zombie {
     // the duration. Displacement is smooth and deterministic (total ≈
     // KB_STRENGTH * KB_TIME / 2). Limbs drop to rest pose while staggered.
     if (this._kbT > 0) {
+      this._setSkinState('hurt')
       this._kbT = Math.max(0, this._kbT - dt)
       const f = this._kbT / KB_TIME
       this.position.x += this._kbX * f * dt
@@ -425,6 +715,7 @@ export class Zombie {
     const dz = player.position.z - this.position.z
     const dist = Math.hypot(dx, dz)
     this.group.rotation.y = Math.atan2(dx, dz) // face player
+    this._applyLOD(player.position) // skinned near, primitive stub beyond LOD_DIST
     // Boss charge: inside CHARGE_RANGE (but outside melee) the brute commits to
     // a straight lunge at the player for CHARGE_TIME seconds. The lunge uses the
     // committed direction (no separation, no slide logic) so it reads as a
@@ -436,6 +727,7 @@ export class Zombie {
       this._chargeZ = dz / dist
     }
     if (this._chargeT > 0) {
+      this._setSkinState('run')
       this._chargeT = Math.max(0, this._chargeT - dt)
       const stepLen = CHARGE_SPEED * dt
       this.position.x += this._chargeX * stepLen
@@ -455,6 +747,7 @@ export class Zombie {
     // Melee only lands when the player is within horizontal range AND not
     // high above the torso (a mid-jump player is out of arm reach).
     if (dist <= ATTACK_RANGE && Math.abs(player.position.y - 1.2) <= AIR_CLEAR) {
+      this._setSkinState('attack')
       this._attackT += dt
       if (this._attackT >= TABLE[this.type].cooldown) {
         this._attackT = 0
@@ -555,6 +848,10 @@ export class Zombie {
       }
     }
     this._time += dt
+    // Skinned body: chase moves the legs, so pick walk (or run for the fast
+    // screamer / lunge). The primitive limb code below still runs but its
+    // targets are hidden once a skin is attached, so it stays harmless.
+    this._setSkinState(this.speed >= 2 ? 'run' : 'walk')
     // Walk cycle, synchronized with the bob below (same frequency 6): arms
     // swing around the per-type rest pose, legs around 0, exactly opposite
     // phase per pair. Deterministic: _phase is the fixed-seed LCG value.
@@ -601,9 +898,11 @@ export class Zombie {
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
       for (const e of this._eyes) e.material = DEADEYEMAT
       this._face.material = DEADMAT
+      if (this._skin) this._skin.skinned.material = DEADMAT
     } else {
       this._flashT = 0.15
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
+      if (this._skin) this._skin.skinned.material = HITMAT
     }
   }
 
@@ -620,5 +919,13 @@ export class Zombie {
    *  shared across all zombies — never dispose them here. */
   dispose() {
     this.scene.remove(this.group)
+    // Release the per-instance mixer (stops its actions). The cloned skinned
+    // mesh shares geometry with the shared loaded rig, so only the mixer and
+    // this instance's cloned skeleton need cleanup — never the shared rig.
+    if (this._skin) {
+      this._skin.mixer.stopAllAction()
+      this._skin.mixer.uncacheRoot(this._skin.mixer.getRoot())
+      this._skin = null
+    }
   }
 }

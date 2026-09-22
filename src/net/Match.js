@@ -28,6 +28,12 @@ import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
 
 export const TICK = 0.05 // 20 Hz server tick (plan §5.1)
 
+// Match-flow defaults (plan §12 suggested defaults, resolved):
+const RESPAWN_DELAY = 3.0 // seconds a dead player waits before respawning (§12.1)
+const DISCONNECT_GRACE = 5.0 // seconds a dropped slot is held before freeing (§7)
+const BOSS_WAVE = 5 // WaveManager's final wave; clearing it ends the match
+const MATCH_TIME_CAP = 900 // 15 min hard cap so a stalled room still ends (§12.2)
+
 const SPAWN = { x: 0, y: 1.7, z: 12 } // same shared spawn as the single-player Game
 // Per-kill points, mirroring Score.pointsFor (walker 10, shambler 15,
 // screamer 25, brute 150, plus 50 × wave).
@@ -76,6 +82,12 @@ export class Match {
     this.score = new Map() // id -> points
     this.audio = null      // the server never renders or plays audio
 
+    // Match flow (Phase 3): respawn timers, disconnect grace, end state.
+    this._respawnAt = new Map() // id -> time the dead player respawns
+    this._ended = false
+    this._endReason = null // 'waves' | 'timecap' | 'alldead'
+    this.matchTimeCap = opts.matchTimeCap ?? MATCH_TIME_CAP
+
     this.drops = new AmmoDrops(this.scene, null)
     this.wave = new WaveManager(this.scene, this.spawnPoints, this.collision, null, {
       onWaveStart: (w) => this.events.push({ k: 'waveStart', wave: w }),
@@ -120,7 +132,12 @@ export class Match {
       k: 'decapitate', victim: zz._matchId, by: id,
       dir: dir ? { x: dir.x, z: dir.z } : null
     })
-    player.setOnDeath(() => this.events.push({ k: 'death', victim: id, by: null }))
+    player.setOnDeath(() => {
+      this.events.push({ k: 'death', victim: id, by: null })
+      // Respawn-on-delay (plan §12.1 default): schedule a respawn unless the
+      // match already ended.
+      if (!this._ended) this._respawnAt.set(id, this.time + RESPAWN_DELAY)
+    })
     // Player-hit feedback hook (Game wires the HUD to it; the match records events).
     player._onDamaged = (n, source) => this.events.push({
       k: 'hit', victim: id, dmg: n, by: source && source.type ? source.type : null
@@ -162,8 +179,64 @@ export class Match {
     this.tick++
     this.time += d
     updateWorld(d, this.ws)
+    this._flow(d)
     return d
   }
+
+  /** Match-flow pass (Phase 3): respawn dead players after the delay, detect
+   *  match end (all waves cleared / time cap / all players dead and none
+   *  pending respawn), and emit the end event once. */
+  _flow(dt) {
+    if (this._ended) return
+    // Respawn dead players whose timer has elapsed.
+    for (const [id, at] of this._respawnAt) {
+      if (this.time >= at) {
+        const slot = this.players.get(id)
+        if (slot) {
+          slot.player.reset()
+          slot.weapon.reset?.()
+          this.events.push({ k: 'respawn', victim: id })
+        }
+        this._respawnAt.delete(id)
+      }
+    }
+    // End conditions.
+    if (this.wave && this.wave.wave >= BOSS_WAVE && this.wave.remaining === 0 && this.zombies.filter((z) => !z.isDead).length === 0) {
+      this._end('waves')
+    } else if (this.time >= this.matchTimeCap) {
+      this._end('timecap')
+    } else if (this.players.size > 0 && this._allDeadNoRespawn()) {
+      this._end('alldead')
+    }
+  }
+
+  _allDeadNoRespawn() {
+    for (const slot of this.players.values()) {
+      if (!slot.player.isDead) return false
+      if (this._respawnAt.has(slot.id)) return false // pending respawn -> not over
+    }
+    return this.players.size > 0
+  }
+
+  _end(reason) {
+    if (this._ended) return
+    this._ended = true
+    this._endReason = reason
+    this.events.push({ k: 'matchEnd', reason, scoreboard: this.scoreboard() })
+  }
+
+  /** Final per-player scoreboard (plan §7): score + kills, sorted desc. */
+  scoreboard() {
+    const rows = []
+    for (const [id, sc] of this.score) {
+      rows.push({ id, score: sc, kills: this.kills.get(id) || 0 })
+    }
+    rows.sort((a, b) => b.score - a.score)
+    return rows
+  }
+
+  get ended() { return this._ended }
+  get endReason() { return this._endReason }
 
   _onKill(z, by) {
     const key = by !== null ? by : 'unknown'

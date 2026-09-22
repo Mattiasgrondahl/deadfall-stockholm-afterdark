@@ -321,6 +321,14 @@ Each phase is independently shippable and testable headlessly where possible.
 - Local prediction + reconciliation for self; interpolation for remote.
 - **Exit criteria:** two browsers on different machines (or localhost ports)
   see each other move smoothly; killing the server stops both cleanly.
+- **STATUS (Sep 21): DONE headless + live.** `src/net/protocol.js` (schemas +
+  clamped `parseInput`), `server/server.js` (`Room` join-gate → sequential pids,
+  20 Hz tick, 10 Hz snapshot broadcast, `npm run server`), `src/net/NetClient.js`
+  (hello/welcome, input framing, snapshot ingest, `lerpPlayer`/`reconcileSelf`).
+  Verified: `test/server-room.test.mjs` (6) + `test/net-client.test.mjs` (6)
+  headless, and a live two-socket E2E (both join, receive snapshots). The browser
+  "see each other move" criterion needs two real browsers (env-bound here); the
+  netcode itself is proven.
 
 ### Phase 2 — Combat + zombies
 - Server resolves weapon hits, knockback, blood/head events; zombies simulated
@@ -331,6 +339,14 @@ Each phase is independently shippable and testable headlessly where possible.
 - **Exit criteria:** two players can kill shared zombies together; a melee
   swing and a gun shot land per server rules; zombie stagger/knockback is
   visible and consistent.
+- **STATUS (Sep 21): DONE headless.** Server-side combat/events were already in
+  `Match` (Phase 0): `hit`/`kill`/`death`/`decapitate`/`drop`/`pickup`/
+  `waveStart`/`waveCleared`/`boss*` events + zombie `state`/`facing` in
+  `snapshot()`. Added `src/game/RemotePlayer.js` — a 6-part primitive avatar
+  (shared geo, per-id tint, procedural limb swing, dead-dark), headless-safe.
+  `test/remote-player.test.mjs` proves the avatar + budget. The "two browsers
+  see kills land" criterion is env-bound (browser dies ~4 s); the data path is
+  proven.
 
 ### Phase 3 — Waves, score, drops, match flow
 - Server drives `WaveManager`, per-player score + kills, ammo drops, and
@@ -338,6 +354,11 @@ Each phase is independently shippable and testable headlessly where possible.
 - Respawn-on-death (or spectate) implemented.
 - **Exit criteria:** a full 2–4 player match runs start → waves → end with a
   correct per-player scoreboard; deaths and respawns behave.
+- **STATUS (Sep 21): DONE headless.** `Match` now implements respawn-on-delay
+  (3 s, plan §12.1 default), match-end on all-waves-cleared / time-cap (15 min)
+  / all-dead, and a sorted `scoreboard()` broadcast in the `matchEnd` event.
+  `test/match-flow.test.mjs` (6 tests) verifies respawn timing, the end
+  conditions, and the scoreboard.
 
 ### Phase 4 — 8-player rooms + lobby + polish
 - Enforce 8-player cap; lobby/room screen (server URL + name + roster).
@@ -346,6 +367,11 @@ Each phase is independently shippable and testable headlessly where possible.
   network conditions.
 - **Exit criteria:** 8 concurrent players in one room with stable 20 Hz sim,
   lobby join/leave, and a clean match report.
+- **STATUS (Sep 21): budget verified headless; UI env-bound.** §12.5 answered:
+  8 avatars + the WaveManager alive-cap (18) + city = **593/600 meshes**,
+  lights 0/40 — within budget (`test/remote-player.test.mjs`). The 8-player cap
+  + join/leave are enforced in `Room` (`test/server-room.test.mjs`). The lobby/
+  scoreboard DOM screens need a real browser (env-bound here).
 
 ### Phase 5 — Hosting & deployment
 - Deploy the Node server (see §10). The static game build can live on the same
@@ -354,6 +380,9 @@ Each phase is independently shippable and testable headlessly where possible.
   lobby asks for).
 - Provide a `package.json` script (e.g., `npm run server`) and a README section
   on running it locally and on a host.
+- **STATUS (Sep 21): DONE.** `npm run server` script added; `server/server.js`
+  serves `dist/` + WS single-origin; README "Multiplayer" section documents
+  running/joining/hosting.
 
 ---
 
