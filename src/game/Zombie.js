@@ -677,6 +677,15 @@ export class Zombie {
       }
       this._headBone = headBone
     }
+    // Capture the arm bones so the death collapse can splay them on the actual
+    // skinned skeleton (the primitive limbs are hidden, so rotating them does
+    // nothing visible). Rest rotations are stored so the collapse is reversible.
+    this._armBones = []
+    root.traverse((o) => {
+      if (o.isBone && /upperarm/i.test(o.name)) {
+        this._armBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z })
+      }
+    })
     // Hide the primitive limbs AND the primitive head (the rig head shows now).
     this._parts[0].visible = false // torso
     this._parts[2].visible = false // armL
@@ -817,6 +826,19 @@ export class Zombie {
       this._legL.rotation.x = flop * 0.4
       this._legR.rotation.x = -flop * 0.3
       if (this._head) this._head.rotation.x = flop * 0.5 // head lolls back
+      // Drive the skinned skeleton's head + arms so the corpse reads dead on the
+      // visible body (the primitive limbs are hidden). Head lolls back, arms
+      // flung out, as the flop progresses.
+      if (this._headBone) this._headBone.rotation.x = flop * 0.6
+      this._deathPosed = true
+      if (this._armBones) {
+        for (let i = 0; i < this._armBones.length; i++) {
+          const ab = this._armBones[i]
+          const splay = i % 2 === 0 ? -0.7 : 0.7
+          ab.bone.rotation.x = ab.restX - flop * 0.6
+          ab.bone.rotation.z = ab.restZ + flop * splay
+        }
+      }
       this.group.position.copy(this.position)
       return
     }
@@ -855,6 +877,13 @@ export class Zombie {
     const dist = Math.hypot(dx, dz)
     this.group.rotation.y = Math.atan2(dx, dz) // face player
     this._applyLOD(player.position) // skinned near, primitive stub beyond LOD_DIST
+    // If this zombie was revived (death bones left rotated), return the skinned
+    // head/arms to rest so a live zombie never shows a collapsed corpse pose.
+    if (this._deathPosed) {
+      if (this._headBone) this._headBone.rotation.x = 0
+      if (this._armBones) for (const ab of this._armBones) { ab.bone.rotation.x = ab.restX; ab.bone.rotation.z = ab.restZ }
+      this._deathPosed = false
+    }
     // Boss charge: inside CHARGE_RANGE (but outside melee) the brute commits to
     // a straight lunge at the player for CHARGE_TIME seconds. The lunge uses the
     // committed direction (no separation, no slide logic) so it reads as a
