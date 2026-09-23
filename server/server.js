@@ -127,6 +127,7 @@ export class Room {
  */
 export function startServer(opts = {}) {
   const port = opts.port ?? Number(process.env.PORT || 8080)
+  const host = opts.host ?? process.env.HOST ?? '0.0.0.0'
   const room = new Room(opts.difficulty)
   const httpServer = http.createServer(serveStatic)
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
@@ -159,8 +160,8 @@ export function startServer(opts = {}) {
   // available in the server process (not the browser sandbox).
   const timer = setInterval(() => room.tick(TICK), TICK * 1000)
 
-  const server = httpServer.listen(port, () => {
-    console.log(`[server] http+ws on :${port}  room players cap ${MAX_PLAYERS}`)
+  const server = httpServer.listen(port, host, () => {
+    console.log(`[server] http+ws on ${host}:${port}  room players cap ${MAX_PLAYERS}`)
   })
 
   return {
