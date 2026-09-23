@@ -15,7 +15,7 @@
 // Game tears it all down cleanly.
 import { RemotePlayer } from '../game/RemotePlayer.js'
 import { NetClient } from './NetClient.js'
-import { loadSkin, buildSkin, SKIN_TINT } from '../game/Zombie.js'
+import { loadSkin, buildSkin, SKIN_TINT, buildFaceFor } from '../game/Zombie.js'
 
 // A tiny primitive zombie silhouette used as a fallback until the skinned rig
 // loads (and as the permanent body if the rig fails). Shared geometry/material
@@ -135,11 +135,13 @@ export class Multiplayer {
           if (!built) return
           const e2 = this.zombies.get(z.id)
           if (!e2 || e2.root) return
-          // Tint + emissive so the body reads under the dim scene.
+          // Tint + emissive per the zombie's type so remote bodies read as varied
+          // people (not all pale-white) and stay readable under the dim scene.
+          const tint = SKIN_TINT[z.type] || SKIN_TINT.walker
           const bodyMat = built.skinned.material ? built.skinned.material.clone() : new THREE.MeshStandardMaterial()
           bodyMat.map = null; bodyMat.emissiveMap = null
-          bodyMat.color.setHex(SKIN_TINT.walker)
-          bodyMat.emissive = new THREE.Color(SKIN_TINT.walker)
+          bodyMat.color.setHex(tint)
+          bodyMat.emissive = new THREE.Color(tint)
           bodyMat.emissiveIntensity = 0.55
           bodyMat.roughness = 0.9
           built.skinned.material = bodyMat
@@ -154,16 +156,27 @@ export class Multiplayer {
           const dim = bb.getSize(new THREE.Vector3())
           const scale = dim.y > 1e-6 ? (1.8 / dim.y) : 1
           built.root.scale.setScalar(scale)
-          // Align the visible head with the server hitbox (head center world y
-          // 1.8): measure the head bone world Y at the origin, then lift so the
-          // head lands there (fixes floating-head + missed headshots on remote
-          // bodies, same as the local Zombie path).
+          // Lift the root so the scaled FEET land on y 0 (mirrors the local
+          // Zombie path's bbox lift). Lifting by the head bone left the feet
+          // hovering above the ground.
+          built.root.position.set(0, -bb.min.y * scale, 0)
+          e2._liftY = built.root.position.y
+          // Parent a face portrait + glowing eyes onto the rig's head bone so
+          // remote bodies match local zombies (the GLB has no face). Drop them
+          // onto the visible mesh crown (the head bone sits above it).
           let hb = null
           built.root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !hb) hb = o })
-          built.root.position.set(0, 0, 0)
-          built.root.updateMatrixWorld(true)
-          const headWorldAtOrigin = hb ? hb.matrixWorld.elements[13] : 1.5
-          built.root.position.set(0, 1.8 - headWorldAtOrigin, 0)
+          if (hb) {
+            built.root.updateMatrixWorld(true)
+            const crownY = new THREE.Box3().setFromObject(built.skinned).max.y
+            const boneY = hb.matrixWorld.elements[13]
+            const dropY = crownY - boneY - 0.02
+            const ff = buildFaceFor(z.type || 'walker', dropY)
+            hb.add(ff.face)
+            for (const eye of ff.eyes) hb.add(eye)
+            e2._face = ff.face
+            e2._eyes = ff.eyes
+          }
           this.scene.add(built.root)
           e2.root = built.root
           e2.mesh = built.skinned
@@ -189,7 +202,10 @@ export class Multiplayer {
   _poseRemoteZombie(entry, z) {
     const node = entry.root || entry._box
     if (!node) return
-    if (entry.root) node.position.set(z.x, 0, z.z)
+    // Skinned root keeps its build-time lift Y (feet/head alignment); only x/z
+    // follow the snapshot. Overwriting y to 0 every snapshot fought the lift and
+    // made the body jump up and down.
+    if (entry.root) node.position.set(z.x, entry._liftY || 0, z.z)
     else node.position.set(z.x, 0.85, z.z)
     if (z.facing != null) node.rotation.y = z.facing
     node.visible = !z.dead && z.state !== 'dead'

@@ -398,6 +398,25 @@ function buildSkin(rec) {
 // authoritative) zombies the same skinned walker body as local zombies.
 export { loadSkin, buildSkin, SKIN_TINT }
 
+/** Build a face portrait + glowing eyes for a remote co-op zombie (the same
+ *  primitives the local Zombie nests under its head). Returns owned meshes the
+ *  caller parents onto the rig's head bone; materials are shared, so don't
+ *  dispose them here. `dropY` lowers them onto the visible mesh crown (the head
+ *  bone sits above the crown). */
+export function buildFaceFor(type, dropY = 0) {
+  const variant = 0
+  const face = new THREE.Mesh(FACE_GEO, FACEMAT[type] ? FACEMAT[type][variant] : FACEMAT.walker[variant])
+  face.position.set(0, dropY + 0.02, 0.13)
+  const eyes = []
+  const eMat = EYEMAT[type] || EYEMAT.walker
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(EYE, eMat)
+    eye.position.set(0.07 * side, dropY + 0.05, 0.12)
+    eyes.push(eye)
+  }
+  return { face, eyes }
+}
+
 const ATTACK_RANGE = 1.3
 /** Fraction of the attack cooldown spent in the telegraphed windup before the
  *  hit lands. Per type: screamers strike almost instantly (fast, annoying),

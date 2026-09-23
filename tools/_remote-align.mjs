@@ -36,6 +36,11 @@ const diag = await page.evaluate(() => {
     e.root.traverse((o) => { const y = o.matrixWorld.elements[13]; if (y > top) top = y; if (y < bottom) bottom = y })
     out.meshTopY = Math.round(top * 100) / 100
     out.meshBottomY = Math.round(bottom * 100) / 100
+    out.feetOnGround = Math.abs(e.root.position.y - (e._liftY || 0)) < 0.01 && Math.abs(bottom) < 0.3
+    out.hasFace = !!e._face
+    out.faceWorldY = e._face ? Math.round(e._face.matrixWorld.elements[13] * 100) / 100 : null
+    out.eyeCount = (e._eyes || []).length
+    out.color = e.mesh && e.mesh.material ? e.mesh.material.color.getHexString() : null
     out.visible = e.root.visible
   }
   // draw calls + triangles from renderer info
