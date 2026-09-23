@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Input } from './Input.js'
 import { Player } from './Player.js'
 import { CollisionWorld } from './CollisionWorld.js'
+import { Multiplayer } from '../net/Multiplayer.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
@@ -121,6 +122,10 @@ export class Game {
     this.screens = null
     this.waveManager = null
     this.collision = null
+    // Optional multiplayer controller (constructed only when opts.multiplayer
+    // is set). Owns the NetClient + remote-player/zombie proxies + scoreboard.
+    this.multiplayer = null
+    this._mpOpts = opts.multiplayer || null
     // State-transition listeners (Screens syncs its overlays through these).
     this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
@@ -160,6 +165,16 @@ export class Game {
           for (const z of this.zombies) z.dispose()
           this.zombies = []
           this.setState(GameState.GAMEOVER)
+        }
+        // Multiplayer: tear down the old controller + proxies, then rebuild so
+        // a fresh run gets a clean socket + empty remote roster.
+        if (this.multiplayer) { this.multiplayer.dispose(); this.multiplayer = null }
+        if (this._mpOpts && this.scene) {
+          this.multiplayer = new Multiplayer({
+            scene: this.scene, env: this.env,
+            name: this._mpOpts.name, room: this._mpOpts.room,
+            url: this._mpOpts.url, Socket: this._mpOpts.Socket
+          })
         }
         this.startGame()
       },
@@ -272,6 +287,16 @@ export class Game {
     this.city = new City(this.scene, this.collision, this.env)
     // WIRING:LIGHTING
     this.lighting = new Lighting(this.scene, this.city, this.renderer, this.quality)
+    // WIRING:MULTIPLAYER (Phase 5): opt-in client controller. Only built when
+    // opts.multiplayer is provided, so single-player is byte-identical. It
+    // renders remote players/zombies from snapshots and owns the scoreboard.
+    if (this._mpOpts) {
+      this.multiplayer = new Multiplayer({
+        scene: this.scene, env: this.env,
+        name: this._mpOpts.name, room: this._mpOpts.room,
+        url: this._mpOpts.url, Socket: this._mpOpts.Socket
+      })
+    }
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
     // WIRING:ENV (V3P-9): IBL environment map baked once from the game's own
@@ -572,6 +597,9 @@ export class Game {
     // player is — alive-zombie pressure vs the wave cap, blended with low
     // health, plus a bump while the boss stands. Smoothed inside AudioBank.
     if (this.audio) this.audio.setTension(this._computeTension(), dt)
+    // WIRING:MULTIPLAYER (Phase 5): advance the net layer, send local input,
+    // and re-pose remote avatars from interpolated snapshots.
+    if (this.multiplayer) this.multiplayer.update(dt, this.inputState, this.player ? this.player.yaw : 0)
     // Boss HUD: the bar tracks the live boss while it stands; it clears when
     // the brute dies (the corpse is still in the list for a few seconds).
     if (this._boss && this._boss.isDead) this._boss = null
