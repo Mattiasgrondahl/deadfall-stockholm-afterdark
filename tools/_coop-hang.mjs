@@ -33,6 +33,35 @@ try {
   ])
 } catch (e) { resp2 = 'HUNG: ' + e.message }
 console.log('responsiveness-later:', resp2)
-const state = await page.evaluate(() => ({ state: window.__game.state, mp: !!window.__game.multiplayer, connected: window.__game.multiplayer && window.__game.multiplayer.net.connected, zombies: window.__game.multiplayer ? window.__game.multiplayer.zombies.size : -1 })).catch(() => 'evaluate-failed')
+const state = await page.evaluate(() => {
+  const mp = window.__game.multiplayer
+  const out = { state: window.__game.state, mp: !!mp, connected: mp && mp.net.connected, zombies: mp ? mp.zombies.size : -1 }
+  if (mp && mp.zombies.size) {
+    const e = mp.zombies.values().next().value
+    if (e.root) {
+      e.root.updateMatrixWorld(true)
+      const mesh = e.mesh
+      let vertexTopY = null, vertexBottomY = null
+      if (mesh && mesh.geometry) {
+        mesh.geometry.computeBoundingBox()
+        const gb = mesh.geometry.boundingBox, mw = mesh.matrixWorld.elements
+        const toWorldY = (ly) => mw[1]*ly + mw[5]*ly + mw[9]*ly + mw[13]
+        vertexTopY = Math.round(toWorldY(gb.max.y)*100)/100
+        vertexBottomY = Math.round(toWorldY(gb.min.y)*100)/100
+      }
+      let hb = null; e.root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !hb) hb = o })
+      out.rootPos = [Math.round(e.root.position.x*100)/100, Math.round(e.root.position.y*100)/100, Math.round(e.root.position.z*100)/100]
+      out.rootScaleY = Math.round(e.root.scale.y*100)/100
+      out.liftY = e._liftY != null ? Math.round(e._liftY*100)/100 : null
+      out.vertexTopY = vertexTopY
+      out.vertexBottomY = vertexBottomY
+      out.headBoneWorldY = hb ? Math.round(hb.matrixWorld.elements[13]*100)/100 : null
+      out.faceWorldY = e._face ? Math.round(e._face.matrixWorld.elements[13]*100)/100 : null
+      out.faceOnBoneY = e._face ? Math.round(e._face.position.y*100)/100 : null
+    } else out.noRoot = true
+  }
+  return out
+})
 console.log('state:', JSON.stringify(state))
+await page.screenshot({ path: new URL('./_coop-shot.png', import.meta.url).pathname })
 await browser.close().catch(() => {})

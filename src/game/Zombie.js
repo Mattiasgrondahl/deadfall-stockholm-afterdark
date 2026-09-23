@@ -693,9 +693,12 @@ export class Zombie {
       // DOWN on the bone by the bone-vs-mesh-crown delta so they sit on the
       // visible head crown instead.
       root.updateMatrixWorld(true)
-      const crownY = new THREE.Box3().setFromObject(skinned).max.y
-      const boneY = headBone.matrixWorld.elements[13]
-      const faceDrop = (crownY - boneY) - 0.02
+      // The head BONE sits ~0.7 m above the visible mesh crown (measured: bone
+      // worldY 2.44 vs crown 1.76), so parenting the face to the bone floated it
+      // onto the stomach. Use the verified fixed drop so the face sits on the
+      // visible crown (face worldY ~1.75) and aim lines up with the 1.8 m head
+      // hitbox.
+      const faceDrop = -0.7
       if (this._face && this._face.parent) this._face.parent.remove(this._face)
       // Remember both placements so the LOD swap can move them back.
       this._faceOnBone = new THREE.Vector3(0, faceDrop, 0.13)

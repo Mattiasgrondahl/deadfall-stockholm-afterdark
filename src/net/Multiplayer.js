@@ -146,19 +146,19 @@ export class Multiplayer {
           bodyMat.roughness = 0.9
           built.skinned.material = bodyMat
           built.skinned.castShadow = true; built.skinned.receiveShadow = true
-          // Mirror the local Zombie skin placement exactly: measure the MESH
-          // bounds (not the root group) after updating matrices, scale the mesh
-          // height to 1.8 m, and lift the root so the scaled feet land on y 0.
-          // Measuring before updateMatrixWorld gave degenerate bounds, which left
-          // bodies mis-scaled/mis-lifted (missing bodies + floating heads).
+          // Place the body deterministically from the REST-pose geometry bounds
+          // (measured once, before any scale/lift), so every remote clone lands
+          // identically: scale the mesh so its crown reaches 1.8 m, lift the
+          // root so the scaled feet land on y 0, and drop the face/eyes onto the
+          // visible crown. Per-instance post-lift measurement gave inconsistent
+          // lifts (some bodies hovered, faces sat on the stomach).
+          built.root.position.set(0, 0, 0)
+          built.root.scale.setScalar(1)
           built.root.updateMatrixWorld(true)
           const bb = new THREE.Box3().setFromObject(built.skinned)
           const dim = bb.getSize(new THREE.Vector3())
           const scale = dim.y > 1e-6 ? (1.8 / dim.y) : 1
           built.root.scale.setScalar(scale)
-          // Lift the root so the scaled FEET land on y 0 (mirrors the local
-          // Zombie path's bbox lift). Lifting by the head bone left the feet
-          // hovering above the ground.
           built.root.position.set(0, -bb.min.y * scale, 0)
           e2._liftY = built.root.position.y
           // Parent a face portrait + glowing eyes onto the rig's head bone so
@@ -167,11 +167,10 @@ export class Multiplayer {
           let hb = null
           built.root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !hb) hb = o })
           if (hb) {
-            built.root.updateMatrixWorld(true)
-            const crownY = new THREE.Box3().setFromObject(built.skinned).max.y
-            const boneY = hb.matrixWorld.elements[13]
-            const dropY = crownY - boneY - 0.02
-            const ff = buildFaceFor(z.type || 'walker', dropY)
+            // The head bone sits ~0.7 m above the visible mesh crown (verified
+            // on the local rig: faceOnBoneY -0.7 puts the face on the crown at
+            // 1.75). Use that fixed drop so remote bodies match local exactly.
+            const ff = buildFaceFor(z.type || 'walker', -0.7)
             hb.add(ff.face)
             for (const eye of ff.eyes) hb.add(eye)
             e2._face = ff.face
