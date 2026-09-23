@@ -91,24 +91,29 @@ export class RemoteZombie {
     }
   }
 
-  /** Hide a limb + spawn a tumbling replacement if it just got severed. */
+  /** Hide a limb + spawn a tumbling replacement if it just got severed. Severing
+   *  is one-way: once a limb is gone it never comes back (the server only ever
+   *  adds severance, and a restored limb would re-spawn a falling piece every
+   *  snapshot and leak). */
   _applyLimb(which, off) {
     const mesh = this['_' + which]
     if (!mesh) return
+    if (this['_sev_' + which]) return // already severed, stay gone
     const wasOn = mesh.visible
     mesh.visible = !off
-    if (off && wasOn) this._spawnFalling(mesh)
+    if (off && wasOn) { this['_sev_' + which] = true; this._spawnFalling(mesh) }
   }
 
-  /** Hide the head + spawn a tumbling head if it just got severed. */
+  /** Hide the head + spawn a tumbling head if it just got severed (one-way). */
   _applyHead(off) {
+    if (this._sev_head) return
     const wasOn = this._head.visible
     this._head.visible = !off
     if (this._face) this._face.visible = !off
     if (this._hair) this._hair.visible = !off
     if (this._acc && (this._acc.parent === this._head)) this._acc.visible = !off
     for (const e of this._eyes) e.visible = !off
-    if (off && wasOn) this._spawnFalling(this._head)
+    if (off && wasOn) { this._sev_head = true; this._spawnFalling(this._head) }
   }
 
   /** Detach a limb/head from the body and let it tumble to the ground. */
@@ -128,6 +133,12 @@ export class RemoteZombie {
     piece._life = 0
     this.scene.add(piece)
     this._falling.push(piece)
+    // Hard cap: if a pathological snapshot stream ever over-produces pieces,
+    // expire the oldest immediately so the body can never leak meshes.
+    if (this._falling.length > 8) {
+      const old = this._falling.shift()
+      this.scene.remove(old)
+    }
   }
 
   /** Begin the death collapse: swap to dead materials, start sinking/flopping. */
@@ -165,11 +176,10 @@ export class RemoteZombie {
     if (this._legL && this._legL.visible) this._legL.rotation.x = flop * 0.4
     if (this._legR && this._legR.visible) this._legR.rotation.x = -flop * 0.3
     if (this._head && this._head.visible) this._head.rotation.x = flop * 0.5
-    // Linger ~5 s, then fade + remove the corpse.
+    // Linger ~5 s, then hide + expire the corpse. (No opacity fade: DEADMAT is a
+    // shared material, so mutating its opacity would affect every corpse.)
     if (this._deathT > 5) {
-      const fade = Math.max(0, 1 - (this._deathT - 5) / 1.5)
-      this.group.visible = fade > 0.02
-      for (const p of this._parts) if (p.material.opacity !== undefined) { p.material.transparent = true; p.material.opacity = fade }
+      this.group.visible = this._deathT < 6.5
       if (this._deathT > 6.5) this._removed = true
     }
   }

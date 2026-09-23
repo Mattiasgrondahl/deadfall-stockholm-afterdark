@@ -341,3 +341,21 @@ test('remote zombie corpse collapses then expires after lingering', () => {
   assert.equal(mp.zombies.has('z1'), false, 'expired corpse removed')
   mp.dispose()
 })
+
+test('snapshot limb-state oscillation does not leak falling pieces (freeze fix)', () => {
+  const { mp } = makeMP()
+  // Stream snapshots that flip z1's arm severance on/off repeatedly (the server
+  // aim may disagree with the client prediction). Severing is one-way, so the
+  // arm must spawn exactly one falling piece and never re-spawn.
+  for (let i = 0; i < 40; i++) {
+    const arms = i % 2 === 0 ? 1 : 0
+    mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+      { id: 'z1', type: 'walker', x: 1, z: 2, health: 60, state: 'chase', facing: 0, limbs: { arms, legs: 0, head: 0 } },
+      { id: 'z2', type: 'brute', x: -3, z: 1, health: 300, state: 'chase', facing: 1, limbs: { arms: 0, legs: 0, head: 0 } }
+    ] }) })
+  }
+  const e = mp.zombies.get('z1')
+  assert.equal(e._falling.length, 1, 'exactly one falling arm despite 40 toggles')
+  assert.equal(e._armL.visible, false, 'severed arm stays hidden')
+  mp.dispose()
+})
