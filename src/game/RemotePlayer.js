@@ -36,7 +36,9 @@ export class RemotePlayer {
     this.id = id
     this.group = new THREE.Group()
     const color = tintFor(id)
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85 })
+    // Bright tint + matching emissive so the avatar reads in the dim co-op
+    // scene (a plain MeshStandardMaterial box group read as a black blob).
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85, emissive: color, emissiveIntensity: 0.45 })
     this._mat = mat
     const mk = (geo, x, y, z) => {
       const m = new THREE.Mesh(geo, mat)

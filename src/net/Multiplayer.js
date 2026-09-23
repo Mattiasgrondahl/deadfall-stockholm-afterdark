@@ -17,10 +17,13 @@ import { RemotePlayer } from '../game/RemotePlayer.js'
 import { NetClient } from './NetClient.js'
 
 // A tiny primitive zombie silhouette for remote (server-authoritative) zombies.
-// Shared geometry/material so 18 remote zombies add only 18 meshes.
+// Shared geometry/material so 18 remote zombies add only 18 meshes. The dim
+// co-op scene crushed the dark olive box into a black square, so the material
+// now carries a bright green color + emissive (matching the local skinned
+// walker's readable config) so remote zombies read as glowing figures.
 import * as THREE from 'three'
 const ZGEO = new THREE.BoxGeometry(0.6, 1.7, 0.4)
-const ZMAT = new THREE.MeshStandardMaterial({ color: 0x5a6b4a, roughness: 0.95 })
+const ZMAT = new THREE.MeshStandardMaterial({ color: 0xb9c4ad, roughness: 0.9, emissive: 0x6f8a4a, emissiveIntensity: 0.55 })
 
 export class Multiplayer {
   /**
