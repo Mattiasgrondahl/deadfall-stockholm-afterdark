@@ -40,21 +40,14 @@ test('attachSkin swaps primitives for a skinned mesh and routes states', async (
   z._attachSkin(rec)
   assert.ok(z._skin, 'attachSkin must build a skinned layer')
   assert.ok(z._skin.skinned.isSkinnedMesh, 'skinned mesh present')
-  // Primitives hidden once a skin is attached (limbs hidden; the head primitive
-  // stays visible because it carries the face + eyes, which must read at any
-  // distance and survive LOD swaps).
-  assert.equal(z._parts[0].visible, false, 'torso hidden when skinned')
-  assert.equal(z._parts[2].visible, false, 'armL hidden when skinned')
-  assert.equal(z._parts[3].visible, false, 'armR hidden when skinned')
-  assert.equal(z._parts[4].visible, false, 'legL hidden when skinned')
-  assert.equal(z._parts[5].visible, false, 'legR hidden when skinned')
-  // The rig GLB has its own head, so the primitive head is hidden when skinned
-  // (a visible primitive head produced a DOUBLE head). The face + eyes are
-  // re-parented onto the rig's Head bone so they ride the animated head.
-  assert.equal(z._parts[1].visible, false, 'head primitive hidden when skinned (no double head)')
-  assert.equal(z._face.parent, z._headBone, 'face re-parented to the rig head bone')
-  assert.equal(z._eyes[0].parent, z._headBone, 'eyes re-parented to the rig head bone')
-  assert.equal(z._skin.root.visible, true, 'skinned root visible near the player')
+  // The primitive body is the always-on visual now: every primitive part stays
+  // visible, and the face + eyes stay on the primitive head (which carries them).
+  // The skinned rig root is hidden so the pale featureless body no longer
+  // overrides the clothed primitive up close.
+  assert.ok(z._parts.every((p) => p.visible === true), 'all primitives visible (primitive is the visual)')
+  assert.equal(z._face.parent, z._parts[1], 'face stays on the primitive head')
+  assert.equal(z._eyes[0].parent, z._parts[1], 'eyes stay on the primitive head')
+  assert.equal(z._skin.root.visible, false, 'skinned root hidden (primitive is the visual)')
   // Actions exist for the mapped states (fallback to Idle where a clip is absent).
   for (const s of ['idle', 'walk', 'run', 'attack', 'hurt', 'death']) {
     assert.ok(z._skin.actions[s], `missing action for ${s}`)
@@ -87,26 +80,26 @@ test('headless Zombie keeps the primitive body (no skin attached)', () => {
   assert.ok(z._parts.every((p) => p.visible === true), 'primitives visible headless')
 })
 
-test('LOD swap: skinned near the player, primitive stub beyond 25 m', async () => {
+test('primitive body stays visible at any distance; rig root stays hidden', async () => {
   const rec = await loadRig()
   const scene = new THREE.Scene()
   const z = new Zombie(scene, 'walker', 0, 0, 1)
   z._attachSkin(rec)
   assert.ok(z._skin, 'skin attached')
-  // Near: skinned visible, primitive limbs hidden.
+  // Near: primitive visible, rig hidden (primitive is the visual).
   z._applyLOD({ x: 5, z: 0 })
-  assert.equal(z._skin.root.visible, true, 'skinned visible near')
-  assert.equal(z._parts[0].visible, false, 'primitive torso hidden near')
-  // Far (beyond LOD_DIST): skinned hidden, primitive body restored.
+  assert.equal(z._skin.root.visible, false, 'rig hidden near')
+  assert.equal(z._parts[0].visible, true, 'primitive torso visible near')
+  // Far: same policy — primitive visible, rig hidden.
   z._applyLOD({ x: 40, z: 0 })
-  assert.equal(z._skin.root.visible, false, 'skinned hidden beyond 25 m')
-  assert.equal(z._parts[0].visible, true, 'primitive torso restored beyond LOD')
+  assert.equal(z._skin.root.visible, false, 'rig hidden beyond 25 m')
+  assert.equal(z._parts[0].visible, true, 'primitive torso visible beyond LOD')
   assert.equal(z._parts[1].visible, true, 'head/face visible beyond LOD')
-  assert.equal(z._face.parent, z._parts[1], 'face moved back to the primitive head when LOD out')
-  // Back near: skinned restored.
+  assert.equal(z._face.parent, z._parts[1], 'face stays on the primitive head')
+  // Back near: unchanged.
   z._applyLOD({ x: 2, z: 0 })
-  assert.equal(z._skin.root.visible, true, 'skinned restored when near again')
-  assert.equal(z._face.parent, z._headBone, 'face back on the rig head bone when near')
+  assert.equal(z._skin.root.visible, false, 'rig stays hidden when near again')
+  assert.equal(z._face.parent, z._parts[1], 'face stays on the primitive head when near')
 })
 
 test('per-type tint + brute scale + flash/death swap the skinned material', async () => {

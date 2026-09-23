@@ -16,32 +16,27 @@ await page.evaluate(() => {
 await page.waitForTimeout(2500)
 const diag = await page.evaluate(() => {
   const z = window.__game.zombies[0]
-  if (!z || !z._skin) return { err: 'no skin' }
+  if (!z) return { err: 'no zombie' }
   z.group.updateMatrixWorld(true)
-  z._skin.root.updateMatrixWorld(true)
   const r3 = (v) => [Math.round(v.x*100)/100, Math.round(v.y*100)/100, Math.round(v.z*100)/100]
-  // Actual geometry vertex bounds (rest pose) transformed to world via the
-  // SkinnedMesh matrixWorld — this is the real visible top/bottom, not bone
-  // origins. The SkinnedMesh object origin sits at the hips, so its matrixWorld
-  // y is NOT the feet/crown.
-  const mesh = z._skin.skinned
-  mesh.geometry.computeBoundingBox()
-  const gb = mesh.geometry.boundingBox
-  const mw = mesh.matrixWorld.elements
-  const toWorldY = (ly) => mw[1] * ly + mw[5] * ly + mw[9] * ly + mw[13]
-  const vertexTopY = Math.round(toWorldY(gb.max.y) * 100) / 100
-  const vertexBottomY = Math.round(toWorldY(gb.min.y) * 100) / 100
-  const hb = z._headBone
-  const face = z._face
+  // Effective visibility: a node renders only if it and all ancestors are visible.
+  const effVis = (o) => { let n = o; while (n) { if (!n.visible) return false; n = n.parent } return true }
+  const rigEff = z._skin && z._skin.skinned ? effVis(z._skin.skinned) : null
+  const torsoEff = effVis(z._parts[0])
+  const headEff = effVis(z._parts[1])
+  const faceEff = z._face ? effVis(z._face) : null
+  const faceWorldY = z._face ? Math.round(z._face.matrixWorld.elements[13]*100)/100 : null
+  const faceParent = z._face && z._face.parent ? z._face.parent.name || (z._face.parent.isBone ? 'bone' : 'mesh') : null
   return {
-    rootPos: r3(z._skin.root.position),
-    rootScaleY: Math.round(z._skin.root.scale.y*100)/100,
-    vertexTopY,
-    vertexBottomY,
-    headBoneWorldY: hb ? Math.round(hb.matrixWorld.elements[13]*100)/100 : null,
-    faceWorldY: face ? Math.round(face.matrixWorld.elements[13]*100)/100 : null,
-    faceOnBoneY: face ? Math.round(face.position.y*100)/100 : null,
-    zombiePos: r3(z.position)
+    rigEffVisible: rigEff,
+    torsoEffVisible: torsoEff,
+    headEffVisible: headEff,
+    faceEffVisible: faceEff,
+    faceWorldY,
+    faceParent,
+    rootVisible: z._skin ? z._skin.root.visible : null,
+    drawCalls: window.__game.renderer.info.render.calls,
+    triangles: window.__game.renderer.info.render.triangles
   }
 })
 console.log('DIAG:', JSON.stringify(diag))

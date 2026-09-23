@@ -693,27 +693,25 @@ export class Zombie {
       // DOWN on the bone by the bone-vs-mesh-crown delta so they sit on the
       // visible head crown instead.
       root.updateMatrixWorld(true)
-      // The head BONE sits ~0.7 m above the visible mesh crown (measured: bone
-      // worldY 2.44 vs crown 1.76), so parenting the face to the bone floated it
-      // onto the stomach. Use the verified fixed drop so the face sits on the
-      // visible crown (face worldY ~1.75) and aim lines up with the 1.8 m head
-      // hitbox.
+      // The primitive body is the always-on visual, so the face + eyes stay on
+      // the primitive head (which carries them) — the rig's head bone is hidden.
+      // Keep both placements recorded for compatibility, but parent to the head.
       const faceDrop = -0.7
-      if (this._face && this._face.parent) this._face.parent.remove(this._face)
-      // Remember both placements so the LOD swap can move them back.
       this._faceOnBone = new THREE.Vector3(0, faceDrop, 0.13)
       this._faceOnHead = new THREE.Vector3(0, 0, 0.155)
       this._eyeOnBone = new THREE.Vector3(0.07, faceDrop + 0.05, 0.12)
       this._eyeOnHead = new THREE.Vector3(0.075, 0.03, 0.14)
+      const headHost = this._parts[1]
       if (this._face) {
-        this._face.position.copy(this._faceOnBone)
-        headBone.add(this._face)
+        if (this._face.parent) this._face.parent.remove(this._face)
+        this._face.position.copy(this._faceOnHead)
+        if (headHost) headHost.add(this._face)
       }
       for (const eye of this._eyes || []) {
         if (eye.parent) eye.parent.remove(eye)
         eye.userData.side = eye.position.x < 0 ? -1 : 1
-        eye.position.set(this._eyeOnBone.x * eye.userData.side, this._eyeOnBone.y, this._eyeOnBone.z)
-        headBone.add(eye)
+        eye.position.set(this._eyeOnHead.x * eye.userData.side, this._eyeOnHead.y, this._eyeOnHead.z)
+        if (headHost) headHost.add(eye)
       }
       this._headBone = headBone
     }
@@ -726,21 +724,21 @@ export class Zombie {
         this._armBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z })
       }
     })
-    // Hide the primitive limbs AND the primitive head (the rig head shows now).
-    this._parts[0].visible = false // torso
-    this._parts[2].visible = false // armL
-    this._parts[3].visible = false // armR
-    this._parts[4].visible = false // legL
-    this._parts[5].visible = false // legR
-    this._parts[1].visible = false // head (face/eyes re-parented to the rig)
-    this._headVisible = false
-    this._lodSkinned = true
+    // The primitive body is the always-on visual now, so keep every primitive
+    // part visible (the rig root is hidden by _applyLOD). The head keeps the
+    // face + eyes.
+    for (const p of this._parts) p.visible = true
+    this._headVisible = true
+    this._lodSkinned = false
     // The skinned root is a CHILD of this.group, which already sits at the feet
     // position (group.position = this.position). The root therefore stays at the
     // group's LOCAL x/z origin (0) — copying the world position would
     // double-offset the body away from the head (the "floating head, no body"
     // bug). The y-lift set above is preserved (do NOT reset it here).
     this.group.add(root)
+    // The primitive body is the visual now, so the rig root stays hidden (the
+    // pale featureless skinned body no longer overrides the clothed primitive).
+    root.visible = false
     // Re-bind AFTER the root is scaled + positioned + parented: buildSkin bound
     // with the pre-scale matrixWorld, but the skinning matrices must match the
     // final root transform or the body collapses to a point (the "shadow moves,
@@ -768,48 +766,36 @@ export class Zombie {
     this._applyLOD(this.position, null)
   }
 
-  /** LOD: show the skinned body within LOD_DIST of the player (camera proxy)
-   *  and the primitive stub beyond. Toggles visibility only — both bodies
-   *  always exist, so swapping is allocation-free and instant. The head
-   *  primitive (which carries the face + eyes) stays visible when LOD'd out so
-   *  the face still reads at distance. No-op when no skin is attached. */
+  /** Visual policy: the primitive body (clothed humanoid with the face image)
+   *  is the always-on visual — it reads as a zombie at any distance, keeps the
+   *  face visible, and supports headshots. The skinned rig (a pale, featureless
+   *  body with a buried face) is hidden so it never overrides the primitive up
+   *  close. Primitives + face stay visible always; the rig root stays hidden.
+   *  No-op when no skin is attached. */
   _applyLOD(playerPos) {
     if (!this._skin) return
-    let near = true
-    if (playerPos) {
-      const dx = playerPos.x - this.position.x
-      const dz = playerPos.z - this.position.z
-      near = (dx * dx + dz * dz) <= LOD_DIST * LOD_DIST
-    }
-    if (near === this._lodSkinned) return
-    this._lodSkinned = near
-    this._skin.root.visible = near
-    // Limbs: visible only when LOD'd out (primitive body).
-    this._parts[0].visible = !near // torso
-    this._parts[2].visible = !near // armL
-    this._parts[3].visible = !near // armR
-    this._parts[4].visible = !near // legL
-    this._parts[5].visible = !near // legR
-    // The face + eyes ride the rig's Head bone when skinned (near) and move
-    // back onto the primitive head when LOD'd out (far), so the face reads at
-    // any distance and there is never a double head.
-    const host = near ? this._headBone : this._parts[1]
+    if (this._lodSkinned === false) return
+    this._lodSkinned = false
+    this._skin.root.visible = false
+    for (const p of this._parts) p.visible = true
+    // Face + eyes live on the primitive head (which carries them), so they read
+    // at every distance and there is never a buried-face or double-head state.
+    const host = this._parts[1]
     if (host) {
       if (this._face && this._face.parent !== host) {
         if (this._face.parent) this._face.parent.remove(this._face)
-        this._face.position.copy(near ? this._faceOnBone : this._faceOnHead)
+        this._face.position.copy(this._faceOnHead)
         host.add(this._face)
       }
       for (const eye of this._eyes || []) {
         if (eye.parent !== host) {
           if (eye.parent) eye.parent.remove(eye)
-          eye.position.copy(near ? this._eyeOnBone : this._eyeOnHead)
+          eye.position.copy(this._eyeOnHead)
           eye.position.x = Math.abs(eye.position.x) * (eye.userData.side || 1)
           host.add(eye)
         }
       }
     }
-    this._parts[1].visible = !near // primitive head only when LOD'd out
   }
 
   /** Target standing height for the skinned body (matches the primitive
