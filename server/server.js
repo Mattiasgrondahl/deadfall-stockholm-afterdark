@@ -37,6 +37,13 @@ const MIME = {
 
 function serveStatic(req, res) {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
+  // The Pages build is emitted with Vite base `/deadfall-stockholm-afterdark`,
+  // so the HTML references /deadfall-stockholm-afterdark/assets/*. When this
+  // server serves dist/ at root, strip that base prefix so those asset URLs
+  // resolve. Requests without the prefix (plain `vite build`) pass through.
+  if (urlPath === '/deadfall-stockholm-afterdark' || urlPath.startsWith('/deadfall-stockholm-afterdark/')) {
+    urlPath = urlPath.slice('/deadfall-stockholm-afterdark'.length) || '/index.html'
+  }
   if (urlPath === '/') urlPath = '/index.html'
   const filePath = path.join(DIST, urlPath)
   // Prevent path escape outside DIST.
