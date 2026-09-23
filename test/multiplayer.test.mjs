@@ -359,3 +359,18 @@ test('snapshot limb-state oscillation does not leak falling pieces (freeze fix)'
   assert.equal(e._armL.visible, false, 'severed arm stays hidden')
   mp.dispose()
 })
+
+test('remote target exposes position + knockback + shotgunArmor (melee-safe)', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const t = mp.getTargets().find((q) => q._id === 'z1')
+  assert.ok(t.position && typeof t.position.x === 'number', 'proxy exposes a numeric position')
+  assert.equal(t.position.x, 1, 'position.x tracks the snapshot')
+  assert.equal(t.position.z, 2, 'position.z tracks the snapshot')
+  assert.equal(typeof t.knockback, 'function', 'proxy exposes knockback (no-op)')
+  assert.doesNotThrow(() => t.knockback(1, 1, 5), 'knockback is callable')
+  const b = mp.getTargets().find((q) => q._id === 'z2')
+  assert.equal(b.shotgunArmor, 0.4, 'brute proxy carries brute shotgun armor')
+  assert.equal(t.shotgunArmor, 1, 'walker proxy carries walker armor')
+  mp.dispose()
+})

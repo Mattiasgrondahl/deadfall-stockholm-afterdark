@@ -39,14 +39,18 @@ async function sample(label) {
     stats = await page.evaluate(() => {
       const mp = window.__game.multiplayer
       const g = window.__game
-      let meshes = 0
+      let meshes = 0, children = 0
       g.scene.traverse((o) => { if (o.isMesh) meshes++ })
-      let falling = 0, parts = 0
+      children = g.scene.children.length
+      let falling = 0, parts = 0, rzs = 0
       if (mp) for (const e of mp.zombies.values()) {
+        rzs++
         if (e._falling) falling += e._falling.length
         if (e._parts) parts += e._parts.length
       }
-      return { state: g.state, zombies: mp ? mp.zombies.size : -1, targets: mp ? mp.getTargets().length : -1, meshes, falling, parts }
+      const players = mp ? mp.players.size : -1
+      const heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1
+      return { state: g.state, zombies: mp ? mp.zombies.size : -1, rzs, targets: mp ? mp.getTargets().length : -1, meshes, children, players, falling, parts, heapMB: heap }
     })
   } catch (e) { stats = { evalErr: String(e).slice(0, 80) } }
   console.log(label, 'resp=' + resp, JSON.stringify(stats))
@@ -54,10 +58,10 @@ async function sample(label) {
 }
 
 let firstHang = null
-for (let t = 0; t <= 45; t += 5) {
-  await page.waitForTimeout(5000)
-  const r = await sample('t=' + (t + 5) + 's')
-  if (r === 'HUNG' && firstHang === null) { firstHang = t + 5; console.log('*** FIRST HANG at', firstHang, 's ***'); break }
+for (let t = 0; t <= 24; t += 2) {
+  await page.waitForTimeout(2000)
+  const r = await sample('t=' + (t + 2) + 's')
+  if (r === 'HUNG' && firstHang === null) { firstHang = t + 2; console.log('*** FIRST HANG at', firstHang, 's ***'); break }
 }
 console.log('done. firstHang=', firstHang)
 await browser.close().catch(() => {})

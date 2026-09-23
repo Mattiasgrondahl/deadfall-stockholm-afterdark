@@ -29,6 +29,10 @@ function seedFromId(id) {
 // briefly. Shared scratch avoids per-frame allocations.
 const _v = new THREE.Vector3()
 
+// Per-type shotgun damage multiplier (mirrors Zombie.TABLE) so the co-op brute
+// shrugs off buckshot like the local brute does.
+const SHOTGUN_ARMOR = { walker: 1, shambler: 1, screamer: 1, brute: 0.4 }
+
 export class RemoteZombie {
   /**
    * @param {object} opts
@@ -193,6 +197,12 @@ export class RemoteZombie {
     return {
       isDead: this.isDead || this._predictedDead,
       _id: this.id,
+      // Melee weapons read z.position.{x,y,z} for range + blood; the proxy has
+      // no real Vector3, so expose a live plain object (and a no-op knockback)
+      // so melee hits register instead of throwing and freezing the loop.
+      position: { x: self._x, y: 0, z: self._z },
+      knockback() {},
+      shotgunArmor: SHOTGUN_ARMOR[self.type] != null ? SHOTGUN_ARMOR[self.type] : 1,
       getHitboxes() {
         return [
           { center: new THREE.Vector3(self._x, 1.2, self._z), radius: 0.45, isHead: false },
