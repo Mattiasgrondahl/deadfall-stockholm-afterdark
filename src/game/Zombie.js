@@ -675,6 +675,19 @@ export class Zombie {
     // double-offset the body away from the head (the "floating head, no body"
     // bug). The y-lift set above is preserved (do NOT reset it here).
     this.group.add(root)
+    // Re-bind AFTER the root is scaled + positioned + parented: buildSkin bound
+    // with the pre-scale matrixWorld, but the skinning matrices must match the
+    // final root transform or the body collapses to a point (the "shadow moves,
+    // no body" bug). updateMatrixWorld ensures the bind uses the real transform.
+    root.updateMatrixWorld(true)
+    if (skinned.skeleton && skinned.skeleton.bones.length) {
+      skinned.bind(skinned.skeleton, root.matrixWorld)
+    }
+    // The skinned body is the visible silhouette now, so it must cast its own
+    // shadow (the primitive body is hidden). Without this the body renders but
+    // casts no shadow, which reads as a detached floating figure.
+    skinned.castShadow = true
+    skinned.receiveShadow = true
     // Build one action per mapped state, falling back to Idle for missing clips.
     const actions = {}
     for (const state of Object.keys(SKIN_CLIPS)) {
