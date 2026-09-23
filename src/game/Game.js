@@ -536,6 +536,36 @@ export class Game {
     }
   }
 
+  /**
+   * Start a co-op run: build the multiplayer controller (if not already built)
+   * for the given room + display name, then run the normal start flow. The
+   * controller renders other players' avatars + a scoreboard from the server's
+   * snapshots and sends this client's input. Headless-safe (a fake Socket can be
+   * injected via opts). Returns the controller (or null if construction failed).
+   */
+  startMultiplayer(opts = {}) {
+    this._mpOpts = {
+      name: opts.name || 'player',
+      room: opts.room || 'default',
+      url: opts.url, Socket: opts.Socket
+    }
+    if (!this.multiplayer && this.scene) {
+      try {
+        this.multiplayer = new Multiplayer({
+          scene: this.scene, env: this.env,
+          name: this._mpOpts.name, room: this._mpOpts.room,
+          url: this._mpOpts.url, Socket: this._mpOpts.Socket
+        })
+      } catch (err) {
+        this.multiplayer = null
+        if (this.screens) this.screens.showBanner('CO-OP UNAVAILABLE')
+        return null
+      }
+    }
+    this.startGame()
+    return this.multiplayer
+  }
+
   togglePause() {
     if (this.state === GameState.PLAYING) this.setState(GameState.PAUSED)
     else if (this.state === GameState.PAUSED) {

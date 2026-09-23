@@ -69,6 +69,19 @@ export class Screens {
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn)
     diffRow.appendChild(frenzyHint)
     panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn); panelT.appendChild(startBtn)
+    // CO-OP: a room code + display name join the server-authoritative room.
+    // JOIN calls Game.startMultiplayer, which builds the client controller and
+    // renders other players' avatars + a scoreboard from server snapshots.
+    const mpRow = d.createElement('div'); mpRow.className = 'mp-row'
+    const mpLabel = d.createElement('div'); mpLabel.className = 'difficulty-label'; mpLabel.textContent = 'CO-OP'
+    this._roomInput = d.createElement('input'); this._roomInput.className = 'mp-input'
+    this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'default'
+    this._nameInput = d.createElement('input'); this._nameInput.className = 'mp-input'
+    this._nameInput.type = 'text'; this._nameInput.placeholder = 'your name'; this._nameInput.value = 'player'
+    const joinBtn = d.createElement('button'); joinBtn.className = 'btn'; joinBtn.textContent = 'JOIN CO-OP'
+    joinBtn.addEventListener('click', () => this._joinCoop())
+    mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(this._nameInput); mpRow.appendChild(joinBtn)
+    panelT.appendChild(mpRow)
     this._title.appendChild(panelT)
     this._root.appendChild(this._title)
 
@@ -312,6 +325,14 @@ export class Screens {
     this._game.difficulty = name
     this._nightBtn.classList.toggle('on', name === 'normal')
     this._frenzyBtn.classList.toggle('on', name === 'frenzy')
+  }
+
+  /** JOIN CO-OP: read the room code + name from the title inputs and start a
+   *  server-authoritative co-op run. */
+  _joinCoop() {
+    const room = (this._roomInput && this._roomInput.value || 'default').trim() || 'default'
+    const name = (this._nameInput && this._nameInput.value || 'player').trim() || 'player'
+    this._game.startMultiplayer({ room, name })
   }
 
   _hideAll() {

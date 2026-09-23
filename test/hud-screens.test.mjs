@@ -237,7 +237,7 @@ function makeGame(doc, hud) {
   const btns = []
   const collectBtns = (el) => { for (const c of el.children) { if (c.classList.contains('btn')) btns.push(c); collectBtns(c) } }
   collectBtns(title)
-  assert.deepStrictEqual(btns.map(b => b.textContent), ['SETTINGS', 'START'])
+  assert.deepStrictEqual(btns.map(b => b.textContent), ['SETTINGS', 'START', 'JOIN CO-OP'])
   // other screens are hidden
   assert(!screenWithText(screensRoot, 'PAUSED').classList.contains('visible'))
   assert(!screenWithText(screensRoot, 'YOU DIED').classList.contains('visible'))

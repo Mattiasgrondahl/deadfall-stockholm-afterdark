@@ -506,6 +506,19 @@ html, body {
   color: var(--banner);
 }
 
+/* co-op join row (title screen): room code + name inputs + JOIN button */
+.mp-row { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mp-row .difficulty-label { width: 100%; margin-bottom: 2px; }
+.mp-input {
+  background: rgba(10, 14, 22, 0.6);
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  font: inherit;
+  padding: 6px 8px;
+  width: 120px;
+}
+.mp-input:focus { border-color: var(--accent); outline: none; }
+
 /* game over */
 .gameover-title {
   font-family: var(--mono);

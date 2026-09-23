@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { Multiplayer } from '../src/net/Multiplayer.js'
+import { Game } from '../src/game/Game.js'
 import { MSG } from '../src/net/protocol.js'
 
 class FakeWS {
@@ -141,4 +142,30 @@ test('dispose removes every proxy + panel + closes socket', () => {
   assert.ok(scene.children.length < groupsBefore, 'scene children reduced')
   // Double dispose is safe.
   mp.dispose()
+})
+
+test('Game.startMultiplayer builds the controller + starts the run', () => {
+  const game = new Game({ headless: true })
+  game.start()
+  assert.equal(game.multiplayer, null, 'no controller before joining')
+  const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
+  assert.ok(mp, 'controller built')
+  assert.equal(game.multiplayer, mp)
+  assert.equal(game.state, 'playing', 'run started')
+  assert.equal(game._mpOpts.room, 'alpha')
+  assert.equal(game._mpOpts.name, 'Ada')
+  // A snapshot with two players: self excluded, one remote avatar.
+  mp.net.socket.open()
+  mp.net.socket.receive({ t: MSG.WELCOME, pid: 'ada', roster: [] })
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  assert.ok(mp.players.has('sam'), 'remote avatar present')
+  assert.ok(!mp.players.has('ada'), 'self excluded')
+  // resetRun rebuilds a fresh controller.
+  game.debug.resetRun()
+  assert.ok(game.multiplayer && game.multiplayer !== mp, 'resetRun rebuilt the controller')
+  mp.dispose()
+  game.multiplayer.dispose()
 })
