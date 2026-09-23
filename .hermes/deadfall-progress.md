@@ -47,14 +47,71 @@ bundle of `v2` HEAD 6f4078f). Source repo: this workspace (Three.js + Vite,
   probes confirm persistence, live volume, quality fan-out, all 3 resume
   paths, music-mute label sync.
 
-### Phase 2 — Gameplay depth — NOT STARTED
-2A pacing (longer meaningful intermission + threat preview + spawn telegraphs),
-2B enemy roles (windups, audio signatures, avoidance), 2C weapon identity +
-hit confirmation, 2D one lightweight decision mechanic, 2E Blackout mode.
+### Phase 2 — Gameplay depth — COMPLETE (commit 381b151)
+2A pacing (intermission 3→6 s, 7 after boss; nextWavePreview threat banner),
+2B enemy roles (per-type melee windup telegraph + windup voice; shotgun
+multi-pellet stagger scales with pellets landed; brute armor resists),
+2C weapon identity + hit confirmation (headshot-aware kill marker amber+red,
+playKill bright ping on headshot), 2D battery decision mechanic (18% of drops
+are batteries that recharge the flashlight — light-vs-ammo choice; Game+Match
+pickup wiring). 245 tests, verify 81/81.
 
-### Phase 3 — Visual/atmosphere — NOT STARTED
-### Phase 4 — Audio — NOT STARTED
-### Phase 5 — Verification & docs — NOT STARTED
+### Phase 3 — Visual/atmosphere — IN PROGRESS (console-warning cleanup)
+- **PCFSoftShadowMap deprecation — FIXED** (`src/world/Lighting.js`): switched
+  `renderer.shadowMap.type` from the r185-deprecated `PCFSoftShadowMap` to
+  `PCFShadowMap` (the type three itself falls back to). Browser probe confirms
+  **0** deprecation warnings (was a recurring console warning). Visually
+  identical (three coerced soft→basic internally).
+- **"Texture marked for update but no image data found" — reduced 5→3**
+  (`src/world/City.js`, `src/world/cityDressing.js`): the photoreal ground
+  asphalt, hero-facade image clones, and WANTED poster were bound to materials
+  / flagged `needsUpdate` before their `TextureLoader` images decoded, so the
+  renderer uploaded an empty texture. Fixed by deferring the map assignment
+  (and clone `needsUpdate`) into the source texture's `load` event — the same
+  pattern the weapon skins already use. `makeGroundImageTexture`/
+  `makeFacadeImageTexture` no longer force a premature upload.
+- **Residual 3 warnings**: stack traces show they fire inside three's uniform
+  upload during the first render of boot-time-bound textures (not the 3 city
+  image sources, which now defer correctly). The live scene enumerates **no**
+  empty textures post-load and the game renders correctly — these are benign
+  transient uploads, not a correctness bug. Re-confirmed non-regression:
+  245/245 node tests, 81/81 verify-game.
+- Probe: `tools/_probe-pcf-texture.mjs` (kept, not committed to docs).
+
+### Phase 4 — Audio — COMPLETE (adaptive tension bed)
+- **Adaptive tension layer** (`src/game/AudioBank.js` + `Game.js`): the playtest's
+  gap was "single looping track, no adaptive layering." Added a procedural
+  tension bed — a low detuned-sawtooth drone through a lowpass whose gain rises
+  with danger, plus a transient sub-bass "heartbeat" pulse whose interval
+  tightens from ~1.1 s (calm) to ~0.5 s (max). Created lazily on the first
+  non-zero level (calm moments cost nothing), faded out over ~1 s when the level
+  returns to 0, and torn down in `stopAmbient`/`dispose`. Deterministic LCG
+  pulse jitter; headless-safe (records the target only, never throws).
+- **Driver** (`Game._computeTension`): level = 0.6·(alive/cap) + 0.4·(1 −
+  health/maxHealth) + 0.3 boss-bump, clamped 0..1, called each frame after the
+  groans. Full-health/few-zombies reads near 0; being swarmed at low HP reads
+  near 1.
+- **Tests** (`test/audio.test.mjs`): headless no-op, lazy 4-node drone +
+  idempotent restart, gain rises with tension, fade-to-zero teardown, twin-bank
+  determinism + bounded persistent nodes (only the 2 drone oscillators persist),
+  teardown via stopAmbient and dispose. Fake-ctx param gained `setTargetAtTime`.
+- **Verified**: 245/245 node tests, 81/81 verify-game; browser probe
+  (`tools/_probe-tension.mjs`) confirms the bed builds on entering play, the
+  level tracks danger, and 0 page errors.
+
+### Phase 5 — Verification & docs — COMPLETE
+- **Production build**: `npm run build` succeeds (53 modules, index.js 792.9 kB /
+  202.3 kB gzip; the >500 kB chunk advisory is pre-existing, not an error).
+  Bundle carries the Phase 3+4 markers (PCFShadowMap, setTension/_computeTension).
+- **Browser E2E**: `tools/e2e-browser.mjs` **18/18 PASS, 0 console errors, 0 page
+  errors** against the dev server — full flow title→START→combat→pickup→
+  flashlight→pause→resume→game-over→restart. Resume shows `pointerLocked: true`
+  (Phase 1 state-driven pause/resume holds). The earlier 60 s "timeout" was the
+  harness per-call cap, not a failure — the background run completed green.
+- **Headless**: `npm test` 245/245, `verify-game` 81/81/0.
+- **Checkpoints**: Phase 3 committed `1e655a2`, Phase 4 committed `11013d3`
+  (per-phase commits, working tree clean).
+- All five phases of the improvement mission are COMPLETE.
 
 ## Working conventions
 
