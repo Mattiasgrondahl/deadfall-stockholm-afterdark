@@ -16,10 +16,17 @@ export const PICKUP_RADIUS = 1.2
 export const LIFETIME = 30
 export const BLINK_AFTER = 25
 export const MAX_DROPS = 20
+/** Share of kills that drop a battery instead of ammo (a third LCG draw,
+ *  taken only when an ammo drop actually spawned). Batteries recharge the
+ *  flashlight — the run's scarce light resource — so the player must choose
+ *  between detouring for light and staying on the ammo path. */
+export const BATTERY_CHANCE = 0.18
+export const BATTERY_RESTORE = 0.35 // fraction of flashlight battery per pickup
 const DROP_Y = 0.1
 // Distinct visuals so the player can tell shells from bullets at a glance.
 const SHELL_COLOR = 0xffaa44, SHELL_EMISSIVE = 0x774400
 const BULLET_COLOR = 0x6fc2ff, BULLET_EMISSIVE = 0x1a4a77
+const BATTERY_COLOR = 0x9dff6a, BATTERY_EMISSIVE = 0x2a5a1a
 
 export class AmmoDrops {
   constructor(scene, audio) {
@@ -35,6 +42,9 @@ export class AmmoDrops {
     })
     this._bulletMat = new THREE.MeshStandardMaterial({
       color: BULLET_COLOR, emissive: BULLET_EMISSIVE, emissiveIntensity: 0.6
+    })
+    this._batteryMat = new THREE.MeshStandardMaterial({
+      color: BATTERY_COLOR, emissive: BATTERY_EMISSIVE, emissiveIntensity: 0.8
     })
   }
 
@@ -54,8 +64,12 @@ export class AmmoDrops {
   maybeSpawn(x, z) {
     if (this._drops.length >= MAX_DROPS) return null
     if (this._rand() >= DROP_CHANCE) return null
-    const kind = this._rand() < BULLET_CHANCE ? 'bullets' : 'shells'
-    const mesh = new THREE.Mesh(this._geo, kind === 'bullets' ? this._bulletMat : this._shellMat)
+    let kind = this._rand() < BULLET_CHANCE ? 'bullets' : 'shells'
+    // Third draw: a slice of drops are batteries (a brighter, larger box)
+    // instead of ammo. The choice is the player's: grab light or grab ammo.
+    if (this._rand() < BATTERY_CHANCE) kind = 'battery'
+    const mat = kind === 'bullets' ? this._bulletMat : kind === 'shells' ? this._shellMat : this._batteryMat
+    const mesh = new THREE.Mesh(this._geo, mat)
     mesh.position.set(x, DROP_Y, z)
     this.scene.add(mesh)
     this._drops.push({ x, z, t: 0, mesh, kind })
@@ -102,5 +116,6 @@ export class AmmoDrops {
     this._geo.dispose()
     this._shellMat.dispose()
     this._bulletMat.dispose()
+    this._batteryMat.dispose()
   }
 }

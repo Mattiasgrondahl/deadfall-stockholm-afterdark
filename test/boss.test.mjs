@@ -87,7 +87,7 @@ function makeWave() {
   // Run waves 1..4 via forceClear (debug path skips the boss gate).
   const toWave5 = () => {
     wm.reset()
-    for (let i = 0; i < 4; i++) { step(1); wm.forceClear(game); step(3.1) }
+    for (let i = 0; i < 4; i++) { step(1); wm.forceClear(game); step(6.1) }
   }
   return { wm, game, scene, starts, clears, bossIncoming, bossSpawn, step, alive, killAll, spawnAll, toWave5 }
 }
@@ -231,7 +231,7 @@ test('wave 5 finale: incoming fires once, boss spawns after the delay, kill clea
   boss.damage(boss.maxHealth + 10)
   step(0.2)
   assert.deepEqual(clears, [5])
-  step(3.1)
+  step(7.1)
   assert.equal(wm.wave, 6)
   assert.equal(bossIncoming.length, 1, 'boss fires exactly once')
 })
@@ -247,7 +247,7 @@ test('boss does not spawn when wave 5 is force-cleared (debug path)', () => {
   assert.equal(w2.wm._bossSpawned, true, 'forceClear marks the boss consumed')
   assert.equal(w2.bossSpawn.length, 0)
   assert.equal(w2.bossIncoming.length, 0)
-  w2.step(3.1)
+  w2.step(7.1)
   assert.equal(w2.wm.wave, 6)
   // forceClear is the debug path: it never fires onWaveCleared (the wave
   // advances via the intermission), so clears stays empty.
@@ -381,7 +381,7 @@ test('boss appears every 5 waves: wave 10 spawns a higher-HP brute', () => {
   const { wm, game, bossIncoming, bossSpawn, step, alive, killAll, spawnAll } = makeWave()
   wm.reset()
   // Advance to wave 10 via forceClear (debug path skips the boss gate each time).
-  for (let i = 0; i < 9; i++) { step(1); wm.forceClear(game); step(3.1) }
+  for (let i = 0; i < 9; i++) { step(1); wm.forceClear(game); step(6.1) }
   assert.equal(wm.wave, 10)
   spawnAll()
   killAll()

@@ -207,6 +207,15 @@ function makeGame(doc, hud) {
   hud.clearMarker()
   hud.hitMarker()
   assert(marker.classList.contains('show'))             // re-trigger works
+  hud.clearMarker()
+  hud.hitMarker('head')                                 // headshot variant
+  assert(marker.classList.contains('headshot'))
+  assert(!marker.classList.contains('kill'))
+  hud.killMarker('head')                                // headshot kill keeps amber + red
+  assert(marker.classList.contains('kill'))
+  assert(marker.classList.contains('headshot'))
+  hud.killMarker('body')                                // body kill drops the amber
+  assert(!marker.classList.contains('headshot'))
   hud.dispose()
   assert.strictEqual(hudRoot.children.length, 0)        // marker removed on dispose
 }

@@ -3,7 +3,7 @@ import { CollisionWorld } from '../game/CollisionWorld.js'
 import { City } from '../world/City.js'
 import { Player } from '../game/Player.js'
 import { WeaponBank } from '../game/WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP } from '../game/AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from '../game/AmmoDrops.js'
 import { Zombie, ATTACK_RANGE, AIR_CLEAR, DIFFICULTY } from '../game/Zombie.js'
 import { WaveManager } from '../game/WaveManager.js'
 import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
@@ -142,7 +142,7 @@ export class Match {
     player._onDamaged = (n, source) => this.events.push({
       k: 'hit', victim: id, dmg: n, by: source && source.type ? source.type : null
     })
-    const slot = { id, player, weapon, inputState }
+    const slot = { id, player, weapon, inputState, flashlight: null }
     this.players.set(id, slot)
     this.ws.players = Array.from(this.players.values())
     this.kills.set(id, 0)
@@ -252,6 +252,13 @@ export class Match {
       if (s.player === p) { slot = s; break }
     }
     if (!slot) return
+    if (d && d.kind === 'battery') {
+      // Batteries recharge the player's flashlight when the client owns one
+      // (the server-side slot keeps a nullable handle; headless stays null).
+      if (slot.flashlight) slot.flashlight.recharge(BATTERY_RESTORE)
+      this.events.push({ k: 'pickup', pid: slot.id, x: d.x, z: d.z, battery: true })
+      return
+    }
     const bullets = d && d.kind === 'bullets'
     const amount = bullets ? BULLETS_PER_DROP : SHELLS_PER_DROP
     if (bullets) slot.weapon.pistol.reserve += amount

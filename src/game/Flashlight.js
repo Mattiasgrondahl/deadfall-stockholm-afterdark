@@ -112,6 +112,14 @@ export class Flashlight {
     this.spot.intensity = this._flicker === 'dim' ? BASE_INTENSITY * DIM_FACTOR : BASE_INTENSITY
   }
 
+  /** Recharge: add `amount` (0..1) to the battery, clamped to full. Used by
+   *  battery pickups (AmmoDrops 'battery' kind). */
+  recharge(amount) {
+    const a = Number(amount)
+    if (!(a > 0)) return
+    this.battery = Math.min(1, this.battery + a)
+  }
+
   /** New run: battery full, light off, deterministic seed restored. */
   reset() {
     this.on = false

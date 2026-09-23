@@ -163,7 +163,7 @@ export class Axe {
         if ((dx / hdist) * fx + (dz / hdist) * fz < cosArc) continue
         const head = hdist <= this.headRange
         const dmg = this.dmg * (head ? this.headMultiplier : 1)
-        z.damage(dmg, null, this.owner)
+        z.damage(dmg, null, this.owner, head)
         // Hit reaction: stagger the zombie along the player->zombie direction
         // (away from the player). No-op if the hit was fatal.
         z.knockback(dx / hdist, dz / hdist, KNOCKBACK)

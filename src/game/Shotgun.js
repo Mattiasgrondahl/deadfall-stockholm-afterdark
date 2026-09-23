@@ -8,6 +8,8 @@ import { raySphere } from './ray.js'
 
 const MAG = 5, RESERVE = 30, DMG = 22, PELLETS = 6
 const HEAD_MULT = 2, RANGE = 18, SPREAD = 0.16
+/** Base stagger speed (m/s) per pellet landed, capped at 4 pellets' worth. */
+const STAGGER_BASE = 0.9
 const RELOAD_TIME = 1.4, FIRE_INTERVAL = 0.9
 const FLASH_TIME = 0.07, RECOIL_KICK = 0.09, RECOIL_DECAY = 0.15
 const KICK = 0.018
@@ -169,10 +171,11 @@ export class Shotgun {
         const dmg = this.damage * (head ? this.headMultiplier : 1) * armor
         this._hitP.copy(o).addScaledVector(this._pellet, bestT)
         this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._pellet)
-        hitZ.damage(dmg, this._pellet, this.owner)
+        hitZ.damage(dmg, this._pellet, this.owner, head)
         // Limb damage: a pellet landing near an arm/leg severs it.
         const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
         if (limb) this.audio?.dismember?.()
+        hitZ._lastBlastHits = (hitZ._lastBlastHits || 0) + 1
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
         if (head) headHit = true
       } else if (wall) {
@@ -183,8 +186,26 @@ export class Shotgun {
         }
       }
     }
-    for (const z of hitSet) this.audio?.hitZombie?.()
+    // Stagger: a close, multi-pellet hit shoves the target back — the
+    // shotgun's crowd-control identity. The push scales with how many pellets
+    // landed (a point-blank blast staggers hard; a single grazing pellet
+    // barely moves them). The brute's armor resists the shove.
+    for (const z of hitSet) {
+      const n = z._lastBlastHits || 1
+      const armor = z.shotgunArmor != null ? z.shotgunArmor : 1
+      // Stagger source: the impact point (falls back to the camera when the
+      // target has no world position, e.g. test stand-ins).
+      const hb = z.getHitboxes ? z.getHitboxes()[0] : null
+      const sx = hb ? hb.center.x : this.camera.position.x
+      const sz = hb ? hb.center.z : this.camera.position.z
+      const dx = sx - this.camera.position.x
+      const dz = sz - this.camera.position.z
+      const hd = Math.hypot(dx, dz) || 1
+      if (typeof z.knockback === 'function') z.knockback(dx / hd, dz / hd, STAGGER_BASE * Math.min(n, 4) * armor)
+      this.audio?.hitZombie?.()
+    }
     if (hitSet.length) this.onHit?.(headHit ? 'head' : 'body') // V5P-1: HUD hit marker
+    for (const z of hitSet) z._lastBlastHits = 0
     this.audio?.shoot?.()
     if (this.ammo === 0) this.reload()
     return true

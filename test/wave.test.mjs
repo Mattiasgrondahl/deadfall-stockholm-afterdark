@@ -45,9 +45,9 @@ test('totals and cap per wave', () => {
   const { wm, game, step } = make()
   wm.reset()
   assert.equal(wm.wave, 1); assert.equal(wm.total, 8); assert.equal(wm.cap, 9)
-  step(1); wm.forceClear(game); step(3.1)
+  step(1); wm.forceClear(game); step(3.6)
   assert.equal(wm.wave, 2); assert.equal(wm.total, 11); assert.equal(wm.cap, 10)
-  step(1); wm.forceClear(game); step(3.1)
+  step(1); wm.forceClear(game); step(3.6)
   assert.equal(wm.wave, 3); assert.equal(wm.total, 14); assert.equal(wm.cap, 11)
 })
 
@@ -101,7 +101,7 @@ test('forceClear kills live, discards remainder, fires no onWaveCleared', () => 
   assert.equal(alive(), 0)
   assert.equal(wm.spawned, wm.total)
   assert.equal(clears.length, 0)
-  step(3.1)
+  step(3.6)
   assert.equal(wm.wave, 2)
   assert.ok(wm.spawned >= 1)
   assert.deepEqual(starts, [1, 2])
@@ -114,7 +114,7 @@ test('natural clear fires on alive===0 with unspawned remainder (S6 case)', () =
   step(1.4)
   assert.equal(wm.spawned, 2)
   killAll()
-  step(3.2)
+  step(3.7)
   assert.deepEqual(clears, [1])
   assert.equal(wm.wave, 2)
   assert.deepEqual(starts, [1, 2])
@@ -129,7 +129,7 @@ test('concurrent cap stalls spawning; a kill frees a slot', () => {
   wm.reset()
   step(1)
   wm.forceClear(game)
-  step(3.1) // wave 2, cap 10
+  step(3.6) // wave 2, cap 10
   let guard = 0
   while (wm.spawned < 10 && guard++ < 60) step(1)
   assert.equal(wm.spawned, 10)

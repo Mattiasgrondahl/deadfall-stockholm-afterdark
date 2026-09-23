@@ -56,21 +56,25 @@ test('drops carry a kind: handgun bullets and shotgun shells both appear', () =>
   }
   assert.ok(kinds.has('bullets'), 'handgun-bullet drops appear')
   assert.ok(kinds.has('shells'), 'shotgun-shell drops appear')
-  for (const d of drops._drops) assert.ok(d.kind === 'bullets' || d.kind === 'shells')
+  for (const d of drops._drops) assert.ok(d.kind === 'bullets' || d.kind === 'shells' || d.kind === 'battery')
   drops.dispose()
 })
 
 test('bullet drops use the bullet material, shell drops the shell material', () => {
   const { drops } = makeManager()
-  let seq = [0, 0] // drop roll 0 (<0.55 hits), kind roll 0 (<0.5 -> bullets)
+  let seq = [0, 0, 0.9] // drop roll 0 (<0.55 hits), kind roll 0 (<0.5 -> bullets), battery roll 0.9 (>=0.18 -> stays bullets)
   drops._rand = () => seq.shift() ?? 0
   drops.maybeSpawn(1, 1)
   assert.equal(drops._drops[0].kind, 'bullets')
   assert.equal(drops._drops[0].mesh.material, drops._bulletMat)
-  seq = [0, 0.9] // drop roll 0 hits, kind roll 0.9 (>=0.5 -> shells)
+  seq = [0, 0.9, 0.9] // drop roll 0 hits, kind roll 0.9 (>=0.5 -> shells), battery roll 0.9 (stays shells)
   drops.maybeSpawn(2, 2)
   assert.equal(drops._drops[1].kind, 'shells')
   assert.equal(drops._drops[1].mesh.material, drops._shellMat)
+  seq = [0, 0, 0.1] // drop hits, kind bullets, battery roll 0.1 (<0.18 -> battery)
+  drops.maybeSpawn(3, 3)
+  assert.equal(drops._drops[2].kind, 'battery')
+  assert.equal(drops._drops[2].mesh.material, drops._batteryMat)
   drops.dispose()
 })
 

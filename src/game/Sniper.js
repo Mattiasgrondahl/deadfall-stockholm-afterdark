@@ -174,7 +174,7 @@ export class Sniper {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
-      hitZ.damage(dmg, this._shot, this.owner)
+      hitZ.damage(dmg, this._shot, this.owner, head)
       const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
       if (limb) this.audio?.dismember?.()
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot)

@@ -297,6 +297,24 @@ export class AudioBank {
     this._playTone({ type: 'sine', freq: 70, duration: 0.14, gain: 0.3, dest })
   }
 
+  /** Telegraph cue: the sound a zombie makes as it winds up a melee swing,
+   *  before the hit lands. Per-type so the player can hear what is about to
+   *  swing: a short intake hiss (walker/shambler), a sharp chirp (screamer),
+   *  a low growl swell (brute). Panned to the attacker when a position is
+   *  given (same era-tolerant routing as zombieAttack). */
+  zombieWindup(type = 'walker', pos = null) {
+    if (!this.ctx) return
+    this._resume()
+    const dest = this._pannerAt(pos)
+    if (type === 'screamer') {
+      this._playTone({ type: 'square', freq: 700, freqEnd: 1100, duration: 0.12, gain: 0.18, dest })
+    } else if (type === 'brute') {
+      this._playTone({ type: 'sawtooth', freq: 55, freqEnd: 75, duration: 0.4, gain: 0.22, dest })
+    } else {
+      this._playNoise({ duration: 0.18, filterType: 'bandpass', filterFreq: type === 'shambler' ? 300 : 500, gain: 0.16, dest })
+    }
+  }
+
   reload() {
     if (!this.ctx) return
     this._resume()
@@ -437,6 +455,19 @@ export class AudioBank {
 
   // Wave cleared: ascending two-tone chime, pitched below the wave-start
   // chime (playWave uses base 220+15n; this uses base 180+15n).
+  /** Kill confirmation: a short, dry "thok" tick. `head` adds a brighter,
+   *  higher ping so a headshot kill reads distinctly from a body kill. */
+  playKill(head = false) {
+    if (!this.ctx) return
+    this._resume()
+    this._playNoise({ duration: 0.05, filterType: 'bandpass', filterFreq: 1800, gain: 0.25 })
+    if (head) {
+      this._playTone({ type: 'triangle', freq: 1200, freqEnd: 1600, duration: 0.12, gain: 0.22, when: 0.02 })
+    } else {
+      this._playTone({ type: 'triangle', freq: 300, freqEnd: 220, duration: 0.1, gain: 0.18, when: 0.02 })
+    }
+  }
+
   playWaveCleared(n) {
     if (!this.ctx) return
     this._resume()

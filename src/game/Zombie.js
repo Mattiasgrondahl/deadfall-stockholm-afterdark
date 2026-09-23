@@ -389,6 +389,10 @@ function buildSkin(rec) {
 }
 
 const ATTACK_RANGE = 1.3
+/** Fraction of the attack cooldown spent in the telegraphed windup before the
+ *  hit lands. Per type: screamers strike almost instantly (fast, annoying),
+ *  shamblers/brutes wind up long (readable, dodgeable heavy hits). */
+const WINDUP_FRACTION = { walker: 0.45, shambler: 0.55, screamer: 0.3, brute: 0.6 }
 const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
 const SEPARATION_DIST = 0.9
 const SEPARATION_STRENGTH = 0.6
@@ -470,6 +474,7 @@ export class Zombie {
     this.isDead = false
     this.deathTimer = 0
     this._attackT = 0
+    this._windupVoiceAt = 0 // windup-voice gate (s); reset when a swing lands
     this._time = 0
     this._killCounted = false
     // Id of the player whose hit last dealt damage (set by weapons that know
@@ -842,12 +847,30 @@ export class Zombie {
       return
     }
     // Melee only lands when the player is within horizontal range AND not
-    // high above the torso (a mid-jump player is out of arm reach).
+    // high above the torso (a mid-jump player is out of arm reach). The hit
+    // is telegraphed: the windup fraction of the cooldown plays first (arms
+    // cocked back + a per-type windup voice), then damage lands.
     if (dist <= ATTACK_RANGE && Math.abs(player.position.y - 1.2) <= AIR_CLEAR) {
       this._setSkinState('attack')
       this._attackT += dt
-      if (this._attackT >= TABLE[this.type].cooldown) {
+      const cd = TABLE[this.type].cooldown
+      const windup = cd * WINDUP_FRACTION[this.type]
+      // Windup pose: pull the arms back as the strike charges up.
+      if (this._attackT < windup) {
+        const k = this._attackT / Math.max(windup, 1e-6)
+        const armRest = POSE2[this.type].armRest
+        this._armL.rotation.x = armRest - k * 0.9
+        this._armR.rotation.x = armRest - k * 0.9
+        if (this._attackT >= this._windupVoiceAt) {
+          this._windupVoiceAt = windup + 1 // fired once per swing
+          if (audio && audio.zombieWindup) audio.zombieWindup(this.type, this.position)
+        }
+        return
+      }
+      if (this._attackT >= cd) {
         this._attackT = 0
+    this._windupVoiceAt = 0 // windup-voice gate (s); reset when a swing lands
+        this._windupVoiceAt = 0
         player.damage(TABLE[this.type].melee, this)
         if (audio && audio.zombieAttack) audio.zombieAttack(this.position) // null-guarded; V4P-2 positional
       }
@@ -1050,9 +1073,12 @@ export class Zombie {
    *  so multiplayer kill attribution can credit the killer (the last hit is
    *  the killing hit, because this method no-ops on a dead zombie).
    *  Non-fatal hits flash HITMAT for 0.15 s; a fatal hit swaps to DEADMAT. */
-  damage(amount, dir = null, by = null) {
+  damage(amount, dir = null, by = null, head = false) {
     if (this.isDead) return
     if (by !== null) this.lastDamager = by
+    // Remember the last hit's kind so the kill feed can distinguish a
+    // headshot kill from a body kill (audio/marker confirmation).
+    this.lastHitHead = head
     this.health -= amount
     if (this.health <= 0) {
       this.health = 0

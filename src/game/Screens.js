@@ -196,6 +196,11 @@ export class Screens {
     this._banner = d.createElement('div'); this._banner.className = 'banner'
     this._root.appendChild(this._banner)
 
+    // Intermission threat-preview line (below the banner; visible while the
+    // next wave is loading).
+    this._threatLine = d.createElement('div'); this._threatLine.className = 'threat-preview'
+    this._root.appendChild(this._threatLine)
+
     this._syncSettings()
   }
 
@@ -332,6 +337,11 @@ export class Screens {
     if (this._game.hud) this._game.hud.show()
   }
 
+  /** Called on wave start: the preview line is stale once spawns begin. */
+  onWaveStarted() {
+    this.clearThreatPreview()
+  }
+
   /** Open the settings panel over whatever screen is up (title or pause);
    *  BACK returns there. */
   showSettings() {
@@ -352,6 +362,18 @@ export class Screens {
     this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
     this._recordText.textContent = record ? 'NEW HIGH SCORE — ' + best : ''
     this._over.classList.add('visible')
+  }
+
+  /** Intermission threat preview: a second, lower banner line that stays up
+   *  for the whole intermission (cleared when the next wave starts). */
+  showThreatPreview(text) {
+    if (!this._threatLine) return
+    this._threatLine.textContent = text
+    this._threatLine.classList.add('show')
+  }
+
+  clearThreatPreview() {
+    if (this._threatLine) this._threatLine.classList.remove('show')
   }
 
   showBanner(text) {

@@ -17,7 +17,13 @@
 // forceClear on a boss wave skips the boss (it never arms the gate) and moves on.
 
 const SPAWN_INTERVAL = 0.7 // seconds between spawns
-const INTERMISSION = 3.0   // seconds between waves
+// Intermission grows with the wave: early waves stay fast (3 s), later waves
+// give room to reposition and reload (capped at 6 s). The wave-5/10/... boss
+// waves get a longer breather after the boss falls.
+const INTERMISSION_BASE = 3.0
+const INTERMISSION_STEP = 0.5
+const INTERMISSION_MAX = 6.0
+const BOSS_INTERMISSION = 7.0
 
 /** A boss stomps in at the end of every BOSS_EVERY-th wave (5, 10, 15, ...). */
 const BOSS_EVERY = 5
@@ -29,6 +35,13 @@ const BOSS_DELAY = 1.5
 /** Spawn point for the boss: index 3 of City.getSpawnPoints() = (0, 85), the
  *  far north end of the main street, so the brute walks the player down. */
 const BOSS_POINT = { x: 0, z: 85 }
+
+/** Intermission length after clearing `wave`: grows with the wave number
+ *  (3 s at wave 1, +0.5 s per wave, capped at 6 s; 7 s after a boss wave). */
+function intermissionFor(wave, wasBoss) {
+  if (wasBoss) return BOSS_INTERMISSION
+  return Math.min(INTERMISSION_MAX, INTERMISSION_BASE + INTERMISSION_STEP * (Math.max(1, wave) - 1))
+}
 
 export class WaveManager {
   /**
@@ -61,6 +74,24 @@ export class WaveManager {
 
   get total() { return 5 + 3 * this.wave }
   get cap() { return Math.min(8 + this.wave, 18) }
+
+  /** Next-wave composition preview for the intermission HUD: the type counts
+   *  of the wave that starts when the current intermission ends. Returns null
+   *  outside the intermission (or before wave 1 exists). */
+  get nextWavePreview() {
+    if (this.intermission <= 0) return null
+    const next = this.wave + 1
+    const counts = { walker: 0, shambler: 0, screamer: 0 }
+    const total = 5 + 3 * next
+    for (let i = 0; i < total; i++) {
+      if (next < 3 && i % 5 === 0) counts.shambler++
+      else if (next === 3 && i % 2 === 1) counts.screamer++
+      else if (next > 3 && i % 5 === 0) counts.shambler++
+      else if (next > 3 && i % 2 === 1) counts.screamer++
+      else counts.walker++
+    }
+    return { wave: next, total, ...counts, boss: isBossWave(next) }
+  }
   get remaining() {
     // While the boss is pending/spawned it is not part of the queue total, so
     // it must be counted or the HUD "left" readout would hit 0 while the fight
@@ -200,11 +231,11 @@ export class WaveManager {
       // straight to the next wave instead of holding the wave open forever.
       if (isBossWave(this.wave) && !this._bossArmed) {
         this.cb.onWaveCleared?.(this.wave)
-        this.intermission = INTERMISSION
+        this.intermission = intermissionFor(this.wave, false)
         return
       }
       this.cb.onWaveCleared?.(this.wave)
-      this.intermission = INTERMISSION
+      this.intermission = intermissionFor(this.wave, this._bossSpawned)
       return
     }
     if (this.spawned < this.total && alive < this.cap) {
@@ -238,6 +269,6 @@ export class WaveManager {
     // intact so the run still reaches its boss.
     this._bossPending = false
     if (isBossWave(this.wave)) this._bossSpawned = true
-    this.intermission = INTERMISSION
+    this.intermission = intermissionFor(this.wave, this._bossSpawned)
   }
 }

@@ -7,7 +7,7 @@ import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP } from './AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
@@ -304,14 +304,28 @@ export class Game {
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {
-        if (this.screens) this.screens.showBanner('WAVE ' + w)
+        if (this.screens) { this.screens.showBanner('WAVE ' + w); this.screens.onWaveStarted() }
         // A new boss-cycle (a "level") begins every 5 waves (waves 1, 6, 11...).
         // Switch to that level's track so each level has its own song.
         if (this.audio && (w - 1) % 5 === 0) {
           this.audio.playLevelMusic(LEVEL_TRACKS, Math.floor((w - 1) / 5), LEVEL_TRACK_SECONDS)
         }
       },
-      onWaveCleared: (w) => { if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED'); if (this.audio) this.audio.playWaveCleared?.(w) },
+      onWaveCleared: (w) => {
+        if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED')
+        if (this.audio) this.audio.playWaveCleared?.(w)
+        // Threat preview: tell the player what the next wave brings while the
+        // intermission is running (composition + boss warning).
+        const p = this.waveManager ? this.waveManager.nextWavePreview : null
+        if (this.screens && p) {
+          const parts = []
+          if (p.shambler) parts.push(p.shambler + ' shamblers')
+          if (p.screamer) parts.push(p.screamer + ' screamers')
+          if (p.walker) parts.push(p.walker + ' walkers')
+          if (p.boss) parts.push('BOSS')
+          this.screens.showThreatPreview('NEXT: WAVE ' + p.wave + ' — ' + parts.join(', '))
+        }
+      },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
       onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
       onBossSpawn: () => { if (this.screens) this.screens.showBanner('THE BRUTE') }
@@ -375,11 +389,17 @@ export class Game {
       audio: this.audio,
       onKill: (z) => {
         this.kills++
-        if (this.hud) this.hud.killMarker()
+        if (this.hud) this.hud.killMarker(z.lastHitHead ? 'head' : 'body')
         if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
+        if (this.audio) this.audio.playKill?.(z.lastHitHead === true)
       },
       onDropPickup: (d) => {
-        if (this.weapon) {
+        if (d && d.kind === 'battery') {
+          // Battery: recharge the flashlight (the run's scarce light). The
+          // pickup is a choice — light vs ammo — so it restores a chunk, not
+          // a full charge.
+          if (this.flashlight) this.flashlight.recharge(BATTERY_RESTORE)
+        } else if (this.weapon) {
           if (d && d.kind === 'bullets') this.weapon.pistol.reserve += BULLETS_PER_DROP
           else this.weapon.shotgun.reserve += SHELLS_PER_DROP
         }

@@ -92,6 +92,26 @@ test('flicker engages below 25% battery; schedule is deterministic', () => {
   a.fl.dispose(); b.fl.dispose()
 })
 
+test('recharge restores battery and relights a dead light', () => {
+  const { fl, input } = makeFL()
+  fl.battery = 0.5
+  fl.recharge(0.35)
+  assert.equal(fl.battery, 0.85)
+  fl.recharge(0.5) // clamps to full
+  assert.equal(fl.battery, 1)
+  fl.recharge(0)   // no-op on zero
+  assert.equal(fl.battery, 1)
+  fl.battery = 0
+  fl.on = true
+  fl.update(DT, input) // auto-off at empty
+  assert.equal(fl.on, false)
+  fl.recharge(0.2)
+  input.flashlight = true
+  fl.update(DT, input)
+  assert.equal(fl.on, true) // a recharged battery relights
+  fl.dispose()
+})
+
 test('dead battery cannot be relit; reset restores full state', () => {
   const { fl, input } = makeFL()
   fl.battery = 0

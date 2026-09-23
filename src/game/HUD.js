@@ -321,9 +321,13 @@ export class HUD {
     this._marker.classList.add('show', 'hit')
   }
 
-  killMarker() {
+  /** Kill confirmation. kind: 'body' (default) | 'head' — a headshot kill
+   *  keeps the amber headshot arms alongside the red kill cross. */
+  killMarker(kind) {
+    const head = kind === 'head'
     this._markerT = 0.6
-    this._marker.classList.remove('hit', 'headshot')
+    this._marker.classList.remove('hit')
+    this._marker.classList.toggle('headshot', head)
     this._marker.classList.add('show', 'kill')
   }
 

@@ -165,7 +165,7 @@ export class Pistol {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
-      hitZ.damage(dmg, this._shot, this.owner)
+      hitZ.damage(dmg, this._shot, this.owner, head)
       // Limb damage: a hit near an arm/leg severs it (arm keeps it coming, a
       // lost leg makes it limp). The boss ignores it.
       const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
