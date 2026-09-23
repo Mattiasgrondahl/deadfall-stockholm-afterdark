@@ -45,6 +45,18 @@ export class AudioBank {
     this._gustSrc = null
     this._humNodes = null
     this.shaper = null
+    // SFX/ambient input bus (browser-only): voices connect here instead of
+    // master; effectsVolume scales it. Headless stays null.
+    this._masterIn = null
+    // Effects-volume ceiling (master's ceiling when no Settings is attached).
+    this._fxCeil = 1
+    // Master bus ceiling driven by the masterVolume setting (0.6 = baseline).
+    this._masterCeil = 0.6
+    // Music bus ceiling driven by the musicVolume setting (0.5 = baseline).
+    this._musicCeil = 0.5
+    // Attached Settings instance (attachSettings); unsubscribed on dispose.
+    this._settings = null
+    this._settingsOff = null
     // Soundtrack: a looping background music track (the YuE2 hard-rock song).
     // Driven by an HTML <audio> element routed through a MediaElementSource ->
     // musicGain -> master, so mute/volume follow the same graph as the SFX.
@@ -72,6 +84,12 @@ export class AudioBank {
           this.shaper.oversample = 'none'
           this.master.connect(this.shaper)
           this.shaper.connect(this.ctx.destination)
+          // SFX/ambient input bus: every non-music voice routes through
+          // _masterIn -> master, so the effects-volume slider scales combat
+          // and ambience without touching the music bus or the limiter chain.
+          this._masterIn = this.ctx.createGain()
+          this._masterIn.gain.value = 1
+          this._masterIn.connect(this.master)
           this._noiseBuffer = this._makeNoiseBuffer(1.0)
         } catch (err) {
           this.ctx = null // construction failed -> treat as headless
@@ -118,6 +136,30 @@ export class AudioBank {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {})
   }
 
+  /** Routing target for a voice with no explicit destination: the SFX input
+   *  bus when it exists (so effectsVolume scales it), else the master. */
+  _fxDest() {
+    return this._masterIn || this.master
+  }
+
+  /** Attach a Settings instance: volumes/mutes follow it live, and the stored
+   *  state is applied immediately. Headless-safe (no ctx -> gains just record). */
+  attachSettings(settings) {
+    if (!settings) return
+    this._settings = settings
+    this._settingsOff = settings.onChange((key) => {
+      if (key === 'masterVolume' || key === 'muted') this._applyMasterGain()
+      else if (key === 'musicVolume' || key === 'musicMuted') this._applyMusicGain()
+      else if (key === 'effectsVolume') this._applyFxGain()
+    })
+    this._fxCeil = settings.get('effectsVolume')
+    this._musicCeil = settings.get('musicVolume')
+    this._masterCeil = settings.get('masterVolume')
+    this.setMuted(settings.get('muted'))
+    this.setMusicMuted(settings.get('musicMuted'))
+    this._applyFxGain()
+  }
+
   // Short noise burst: buffer source -> optional BiquadFilter -> gain -> master.
   _playNoise({ duration, filterType = null, filterFreq = 0, gain, when = 0, dest = null }) {
     if (!this.ctx) return
@@ -133,7 +175,7 @@ export class AudioBank {
     } else {
       src.connect(g)
     }
-    g.connect(dest || this.master)
+    g.connect(dest || this._fxDest())
     g.gain.setValueAtTime(gain, t)
     g.gain.exponentialRampToValueAtTime(0.001, t + duration)
     src.start(t)
@@ -149,7 +191,7 @@ export class AudioBank {
     osc.frequency.setValueAtTime(freq, t)
     if (freqEnd !== null && freqEnd !== freq) osc.frequency.linearRampToValueAtTime(freqEnd, t + duration)
     const g = this.ctx.createGain()
-    osc.connect(g); g.connect(dest || this.master)
+    osc.connect(g); g.connect(dest || this._fxDest())
     g.gain.setValueAtTime(gain, t)
     g.gain.exponentialRampToValueAtTime(0.001, t + duration)
     osc.start(t)
@@ -177,7 +219,7 @@ export class AudioBank {
     bp2.type = 'bandpass'; bp2.frequency.value = f2; bp2.Q.value = 8
     osc.connect(bp1); bp1.connect(env)
     osc.connect(bp2); bp2.connect(env)
-    env.connect(dest || this.master)
+    env.connect(dest || this._fxDest())
     osc.start(t)
     osc.stop(t + duration + 0.05)
   }
@@ -218,7 +260,7 @@ export class AudioBank {
     shaper.curve = shotgunCurve()
     shaper.oversample = '2x'
     const g = this.ctx.createGain()
-    src.connect(lp); lp.connect(shaper); shaper.connect(g); g.connect(this.master)
+    src.connect(lp); lp.connect(shaper); shaper.connect(g); g.connect(this._fxDest())
     // Fast attack, then a two-stage decay (a quick snap then a slower body).
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(0.9, t + 0.004)
@@ -501,7 +543,7 @@ export class AudioBank {
    * master when no position / headless). Distance level is already applied by
    * the scheduler's manual falloff, so rolloffFactor is 0 — no double decay. */
   _pannerAt(pos) {
-    if (!pos || !this.ctx) return this.master
+    if (!pos || !this.ctx) return this._fxDest()
     const p = this.ctx.createPanner()
     p.panningModel = 'equalpower'
     p.distanceModel = 'linear'
@@ -513,10 +555,10 @@ export class AudioBank {
     // fall back to unpanned master output when none match (never throws).
     const triad = p.positionX ? { x: p.positionX, y: p.positionY, z: p.positionZ } : null
     if (!this._set3([p.position, triad], pos.x, 0.8, pos.z)) {
-      if (typeof p.setPosition !== 'function') { p.disconnect(); return this.master }
+      if (typeof p.setPosition !== 'function') { p.disconnect(); return this._fxDest() }
       p.setPosition(pos.x, 0.8, pos.z)
     }
-    p.connect(this.master)
+    p.connect(this._fxDest())
     return p
   }
 
@@ -531,7 +573,7 @@ export class AudioBank {
     if (gain <= 0.001) return
     this._resume()
     const dest = this._pannerAt(pos)
-    if (entry) entry.p = dest === this.master ? null : dest
+    if (entry) entry.p = dest === this.master || dest === this._masterIn ? null : dest
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
     } else if (type === 'brute') {
@@ -646,7 +688,7 @@ export class AudioBank {
     b.gain.setValueAtTime(0.001, at)
     b.gain.linearRampToValueAtTime(0.03 + 0.06 * this._gustRand(), at + dur * 0.3)
     b.gain.linearRampToValueAtTime(0.001, at + dur)
-    src.connect(f); f.connect(b); b.connect(this.master)
+    src.connect(f); f.connect(b); b.connect(this._fxDest())
     src.start(at)
     src.stop(at + dur + 0.05)
     this._gustSrc = src
@@ -666,7 +708,7 @@ export class AudioBank {
     lfo.connect(lfoGain); lfoGain.connect(g.gain)
     const o1 = this.ctx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = 55
     const o2 = this.ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 57
-    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master)
+    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this._fxDest())
     o1.start(t); o2.start(t); lfo.start(t)
     // V4P-1b: distant city hum/rumble - fixed 4-node subgraph (two sub-bass
     // sines through a 120 Hz lowpass, gain below the wind bed), separate from
@@ -675,7 +717,7 @@ export class AudioBank {
     const ho2 = this.ctx.createOscillator(); ho2.type = 'sine'; ho2.frequency.value = 48
     const hlp = this.ctx.createBiquadFilter(); hlp.type = 'lowpass'; hlp.frequency.value = 120
     const hg = this.ctx.createGain(); hg.gain.value = 0.015
-    ho1.connect(hlp); ho2.connect(hlp); hlp.connect(hg); hg.connect(this.master)
+    ho1.connect(hlp); ho2.connect(hlp); hlp.connect(hg); hg.connect(this._fxDest())
     ho1.start(t); ho2.start(t)
     this._humNodes = { ho1, ho2, hlp, hg }
     this._ambientNodes = { o1, o2, lfo, g }
@@ -711,12 +753,47 @@ export class AudioBank {
 
   setMuted(on) {
     this.muted = !!on
+    this._applyMasterGain()
+    this._applyMusicGain()
+    if (this._settings) this._settings.set('muted', this.muted)
+  }
+
+  /** Master bus gain: 0 while muted, else the masterVolume ceiling (0.6 = the
+   *  shipped baseline ceiling with no Settings attached). The direct `.value`
+   *  write makes the change take effect immediately even while the context is
+   *  still suspended (pre-gesture); the scheduled write keeps the timeline
+   *  clean for automation. */
+  _applyMasterGain() {
     if (this.ctx && this.master) {
+      // Read the ceiling fresh: during a settings change event the cached
+      // _masterCeil may not have been updated yet (listener order).
+      const ceil = this._settings ? this._settings.get('masterVolume') : this._masterCeil
+      this._masterCeil = ceil
+      const v = this.muted ? 0 : ceil
       const t = this.ctx.currentTime
       this.master.gain.cancelScheduledValues(t)
-      this.master.gain.setValueAtTime(this.muted ? 0 : 0.6, t)
+      this.master.gain.setValueAtTime(v, t)
+      this.master.gain.value = v
     }
-    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : 0.5
+  }
+
+  /** SFX/ambient input bus gain: the effectsVolume ceiling (1 = baseline). */
+  _applyFxGain() {
+    if (this._masterIn) {
+      const ceil = this._settings ? this._settings.get('effectsVolume') : this._fxCeil
+      this._fxCeil = ceil
+      this._masterIn.gain.value = ceil
+    }
+  }
+
+  /** Music bus gain: 0 when either mute flag is set, else the musicVolume
+   *  ceiling (0.5 = the shipped baseline). */
+  _applyMusicGain() {
+    if (this._musicGain) {
+      const ceil = this._settings ? this._settings.get('musicVolume') : this._musicCeil
+      this._musicCeil = ceil
+      this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : ceil
+    }
   }
 
   toggleMuted() { this.setMuted(!this.muted) }
@@ -808,14 +885,17 @@ export class AudioBank {
 
   /** Set the music bus gain (0..1); either mute flag overrides it to 0. */
   setMusicVolume(v) {
-    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : Math.max(0, Math.min(1, v))
+    this._musicCeil = Math.max(0, Math.min(1, Number(v) || 0))
+    this._applyMusicGain()
   }
 
   /** Mute/unmute ONLY the soundtrack (SFX stay audible). Independent of the
-   *  global mute: either flag silences the music bus. */
+   *  global mute: either flag silences the music bus. Persisted when a
+   *  Settings instance is attached. */
   setMusicMuted(on) {
     this._musicMuted = !!on
-    if (this._musicGain) this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : 0.5
+    this._applyMusicGain()
+    if (this._settings) this._settings.set('musicMuted', this._musicMuted)
   }
 
   toggleMusicMuted() { this.setMusicMuted(!this._musicMuted) }
@@ -836,6 +916,9 @@ export class AudioBank {
     this._onMusicTimeUpdate = null
     this._musicLen = 0
     this._musicMuted = false
+    if (this._settingsOff) { this._settingsOff(); this._settingsOff = null }
+    this._settings = null
+    this._masterIn = null
     this._groanMap = new Map()
     this._groanVoices = []
     this._groanClock = 0

@@ -153,6 +153,7 @@ export class Axe {
       const fz = -Math.cos(p.yaw)
       const cosArc = Math.cos(this.arc)
       const hitSet = []
+      let headHit = false
       for (const z of (this.getZombies ? this.getZombies() : [])) {
         if (z.isDead) continue
         const dx = z.position.x - p.position.x
@@ -168,9 +169,10 @@ export class Axe {
         z.knockback(dx / hdist, dz / hdist, KNOCKBACK)
         this.blood?.burst(z.position.x, z.position.y + (head ? 1.8 : 1.2), z.position.z, dmg, head)
         hitSet.push(z)
+        if (head) headHit = true
       }
       for (const z of hitSet) this.audio?.hitZombie?.()
-      if (hitSet.length) this.onHit?.() // V5P-1: HUD hit marker
+      if (hitSet.length) this.onHit?.(headHit ? 'head' : 'body') // V5P-1: HUD hit marker
     }
     this.audio?.axeSwing?.() // voice added in the audio task; null-safe no-op until then
     return true

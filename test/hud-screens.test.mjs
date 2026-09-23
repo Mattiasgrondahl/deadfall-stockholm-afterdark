@@ -224,8 +224,11 @@ function makeGame(doc, hud) {
   assert(title.classList.contains('visible'))
   assert(find(title, 'game-title'))
   assert(find(title, 'tagline'))
-  assert.strictEqual(find(title, 'controls-grid').children.length, 8) // v2 adds F + 1/2 rows
-  assert.strictEqual(find(title, 'btn').textContent, 'START')
+  assert.strictEqual(find(title, 'controls-grid').children.length, 13) // Phase 1: full live control contract
+  const btns = []
+  const collectBtns = (el) => { for (const c of el.children) { if (c.classList.contains('btn')) btns.push(c); collectBtns(c) } }
+  collectBtns(title)
+  assert.deepStrictEqual(btns.map(b => b.textContent), ['SETTINGS', 'START'])
   // other screens are hidden
   assert(!screenWithText(screensRoot, 'PAUSED').classList.contains('visible'))
   assert(!screenWithText(screensRoot, 'YOU DIED').classList.contains('visible'))
@@ -241,7 +244,10 @@ function makeGame(doc, hud) {
   const screens = new Screens(screensRoot, game)
   let startCalls = 0
   game.startGame = () => startCalls++
-  find(screenWithText(screensRoot, 'DEADFALL'), 'btn').click()   // START
+  const startButtons = []
+  const collectStart = (el) => { for (const c of el.children) { if (c.classList.contains('btn') && c.textContent === 'START') startButtons.push(c); collectStart(c) } }
+  collectStart(screenWithText(screensRoot, 'DEADFALL'))
+  startButtons[0].click()   // START
   assert.strictEqual(startCalls, 1)
   // game-over RESTART also calls startGame
   screens.showGameOver({ wave: 2, kills: 7 })

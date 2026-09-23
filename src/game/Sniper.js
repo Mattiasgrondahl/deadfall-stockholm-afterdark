@@ -179,7 +179,7 @@ export class Sniper {
       if (limb) this.audio?.dismember?.()
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot)
       this.audio?.hitZombie?.()
-      this.onHit?.()
+      this.onHit?.(head ? 'head' : 'body') // HUD hit marker (headshot variant)
     } else if (wall) {
       if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
         this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
@@ -197,6 +197,18 @@ export class Sniper {
     this._reloadT = this.reloadTime
     this.audio?.reload?.()
     return true
+  }
+
+  /** Set the un-scoped base FOV (degrees, from Settings). Clamped to the
+   *  sniper's sane range; the scope FOV (18) is unaffected. */
+  setBaseFov(deg) {
+    const d = Number(deg)
+    if (!Number.isFinite(d)) return
+    this._baseFov = Math.max(60, Math.min(100, d))
+    if (!this.scoped && Math.abs(this.camera.fov - this._baseFov) > 1e-4) {
+      this.camera.fov = this._baseFov
+      this.camera.updateProjectionMatrix()
+    }
   }
 
   reset() {

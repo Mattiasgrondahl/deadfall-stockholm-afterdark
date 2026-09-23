@@ -22,6 +22,7 @@ import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
 import { PostFX } from './PostFX.js'
+import { Settings } from './Settings.js'
 
 // Soundtrack mp3s (YuE2 hard-rock zombie songs), served from public/. Resolved
 // against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
@@ -76,7 +77,11 @@ export class Game {
     this.headless = !!opts.headless
     this.canvas = opts.canvas || null
     this.state = GameState.TITLE
-    this.quality = 'high'
+    // Persistent player settings (volumes, sensitivity, FOV, quality, reduced
+    // motion). Constructed before any subsystem so Lighting/Player/AudioBank/
+    // Screens all start from the stored values. Headless keeps defaults.
+    this.settings = new Settings(this.headless ? null : { localStorage: window.localStorage })
+    this.quality = this.settings.get('quality')
     // Difficulty preset (see DIFFICULTY in Zombie.js): 'normal' is the
     // shipped baseline; 'frenzy' = 2x zombie speed + flat 50 HP (2-shot kill
     // unless headshot). Screens can reassign it on the title screen.
@@ -87,6 +92,14 @@ export class Game {
     this.env = this.headless
       ? { document: null, window: null, canvasFactory: fakeCanvasFactory }
       : { document: document, window: window, canvasFactory: () => document.createElement('canvas') }
+
+    // Reduced motion: default the setting from the OS media query (browser
+    // only; headless keeps the default false).
+    if (!this.headless && window.matchMedia) {
+      try {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.settings.set('reducedMotion', true)
+      } catch (err) { /* matchMedia unavailable -> keep default */ }
+    }
 
     // Plain input data object (see class comment).
     this.inputState = {
@@ -108,6 +121,8 @@ export class Game {
     this.screens = null
     this.waveManager = null
     this.collision = null
+    // State-transition listeners (Screens syncs its overlays through these).
+    this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
     this._boss = null
 
@@ -250,6 +265,7 @@ export class Game {
     // WIRING:PLAYER (task A)
     this.collision = new CollisionWorld(180, 180)
     this.player = new Player(this.camera, this.inputState, this.collision, this.audio)
+    this.player.sensMult = this.settings.get('sensitivity')
     this.player.setOnDeath(() => this.onPlayerDeath())
     // WIRING:CITY (task B): collision starts clean; City registers its own AABBs
     this.collision.clear()
@@ -268,6 +284,7 @@ export class Game {
     this.postfx = new PostFX(this.scene, this.camera, this.renderer, { strength: 0.25 })
     // WIRING:AUDIO
     this.audio = new AudioBank()
+    this.audio.attachSettings(this.settings)
     if (this.player) this.player.audio = this.audio
     if (this.input) this.input.on('mute', () => this.audio.toggleMuted())
     // N toggles ONLY the soundtrack; keep the HUD button label in sync.
@@ -335,9 +352,12 @@ export class Game {
       if (this.score) this.hud.score = this.score // V9: reveals the score box
       // Music-mute button: toggles ONLY the soundtrack (SFX stay audible).
       if (this.hud) this.hud.onToggleMusic = (muted) => { if (this.audio) this.audio.setMusicMuted(muted) }
+      // Reflect the persisted music-mute state on the HUD button at boot.
+      if (this.hud && this.audio) this.hud.setMusicMuted(this.audio._musicMuted)
     }
-    // V5P-1: weapon hit -> HUD marker (no-op headless: hud is null there)
-    if (this.weapon) this.weapon.onHit = () => { if (this.hud) this.hud.hitMarker() }
+    // V5P-1: weapon hit -> HUD marker (no-op headless: hud is null there).
+    // Weapons pass 'head' | 'body' so a headshot marker reads differently.
+    if (this.weapon) this.weapon.onHit = (kind) => { if (this.hud) this.hud.hitMarker(kind) }
     // V5P-2: player damage -> HUD directional feedback (no-op headless: hud is null there)
     if (this.player) this.player._onDamaged = (n, s) => { if (this.hud) this.hud.dmgFeedback(n, s) }
     // WIRING:WORLDCORE (Phase 0, MULTIPLAYER_PLAN §9): state of the shared
@@ -366,6 +386,47 @@ export class Game {
         if (this.audio) this.audio.pickup?.()
       }
     }
+    // WIRING:SETTINGS — push the stored settings into every subsystem and
+    // re-apply live when the player changes one (pause menu / title).
+    this.applySettings()
+    this._settingsOff = this.settings.onChange((key) => this.applySettings(key))
+  }
+
+  /**
+   * Apply settings to the live subsystems. `onlyKey` (optional) limits the
+   * fan-out to the subsystems that read that key; undefined applies all.
+   */
+  applySettings(onlyKey) {
+    const s = this.settings.values
+    if (!onlyKey || onlyKey === 'quality') {
+      this.quality = s.quality
+      if (this.lighting) this.lighting.setQuality(s.quality === 'high' ? 'high' : 'low')
+      if (this.postfx) this.postfx.setEnabled(s.quality === 'high')
+    }
+    if (!onlyKey || onlyKey === 'sensitivity') {
+      if (this.player) this.player.sensMult = s.sensitivity
+    }
+    if (!onlyKey || onlyKey === 'fov') {
+      if (this.weapon && this.weapon.sniper) this.weapon.sniper.setBaseFov(s.fov)
+      else if (this.camera && !(this.weapon && this.weapon.sniper && this.weapon.sniper.scoped)) {
+        this.camera.fov = s.fov
+        this.camera.updateProjectionMatrix()
+      }
+    }
+    if (!onlyKey || onlyKey === 'reducedMotion') {
+      if (this.hud) this.hud.setReducedMotion(s.reducedMotion)
+      if (this.postfx) this.postfx.setGrainEnabled(!s.reducedMotion)
+    }
+    if (!onlyKey || onlyKey === 'flashlightEffects') {
+      if (this.flashlight) this.flashlight.setEffectsEnabled(s.flashlightEffects)
+    }
+    if (!onlyKey || onlyKey === 'musicMuted') {
+      // Keep the HUD music button label in sync with the stored state. The
+      // label follows the setting; the audio bus follows it via its own
+      // settings listener, so no audio call is needed here (calling
+      // setMusicMuted would re-persist and re-emit, looping forever).
+      if (this.hud) this.hud.setMusicMuted(s.musicMuted)
+    }
   }
 
   setState(next) {
@@ -379,6 +440,22 @@ export class Game {
     if (next === GameState.PAUSED && this.input && this.input.locked() && this.env.document) {
       this.env.document.exitPointerLock()
     }
+    // Phase 1: notify Screens (and any other state listener) so the visible
+    // overlay always matches the state — even when pointer lock never engaged.
+    for (const cb of this._stateListeners) {
+      try { cb(next, prev) } catch (err) { /* a bad listener must not break the transition */ }
+    }
+  }
+
+  /** Subscribe to state transitions (next, prev) -> void. Returns an off fn. */
+  onStateChange(cb) {
+    this._stateListeners.push(cb)
+    return () => this.offStateChange(cb)
+  }
+
+  offStateChange(cb) {
+    const i = this._stateListeners.indexOf(cb)
+    if (i >= 0) this._stateListeners.splice(i, 1)
   }
 
   /** Title or gameover -> fresh PLAYING run. */

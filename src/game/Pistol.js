@@ -172,7 +172,7 @@ export class Pistol {
       if (limb) this.audio?.dismember?.()
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot) // fatal headshot
       this.audio?.hitZombie?.()
-      this.onHit?.() // HUD hit marker
+      this.onHit?.(head ? 'head' : 'body') // HUD hit marker (headshot variant)
     } else if (wall) {
       // No zombie absorbed the round: break a lamp if the wall was one, else
       // leave a bullet hole on the surface it hit.

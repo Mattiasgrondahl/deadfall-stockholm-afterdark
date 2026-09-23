@@ -45,6 +45,9 @@ export class Player {
     this.yaw = 0           // 0 = facing -Z (city center)
     this.pitch = 0
     this._pitchKick = 0
+    // Mouse-look multiplier applied to LOOK_SENS (set from Settings by Game;
+    // 1.0 = the shipped baseline feel).
+    this.sensMult = 1
     this.health = 100
     this.maxHealth = 100
     this.stamina = 100
@@ -68,8 +71,9 @@ export class Player {
 
     // Look: consume accumulated mouse deltas, clamp pitch.
     if (st.turnX !== 0 || st.turnY !== 0) {
-      this.yaw -= st.turnX * LOOK_SENS
-      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch - st.turnY * LOOK_SENS))
+      const sens = LOOK_SENS * (this.sensMult > 0 ? this.sensMult : 1)
+      this.yaw -= st.turnX * sens
+      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch - st.turnY * sens))
       st.turnX = 0
       st.turnY = 0
     }

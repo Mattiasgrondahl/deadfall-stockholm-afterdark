@@ -54,8 +54,8 @@ try {
     }
   })
 
-  // 3) Click START
-  const startBtn = await page.$('.screen.visible button.btn')
+  // 3) Click START (the primary button; SETTINGS shares the .btn class)
+  const startBtn = await page.$('.screen.visible button.btn.primary')
   if (startBtn) await startBtn.click()
   out.startClicked = !!startBtn
   await page.waitForTimeout(2500) // wave 1 spawns (~0.7 s cadence)

@@ -37,6 +37,8 @@ export class Flashlight {
 
     this.on = false
     this.battery = 1 // 0..1
+    // Flicker/dim effects on low battery (Settings.flashlightEffects).
+    this._effects = true
     this._flicker = 'steady' // 'steady' | 'dim'
     this._flickerUntil = 0
     this._time = 0
@@ -48,6 +50,12 @@ export class Flashlight {
   _rand() {
     this._seed = (Math.imul(this._seed, 48271) >>> 0) % 65537
     return this._seed / 65537
+  }
+
+  /** Enable/disable the low-battery flicker effect (Settings). */
+  setEffectsEnabled(on) {
+    this._effects = !!on
+    if (!this._effects) { this._flicker = 'steady'; this.spot.intensity = this.on ? BASE_INTENSITY : 0 }
   }
 
   /** Toggle. Turning on with an exhausted battery is a no-op. */
@@ -87,8 +95,10 @@ export class Flashlight {
       if (this.audio) this.audio.flashlightClick?.()
       return
     }
-    // Low-battery flicker: LCG-scheduled dim bursts.
-    if (this.battery < LOW_AT) {
+    // Low-battery flicker: LCG-scheduled dim bursts. With effects disabled
+    // (Settings.flashlightEffects), the beam stays steady until the battery
+    // dies instead of flickering.
+    if (this._effects && this.battery < LOW_AT) {
       if (this._flicker === 'steady' && this._time >= this._flickerUntil) {
         this._flicker = 'dim'
         this._flickerUntil = this._time + 0.05 + this._rand() * 0.25

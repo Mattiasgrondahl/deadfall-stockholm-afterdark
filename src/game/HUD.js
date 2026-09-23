@@ -293,6 +293,13 @@ export class HUD {
   show() { this._hudRoot.classList.add('visible') }
   hide() { this._hudRoot.classList.remove('visible') }
 
+  /** Reduced motion: soften the damage vignette pulse and disable the hit
+   *  marker scale pop (handled in CSS via .reduced-motion). */
+  setReducedMotion(on) {
+    this._reducedMotion = !!on
+    if (this._fxRoot) this._fxRoot.classList.toggle('reduced-motion', this._reducedMotion)
+  }
+
   /** Reflect the music-mute state on the button (called by the N-key path so
    *  the label stays in sync with AudioBank without re-firing the callback). */
   setMusicMuted(muted) {
@@ -303,21 +310,26 @@ export class HUD {
     }
   }
 
-  hitMarker() {
-    this._markerT = 0.25
+  /** Hit confirmation. kind: 'body' (default) | 'head' — a headshot marker
+   *  is brighter, larger, and lingers slightly longer so the player can tell
+   *  a clean head hit from a body hit at a glance. */
+  hitMarker(kind) {
+    const head = kind === 'head'
+    this._markerT = head ? 0.35 : 0.25
     this._marker.classList.remove('kill')
+    this._marker.classList.toggle('headshot', head)
     this._marker.classList.add('show', 'hit')
   }
 
   killMarker() {
     this._markerT = 0.6
-    this._marker.classList.remove('hit')
+    this._marker.classList.remove('hit', 'headshot')
     this._marker.classList.add('show', 'kill')
   }
 
   clearMarker() {
     this._markerT = 0
-    this._marker.classList.remove('show', 'hit', 'kill')
+    this._marker.classList.remove('show', 'hit', 'kill', 'headshot')
   }
 
   dmgFeedback(amount, source) {

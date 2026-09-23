@@ -378,6 +378,14 @@ html, body {
 .hit-marker.kill { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
 .hit-marker.kill::before,
 .hit-marker.kill::after { background: #ff4444; width: 4px; margin-left: -2px; }
+/* headshot confirmation: amber, larger, brighter than a body hit */
+.hit-marker.headshot { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+.hit-marker.headshot.show { opacity: 1; }
+.hit-marker.headshot::before,
+.hit-marker.headshot::after { background: #ffb020; width: 4px; margin-left: -2px; }
+/* reduced motion: no scale pops on markers/damage edge */
+.reduced-motion .hit-marker,
+.reduced-motion .dmg-edge { transition: none !important; }
 
 /* ------------------------------------------------------------ Screens */
 #screens-root { position: absolute; inset: 0; pointer-events: none; z-index: 30; }

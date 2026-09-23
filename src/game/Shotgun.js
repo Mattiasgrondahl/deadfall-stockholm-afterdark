@@ -141,6 +141,7 @@ export class Shotgun {
     this._up.crossVectors(this._right, this._dir).normalize()
     const o = this.camera.position
     const hitSet = [] // distinct zombies hit by this blast
+    let headHit = false
     for (let i = 0; i < this.pellets; i++) {
       // Per-pellet jitter around the aim direction (deterministic LCG).
       this._pellet.copy(this._dir)
@@ -173,6 +174,7 @@ export class Shotgun {
         const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
         if (limb) this.audio?.dismember?.()
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
+        if (head) headHit = true
       } else if (wall) {
         // No zombie absorbed this pellet: break a lamp if the wall was one,
         // otherwise leave a bullet hole on the surface it hit.
@@ -182,7 +184,7 @@ export class Shotgun {
       }
     }
     for (const z of hitSet) this.audio?.hitZombie?.()
-    if (hitSet.length) this.onHit?.() // V5P-1: HUD hit marker
+    if (hitSet.length) this.onHit?.(headHit ? 'head' : 'body') // V5P-1: HUD hit marker
     this.audio?.shoot?.()
     if (this.ammo === 0) this.reload()
     return true

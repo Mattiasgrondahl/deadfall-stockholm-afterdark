@@ -170,6 +170,7 @@ export class Sword {
       const fz = -Math.cos(p.yaw)
       const cosArc = Math.cos(this.arc)
       const hitSet = []
+      let headHit = false
       for (const z of (this.getZombies ? this.getZombies() : [])) {
         if (z.isDead) continue
         const dx = z.position.x - p.position.x
@@ -186,9 +187,10 @@ export class Sword {
         this.blood?.burst(z.position.x, z.position.y + (head ? 1.8 : 1.2), z.position.z, dmg, head)
         if (head && z.isDead) this.onDecapitate?.(z, { x: fx, z: fz }) // fatal headshot
         hitSet.push(z)
+        if (head) headHit = true
       }
       for (const z of hitSet) this.audio?.hitZombie?.()
-      if (hitSet.length) this.onHit?.() // HUD hit marker
+      if (hitSet.length) this.onHit?.(headHit ? 'head' : 'body') // HUD hit marker
     }
     this.audio?.swordSwing?.() // voice lands with the audio task; null-safe
     return true

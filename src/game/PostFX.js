@@ -92,6 +92,7 @@ export class PostFX {
     // baseline's brightness and edge detail that a post-bloom ShaderPass would
     // otherwise lose on the RT->screen re-encode.
     this.grade = new ShaderPass(GRADE_SHADER)
+    this._grainAmount = this.grade.uniforms && this.grade.uniforms.uGrain ? this.grade.uniforms.uGrain.value : 0
     this.composer.addPass(renderPass)
     this.composer.addPass(this.gtao)
     this.composer.addPass(this.grade)
@@ -109,6 +110,19 @@ export class PostFX {
   setStrength(v) {
     this.strength = clamp01(Number.isFinite(v) ? v : this.strength)
     if (this.bloom) this.bloom.strength = this.strength
+  }
+
+  /** Full on/off for the whole composer (quality tiers: low skips post). */
+  setEnabled(on) {
+    if (!this.composer) return
+    this.enabled = !!on
+  }
+
+  /** Film grain on/off (reduced motion disables the animated grain). */
+  setGrainEnabled(on) {
+    if (this.grade && this.grade.uniforms && this.grade.uniforms.uGrain) {
+      this.grade.uniforms.uGrain.value = on ? this._grainAmount : 0
+    }
   }
 
   setSize(w, h) {
