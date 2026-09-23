@@ -466,13 +466,15 @@ export function addWantedPoster(group, building, env) {
   const ph = pw * 1.35
   const map = makePosterTexture(env)
   const mat = new THREE.MeshStandardMaterial({
-    map: map || null,
     color: map ? 0xffffff : 0xd8c9a0,
     roughness: 0.92,
     metalness: 0.0,
     emissive: 0x2a2016,
     emissiveIntensity: map ? 0.25 : 0.6
   })
+  // Assign the image map only once it has decoded; assigning it up front makes
+  // the renderer upload an empty texture and warn "no image data found" (r185).
+  if (map) map.addEventListener('load', () => { mat.map = map; mat.needsUpdate = true })
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat)
   mesh.castShadow = false
   // Front face of the box is at local +z = d/2; nudge 0.02 off the wall so the
@@ -691,6 +693,11 @@ export function makeGroundImageTexture(env) {
   try {
     const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
     const url = base.replace(/\/$/, '') + '/assets/ground/asphalt.jpg'
+    // No onLoad that forces an upload: TextureLoader already flags the texture
+    // when the image decodes. Callers must NOT set needsUpdate before the image
+    // arrives, or three warns "Texture marked for update but no image data
+    // found." (r185). The clone sites in City.js mark their clones inside the
+    // source's onLoad instead.
     const tex = new THREE.TextureLoader().load(url)
     tex.colorSpace = THREE.SRGBColorSpace
     tex.anisotropy = 4

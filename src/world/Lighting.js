@@ -26,7 +26,10 @@ export class Lighting {
     renderer.toneMappingExposure = 1.2
     if (renderer.shadowMap) {
       renderer.shadowMap.enabled = this.quality === 'high'
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      // three r185 deprecates PCFSoftShadowMap (it silently falls back to
+      // PCFShadowMap and warns once). Use the non-deprecated type directly so
+      // the console stays clean; visually identical to the old soft map.
+      renderer.shadowMap.type = THREE.PCFShadowMap
     }
 
     // Moon: the only shadow caster; light + target follow the player.

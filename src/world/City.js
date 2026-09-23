@@ -236,10 +236,10 @@ export class City {
     const groundImage = makeGroundImageTexture(this.env)
     if (groundImage) {
       groundImage.repeat.set(30, 30)
-      groundImage.needsUpdate = true
-      ground.material.map = groundImage
       ground.material.color.set(0xffffff)
-      ground.material.needsUpdate = true
+      // Assign the color map only once the image has decoded; assigning it up
+      // front uploads an empty texture and warns "no image data found" (r185).
+      groundImage.addEventListener('load', () => { ground.material.map = groundImage; ground.material.needsUpdate = true })
     }
     ground.rotation.x = -Math.PI / 2
     ground.receiveShadow = true
@@ -289,6 +289,10 @@ export class City {
     // the near ring the player actually walks past. Browser-only; null headless,
     // where the procedural canvas facade stays in place.
     const facadeImage = makeFacadeImageTexture(this.env)
+    // Hero clones share the source's .image; mark them for upload only when the
+    // source decodes (setting needsUpdate at clone time warns "no image data").
+    const facadeImageClones = []
+    if (facadeImage) facadeImage.addEventListener('load', () => { for (const c of facadeImageClones) c.needsUpdate = true })
     const roofMat = new THREE.MeshStandardMaterial({ color: 0x1d2430, roughness: 0.95, metalness: 0.02 })
     let fv = 113
     const variants = []
@@ -329,7 +333,7 @@ export class City {
       if (hero) {
         const im = facadeImage.clone()
         im.repeat.set(b.w / 6, b.h / 21)
-        im.needsUpdate = true
+        facadeImageClones.push(im)
         facade.map = im
       }
       b.mesh.material = [facade, facade, roofMat, roofMat, facade, facade]
