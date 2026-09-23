@@ -319,14 +319,16 @@ function loadSkin(type, onReady) {
     return
   }
   if (entry === 'loading') {
-    // A load is already in flight for this type; poll cheaply on the next tick
-    // via the microtask queue once it resolves (the shared scene is set below).
+    // A load is already in flight for this type; retry on a MACROTASK timer
+    // (setTimeout) once it resolves. A microtask poll (Promise.resolve().then)
+    // re-queues synchronously and starves the render loop when many zombies
+    // call this at once — the page hangs. setTimeout yields to rAF/render.
     const wait = () => {
       const e = skinCache[type]
       if (e && e !== 'loading') { if (e !== 'missing') onReady(e); return }
-      Promise.resolve().then(wait)
+      setTimeout(wait, 32)
     }
-    wait()
+    setTimeout(wait, 32)
     return
   }
   skinCache[type] = 'loading'
