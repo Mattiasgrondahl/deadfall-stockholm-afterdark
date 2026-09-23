@@ -169,3 +169,38 @@ test('Game.startMultiplayer builds the controller + starts the run', () => {
   mp.dispose()
   game.multiplayer.dispose()
 })
+
+test('co-op suppresses local zombie sim + HUD reads server snapshot', () => {
+  const game = new Game({ headless: true })
+  game.start()
+  const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
+  mp.net.socket.open()
+  mp.net.socket.receive({ t: MSG.WELCOME, pid: 'ada', roster: [] })
+  // Server snapshot: wave 3, 7 remaining, one remote zombie + one remote player.
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({
+    wave: 3, remaining: 7,
+    players: [
+      { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+      { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+    ],
+    zombies: [{ id: 'z1', x: 2, y: 1, z: 3, type: 'walker', hp: 60 }]
+  }) })
+  // Local spawn would normally add a client-side zombie; co-op must drop it.
+  game.debug.spawnZombie('walker', 1, 1)
+  game.debug.setInput({ forward: true })
+  game.step(1 / 60)
+  assert.equal(game.zombies.length, 0, 'local zombie sim suppressed in co-op')
+  // Remote zombie is rendered by the controller, not the local sim.
+  assert.ok(mp.zombies.has('z1'), 'remote zombie rendered by controller')
+  // HUD reads wave/remaining from the server snapshot, not the local WaveManager.
+  assert.equal(game.multiplayer.lastSnap.wave, 3)
+  assert.equal(game.multiplayer.lastSnap.remaining, 7)
+  // Single-player path still has a local wave manager + zombies.
+  const solo = new Game({ headless: true })
+  solo.start()
+  solo.debug.spawnZombie('walker', 1, 1)
+  solo.step(1 / 60)
+  assert.ok(solo.zombies.length >= 1, 'single-player keeps local zombie sim')
+  mp.dispose(); game.multiplayer && game.multiplayer.dispose()
+  solo.dispose && solo.dispose()
+})

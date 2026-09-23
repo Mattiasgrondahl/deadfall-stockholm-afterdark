@@ -197,7 +197,12 @@ export class Game {
     this.render()
     // WIRING:HUD (owned by task F)
     if (this.state === GameState.PLAYING && this.hud) {
-      this.hud.update(this.player, this.weapon, this.waveManager)
+      // In co-op the server is authoritative for wave/remaining: feed the HUD a
+      // snapshot-backed view instead of the (unused) local WaveManager.
+      const waveSrc = (this.multiplayer && this.multiplayer.lastSnap)
+        ? { wave: this.multiplayer.lastSnap.wave | 0, remaining: this.multiplayer.lastSnap.remaining | 0 }
+        : this.waveManager
+      this.hud.update(this.player, this.weapon, waveSrc)
     }
     return d
   }
@@ -620,7 +625,20 @@ export class Game {
     if (this.flashlight) this.flashlight.update(dt, this.inputState)
     // WIRING:UPDATE — the shared authoritative core (see WorldCore.js):
     // player + weapon, zombie AI, kill bookkeeping, drops, waves.
-    updateWorld(dt, this._ws)
+    // In co-op (multiplayer active) the server owns zombie/wave authority: the
+    // client renders remote zombies via the controller and must NOT simulate a
+    // second local horde. So we run the world core with an empty zombie list +
+    // no wave manager (player + weapon still update locally for self-prediction)
+    // and drop any local zombies that slipped in. Single-player is unchanged.
+    if (this.multiplayer) {
+      for (const z of this.zombies) z.dispose()
+      this.zombies = []
+      if (this._ws) { this._ws.zombies = this.zombies; this._ws.wave = null }
+      updateWorld(dt, this._ws)
+      if (this._ws) { this._ws.zombies = this.zombies; this._ws.wave = this.waveManager }
+    } else {
+      updateWorld(dt, this._ws)
+    }
     // WIRING:GROANS (V8)
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
     // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
