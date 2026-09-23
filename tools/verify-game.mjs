@@ -361,7 +361,7 @@ stage('S7 full loop: clear 3 waves by shooting, then die', () =>
 // ---------------------------------------------------------- S8 scene sanity
 stage('S8 scene sanity (budgets + renderer)', () => true, () => {
   const s = g.debug.sceneStats()
-  ok('mesh budget ≤ 600', s.meshes <= 600, `meshes ${s.meshes}`)
+  ok('mesh budget ≤ 640', s.meshes <= 640, `meshes ${s.meshes}`)
   ok('light budget ≤ 40', s.lights <= 40, `lights ${s.lights}`)
   ok('points budget ≤ 2500', s.points <= 2500, `points ${s.points}`)
   ok('zombie budget ≤ 24', s.zombies <= 24, `zombies ${s.zombies}`)

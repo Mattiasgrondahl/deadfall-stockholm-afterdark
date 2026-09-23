@@ -246,11 +246,11 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
     const { zombie } = makeZombie(type, 1, 1, 1)
     const head = zombie.group.children[1]
     assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
-    // Eyes + face are always the first three head children; a head-mounted
+    // Eyes + face + hair are always the first head children; a head-mounted
     // accessory (police cap / fireman helmet) is appended after them, so the
-    // count is 3 for no-accessory outfits and 4 when the head wears one.
+    // count is 4 for no-accessory outfits and 5 when the head wears one.
     const headAcc = zombie._acc && head.children.includes(zombie._acc) ? 1 : 0
-    assert.equal(head.children.length, 3 + headAcc, `${type}: eye + face count`)
+    assert.equal(head.children.length, 4 + headAcc, `${type}: eye + face + hair count`)
     assert.equal(head.children[0].position.x, -0.075)
     assert.equal(head.children[0].position.z, 0.14)
     assert.equal(head.children[1].position.x, 0.075)

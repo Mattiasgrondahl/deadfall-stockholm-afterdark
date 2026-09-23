@@ -39,11 +39,14 @@ const state = await page.evaluate(() => {
   if (mp) {
     out.targets = mp.getTargets().length
     const e = mp.zombies.values().next().value
-    if (e) {
+    if (e && e.group) {
       out.hasFace = !!e._face
-      out.bodyColor = e.mesh && e.mesh.material ? e.mesh.material.color.getHexString() : null
-      out.emissiveInt = e.mesh && e.mesh.material ? Math.round(e.mesh.material.emissiveIntensity*100)/100 : null
-    }
+      out.hasHair = !!e._hair
+      out.eyes = e._eyes ? e._eyes.length : 0
+      out.parts = e._parts ? e._parts.length : 0
+      out.headVisible = e._head ? e._head.visible : null
+      out.dead = e.isDead
+    } else if (e && e._box) out.boxFallback = true
   }
   return out
 })

@@ -40,6 +40,15 @@ const EYEMAT = {
   brute: new THREE.MeshBasicMaterial({ color: 0xff5a1e })
 }
 const DEADEYEMAT = new THREE.MeshBasicMaterial({ color: 0x2a2a2a })
+// Hair: a flat dark cap slab sitting on top of the head so the silhouette reads
+// as a person with hair, not a bald box. Shared geometry; a few shared colors
+// picked deterministically per zombie so crowds vary.
+const HAIR_GEO = new THREE.BoxGeometry(0.28, 0.08, 0.28)
+const HAIR_MATS = [
+  new THREE.MeshStandardMaterial({ color: 0x241d16, roughness: 0.9 }),
+  new THREE.MeshStandardMaterial({ color: 0x12100e, roughness: 0.9 }),
+  new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 })
+]
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
  *  wave-5 boss: a tanky 520-HP bruiser (≈5.8× a shambler's base HP), slow
@@ -171,7 +180,7 @@ const OUTFITMATS = {
 // cap, fireman helmet, tie, hi-vis stripe, skirt) is carried by its top/bottom
 // texture, so no extra mesh is spent and the 600-mesh scene budget holds at the
 // 18-alive ceiling with the sniper as a fifth weapon. null = none.
-const OUTFIT_ACC = [null, null, null, null, null, null, null, null, null]
+const OUTFIT_ACC = ['tie', 'cap', 'helmet', 'stripe', null, 'tie', 'cap', null, 'helmet']
 const OUTFIT_COUNT = OUTFITMATS.tops.length
 // Shared accessory geometry + materials (built once, reused across zombies;
 // cheap boxes so the mesh budget is unaffected). tie = thin dark strip on the
@@ -419,6 +428,68 @@ export function buildFaceFor(type, dropY = 0) {
   return { face, eyes }
 }
 
+/** Build the full primitive humanoid body (torso, head, arms, legs, face, eyes,
+ *  hair, accessory) for a zombie of `type` with a deterministic `phase` (0..2π).
+ *  Used by both the local Zombie and the co-op RemoteZombie so remote bodies get
+ *  the same clothes + face + hair + accessories as local ones instead of a plain
+ *  box. Returns owned meshes (the group + parts); materials are shared, so the
+ *  caller must NOT dispose them — only remove the group from the scene. */
+export function buildPrimitiveBody(type, phase) {
+  const t = MAT2[type] ? type : 'walker'
+  const pose = POSE2[t]
+  const mat = MAT2[t]
+  const outfit = Math.floor((((phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
+  const topMat = OUTFITMATS.tops[outfit]
+  const bottomMat = OUTFITMATS.bottoms[outfit]
+  const parts = []
+  const torso = new THREE.Mesh(GEO2.torso, topMat)
+  torso.position.set(0, 1.2, 0)
+  torso.scale.set(pose.torsoS[0], pose.torsoS[1], pose.torsoS[2])
+  torso.rotation.x = pose.torsoR
+  parts.push(torso)
+  const head = new THREE.Mesh(GEO2.head, mat)
+  head.position.set(0, 1.8, 0)
+  head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
+  head.rotation.x = pose.headR
+  parts.push(head)
+  const eyes = []
+  const eMat = EYEMAT[t]
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(EYE, eMat)
+    eye.position.set(0.075 * side, 0.03, 0.14)
+    head.add(eye)
+    eyes.push(eye)
+  }
+  const variant = Math.floor((phase / (2 * Math.PI)) * 3) % 3
+  const face = new THREE.Mesh(FACE_GEO, FACEMAT[t][variant])
+  face.position.set(0, 0, 0.155)
+  head.add(face)
+  // Hair cap on top of the head so the silhouette reads as a person.
+  const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
+  hair.position.set(0, 0.17, 0)
+  head.add(hair)
+  const armL = new THREE.Mesh(GEO2.arm, mat); armL.position.set(-0.34, 1.42, 0.1); armL.rotation.x = pose.armRest; parts.push(armL)
+  const armR = new THREE.Mesh(GEO2.arm, mat); armR.position.set(0.34, 1.42, 0.1); armR.rotation.x = pose.armRest; parts.push(armR)
+  const legL = new THREE.Mesh(GEO2.leg, bottomMat); legL.position.set(-0.16, 0.47, 0); legL.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legL)
+  const legR = new THREE.Mesh(GEO2.leg, bottomMat); legR.position.set(0.16, 0.47, 0); legR.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legR)
+  // Outfit accessory (tie/cap/helmet/stripe) so the silhouette reads a trade.
+  let acc = null
+  const kind = OUTFIT_ACC[outfit]
+  if (kind) {
+    acc = new THREE.Mesh(ACC_GEO[kind], ACC_MAT[kind])
+    if (kind === 'tie') { acc.position.set(0, 0.1, 0.18); torso.add(acc) }
+    else if (kind === 'stripe') { acc.position.set(0, 0.15, 0); torso.add(acc) }
+    else if (kind === 'cap') { acc.position.set(0, 0.19, 0.02); head.add(acc) }
+    else if (kind === 'helmet') { acc.position.set(0, 0.19, 0); head.add(acc) }
+    acc.castShadow = true
+  }
+  const group = new THREE.Group()
+  group.add(...parts)
+  for (const p of parts) p.castShadow = true
+  const restMats = [topMat, mat, mat, mat, bottomMat, bottomMat]
+  return { group, parts, head, face, eyes, hair, acc, armL, armR, legL, legR, restMats, outfit }
+}
+
 const ATTACK_RANGE = 1.3
 /** Fraction of the attack cooldown spent in the telegraphed windup before the
  *  hit lands. Per type: screamers strike almost instantly (fast, annoying),
@@ -581,6 +652,11 @@ export class Zombie {
     face.position.set(0, 0, 0.155)
     head.add(face)
     this._face = face
+    // Hair cap on top of the head so the silhouette reads as a person with hair.
+    const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
+    hair.position.set(0, 0.17, 0)
+    head.add(hair)
+    this._hair = hair
     for (const side of [-1, 1]) {
       // Bare arms: the top texture/color is torso-only; arms keep the
       // per-type skin color so the cloth reads as a jacket/shirt on the body.

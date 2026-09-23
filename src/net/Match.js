@@ -128,10 +128,13 @@ export class Match {
     weapon.owner = id // kill attribution
     weapon.getZombies = () => this.zombies
     weapon.inputState = inputState
-    weapon.onDecapitate = (zz, dir) => this.events.push({
-      k: 'decapitate', victim: zz._matchId, by: id,
-      dir: dir ? { x: dir.x, z: dir.z } : null
-    })
+    weapon.onDecapitate = (zz, dir) => {
+      zz._headOff = true // snapshot mirrors this so remote bodies lose the head
+      this.events.push({
+        k: 'decapitate', victim: zz._matchId, by: id,
+        dir: dir ? { x: dir.x, z: dir.z } : null
+      })
+    }
     player.setOnDeath(() => {
       this.events.push({ k: 'death', victim: id, by: null })
       // Respawn-on-delay (plan §12.1 default): schedule a respawn unless the
@@ -318,7 +321,8 @@ export class Match {
         x: z.position.x, z: z.position.z,
         health: z.health,
         state: this._zombieState(z),
-        facing: z.isDead ? null : z.group.rotation.y
+        facing: z.isDead ? null : z.group.rotation.y,
+        limbs: { arms: z.armsLost || 0, legs: z.legsLost || 0, head: z._headOff ? 1 : 0 }
       })
     }
     const events = this.events

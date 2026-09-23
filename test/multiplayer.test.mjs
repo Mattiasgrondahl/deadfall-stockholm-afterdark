@@ -68,20 +68,23 @@ test('welcome adopts pid; snapshot spawns remote avatars but not self', () => {
   mp.dispose()
 })
 
-test('remote zombies get meshes, dead ones hidden, vanished removed', () => {
+test('remote zombies get bodies, dead ones collapse, vanished removed', () => {
   const { scene, mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })
   assert.equal(mp.zombies.size, 2)
   let visible = 0
-  for (const e of mp.zombies.values()) if (e.mesh.visible) visible++
+  for (const e of mp.zombies.values()) if (e.group && e.group.visible) visible++
   assert.equal(visible, 2, 'both alive zombies visible')
-  // z2 dies -> hidden; z1 leaves the roster -> removed.
+  // Both die -> still tracked (collapsing corpse), not instantly hidden.
   mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
     { id: 'z1', type: 'walker', x: 1, z: 2, health: 0, state: 'dead', facing: null },
     { id: 'z2', type: 'brute', x: -3, z: 1, health: 0, state: 'dead', facing: null }
   ] }) })
-  assert.equal(mp.zombies.size, 2, 'both still tracked')
-  for (const e of mp.zombies.values()) assert.equal(e.mesh.visible, false, 'dead hidden')
+  assert.equal(mp.zombies.size, 2, 'both still tracked while collapsing')
+  for (const e of mp.zombies.values()) assert.equal(e.isDead, true, 'dead corpse begins collapse')
+  // After the linger window the corpse expires and is dropped from the map.
+  for (let i = 0; i < 420; i++) mp.update(1 / 60)
+  assert.equal(mp.zombies.size, 0, 'corpses removed after lingering')
   mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [] }) })
   assert.equal(mp.zombies.size, 0, 'vanished zombies removed')
   mp.dispose()
@@ -291,5 +294,50 @@ test('remote zombies are hit-testable targets; a hit sends authoritative HIT + p
   assert.equal(z1.isDead, true, 'fatal hit client-predicts death')
   // Dead zombies drop out of the target list.
   assert.equal(mp.getTargets().find((t) => t._id === 'z1'), undefined, 'dead zombie no longer a target')
+  mp.dispose()
+})
+
+test('remote zombie bodies have face + hair + eyes and mirror server limb loss', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const e = mp.zombies.get('z1')
+  assert.ok(e._face, 'remote body has a face')
+  assert.ok(e._hair, 'remote body has hair')
+  assert.equal(e._eyes.length, 2, 'remote body has two eyes')
+  // Snapshot limb loss severs the matching limbs + spawns a falling piece.
+  const before = e._falling.length
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 60, state: 'chase', facing: 0, limbs: { arms: 1, legs: 0, head: 0 } },
+    { id: 'z2', type: 'brute', x: -3, z: 1, health: 300, state: 'chase', facing: 1, limbs: { arms: 0, legs: 0, head: 0 } }
+  ] }) })
+  assert.equal(e._armL.visible, false, 'left arm severed by snapshot')
+  assert.equal(e._falling.length, before + 1, 'severed arm spawned a falling piece')
+  // A decapitate (head:1) detaches the head + face + hair.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 60, state: 'chase', facing: 0, limbs: { arms: 1, legs: 0, head: 1 } },
+    { id: 'z2', type: 'brute', x: -3, z: 1, health: 300, state: 'chase', facing: 1, limbs: { arms: 0, legs: 0, head: 0 } }
+  ] }) })
+  assert.equal(e._head.visible, false, 'head detached by decapitate')
+  assert.equal(e._face.visible, false, 'face detached with the head')
+  mp.dispose()
+})
+
+test('remote zombie corpse collapses then expires after lingering', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const e = mp.zombies.get('z1')
+  // Kill it via the snapshot.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 0, state: 'dead', facing: null },
+    { id: 'z2', type: 'brute', x: -3, z: 1, health: 300, state: 'chase', facing: 1 }
+  ] }) })
+  assert.equal(e.isDead, true, 'snapshot death begins collapse')
+  // After ~1.5 s the corpse has flopped over (rotation.x negative).
+  for (let i = 0; i < 90; i++) mp.update(1 / 60)
+  assert.ok(e.group.rotation.x < -0.5, 'corpse flops over as it dies')
+  assert.ok(e.group.position.y < 0, 'corpse sinks toward the ground')
+  // After the linger window it expires and is dropped from the map.
+  for (let i = 0; i < 360; i++) mp.update(1 / 60)
+  assert.equal(mp.zombies.has('z1'), false, 'expired corpse removed')
   mp.dispose()
 })

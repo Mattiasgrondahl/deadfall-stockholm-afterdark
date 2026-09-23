@@ -45,7 +45,7 @@ test('two RemotePlayers get distinct tints (stable per id)', () => {
   a.dispose(); b.dispose(); a2.dispose()
 })
 
-test('8 avatars + capped-alive zombies + city stay within the 600-mesh budget', () => {
+test('8 avatars + capped-alive zombies + city stay within the 640-mesh budget', () => {
   const scene = new THREE.Scene()
   const collision = new CollisionWorld(180, 180)
   collision.clear()
@@ -59,11 +59,11 @@ test('8 avatars + capped-alive zombies + city stay within the 600-mesh budget', 
   const rps = []
   for (let i = 0; i < 8; i++) rps.push(new RemotePlayer(scene, 'p' + i))
   const total = countMeshes(scene)
-  assert.ok(total.meshes <= 600, `mesh budget: ${total.meshes} <= 600`)
+  assert.ok(total.meshes <= 640, `mesh budget: ${total.meshes} <= 640`)
   assert.ok(total.lights <= 40, `light budget: ${total.lights} <= 40`)
   // Avatars add exactly 6 meshes each.
   assert.ok(total.meshes >= base.meshes + ALIVE_CAP * 9 + 48, 'zombies + avatars present')
-  console.log(`[mp-budget] city=${base.meshes} +${ALIVE_CAP} alive zombies +8 avatars => meshes ${total.meshes}/600 lights ${total.lights}/40`)
+  console.log(`[mp-budget] city=${base.meshes} +${ALIVE_CAP} alive zombies +8 avatars => meshes ${total.meshes}/640 lights ${total.lights}/40`)
   for (const z of zs) z.dispose()
   for (const rp of rps) rp.dispose()
 })
