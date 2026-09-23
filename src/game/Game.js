@@ -126,6 +126,7 @@ export class Game {
     // is set). Owns the NetClient + remote-player/zombie proxies + scoreboard.
     this.multiplayer = null
     this._mpOpts = opts.multiplayer || null
+    this._respawning = false
     // State-transition listeners (Screens syncs its overlays through these).
     this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
@@ -175,6 +176,7 @@ export class Game {
             name: this._mpOpts.name, room: this._mpOpts.room,
             url: this._mpOpts.url, Socket: this._mpOpts.Socket
           })
+          this._wireMpHooks(this.multiplayer)
         }
         this.startGame()
       },
@@ -301,6 +303,7 @@ export class Game {
         name: this._mpOpts.name, room: this._mpOpts.room,
         url: this._mpOpts.url, Socket: this._mpOpts.Socket
       })
+      this._wireMpHooks(this.multiplayer)
     }
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
@@ -561,6 +564,7 @@ export class Game {
           name: this._mpOpts.name, room: this._mpOpts.room,
           url: this._mpOpts.url, Socket: this._mpOpts.Socket
         })
+        this._wireMpHooks(this.multiplayer)
       } catch (err) {
         this.multiplayer = null
         if (this.screens) this.screens.showBanner('CO-OP UNAVAILABLE')
@@ -592,6 +596,16 @@ export class Game {
   }
 
   onPlayerDeath() {
+    // Co-op: the server owns respawn. A local death must NOT end the run — show
+    // a "respawning" banner, release the pointer, and revive when the server's
+    // snapshot clears the self dead flag (see _respawnSelf). Single-player keeps
+    // the GAMEOVER flow.
+    if (this.multiplayer) {
+      this._respawning = true
+      if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
+      if (this.screens) this.screens.showBanner('YOU DIED — RESPAWNING\u2026')
+      return
+    }
     this.setState(GameState.GAMEOVER)
     if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
     if (this.audio) this.audio.stopAmbient()
@@ -603,6 +617,23 @@ export class Game {
       best: this.score ? this.score.best : 0,
       record
     })
+  }
+
+  /** Co-op revive: the server respawned this client — reset the local player +
+   *  weapon and clear the respawning flag so the run continues. */
+  _respawnSelf() {
+    if (!this._respawning) return
+    this._respawning = false
+    if (this.player) this.player.reset()
+    if (this.weapon) this.weapon.reset()
+    if (this.screens) this.screens.showBanner('RESPAWNED')
+  }
+
+  /** Wire the co-op respawn hooks onto a freshly built controller. */
+  _wireMpHooks(mp) {
+    if (!mp) return mp
+    mp.onSelfRespawn = () => this._respawnSelf()
+    return mp
   }
 
   /** Per-frame update, only while playing. dt is clamped.

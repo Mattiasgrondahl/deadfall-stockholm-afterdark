@@ -204,3 +204,39 @@ test('co-op suppresses local zombie sim + HUD reads server snapshot', () => {
   mp.dispose(); game.multiplayer && game.multiplayer.dispose()
   solo.dispose && solo.dispose()
 })
+
+test('co-op self death respawns instead of ending the run', () => {
+  const game = new Game({ headless: true })
+  game.start()
+  const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
+  mp.net.socket.open()
+  mp.net.socket.receive({ t: MSG.WELCOME, pid: 'ada', roster: [] })
+  // Snapshot where self is alive.
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  // Local player dies -> co-op must NOT enter GAMEOVER; it enters respawning.
+  game.player.damage(999, 'test')
+  assert.equal(game.state, 'playing', 'co-op death does not end the run')
+  assert.equal(game._respawning, true, 'respawning flag set')
+  // Server snapshot marks self dead, then a respawn event revives.
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 0, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: true },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  assert.equal(mp.selfDead, true, 'controller sees self dead')
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ], events: [{ k: 'respawn', victim: 'ada' }] }) })
+  assert.equal(game._respawning, false, 'respawn event cleared the flag')
+  assert.equal(game.player.isDead, false, 'local player revived')
+  // Single-player death still ends the run.
+  const solo = new Game({ headless: true })
+  solo.start()
+  solo.player.damage(999, 'test')
+  assert.equal(solo.state, 'gameover', 'single-player death ends the run')
+  mp.dispose(); game.multiplayer && game.multiplayer.dispose()
+  solo.dispose && solo.dispose()
+})

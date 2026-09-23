@@ -42,6 +42,11 @@ export class Multiplayer {
     this.players = new Map() // id -> RemotePlayer (excludes self)
     this.zombies = new Map() // matchId -> { mesh }
     this.lastSnap = null
+    this.selfDead = false
+    this._wasSelfDead = false
+    // Co-op respawn hooks the Game wires up (no-ops until assigned).
+    this.onSelfDeath = null
+    this.onSelfRespawn = null
     this._onWelcome = (msg) => { this.pid = msg.pid }
     this._onSnap = (snap) => { this.lastSnap = snap; this._sync(snap) }
     this._onClose = () => { /* NetClient already flips its own connected flag */ }
@@ -75,12 +80,23 @@ export class Multiplayer {
   _sync(snap) {
     if (!snap || !Array.isArray(snap.players)) return
     const seen = new Set()
+    // Self state from the authoritative roster: dead flag + respawn events.
+    let selfDead = false
     for (const p of snap.players) {
-      if (p.id === this.pid) continue // self is first-person, not proxied
+      if (p.id === this.pid) { selfDead = !!p.dead; continue } // self is first-person, not proxied
       seen.add(p.id)
       let rp = this.players.get(p.id)
       if (!rp) { rp = new RemotePlayer(this.scene, p.id); this.players.set(p.id, rp) }
       rp.apply(p, 1 / 60)
+    }
+    this.selfDead = selfDead
+    // Surface self death/respawn transitions to the game (co-op respawn flow).
+    if (selfDead && !this._wasSelfDead) this.onSelfDeath && this.onSelfDeath()
+    if (!selfDead && this._wasSelfDead) this.onSelfRespawn && this.onSelfRespawn()
+    this._wasSelfDead = selfDead
+    // Respawn events naming this client are also a revive signal.
+    for (const ev of (snap.events || [])) {
+      if (ev && ev.k === 'respawn' && ev.victim === this.pid) this.onSelfRespawn && this.onSelfRespawn()
     }
     // Drop avatars that left the roster.
     for (const [id, rp] of this.players) {
