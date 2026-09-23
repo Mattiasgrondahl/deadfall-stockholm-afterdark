@@ -666,13 +666,20 @@ export class Zombie {
     root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !headBone) headBone = o })
     if (headBone) {
       // Move the face + eyes off the primitive head onto the rig head bone.
-      // The face sat at local z 0.155 on the primitive head; on the bone we
-      // place it just in front of the rig head's face plane.
+      // The head BONE sits above the skinned mesh crown (the bone extends past
+      // the geometry), so parenting the face to the bone floated it ~0.7 m above
+      // the visible head ("face image above the zombie"). Offset the face/eyes
+      // DOWN on the bone by the bone-vs-mesh-crown delta so they sit on the
+      // visible head crown instead.
+      root.updateMatrixWorld(true)
+      const crownY = new THREE.Box3().setFromObject(skinned).max.y
+      const boneY = headBone.matrixWorld.elements[13]
+      const faceDrop = (crownY - boneY) - 0.02
       if (this._face && this._face.parent) this._face.parent.remove(this._face)
       // Remember both placements so the LOD swap can move them back.
-      this._faceOnBone = new THREE.Vector3(0, 0.02, 0.13)
+      this._faceOnBone = new THREE.Vector3(0, faceDrop, 0.13)
       this._faceOnHead = new THREE.Vector3(0, 0, 0.155)
-      this._eyeOnBone = new THREE.Vector3(0.07, 0.05, 0.12)
+      this._eyeOnBone = new THREE.Vector3(0.07, faceDrop + 0.05, 0.12)
       this._eyeOnHead = new THREE.Vector3(0.075, 0.03, 0.14)
       if (this._face) {
         this._face.position.copy(this._faceOnBone)

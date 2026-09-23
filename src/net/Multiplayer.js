@@ -144,11 +144,26 @@ export class Multiplayer {
           bodyMat.roughness = 0.9
           built.skinned.material = bodyMat
           built.skinned.castShadow = true; built.skinned.receiveShadow = true
-          const bb = new THREE.Box3().setFromObject(built.root)
+          // Mirror the local Zombie skin placement exactly: measure the MESH
+          // bounds (not the root group) after updating matrices, scale the mesh
+          // height to 1.8 m, and lift the root so the scaled feet land on y 0.
+          // Measuring before updateMatrixWorld gave degenerate bounds, which left
+          // bodies mis-scaled/mis-lifted (missing bodies + floating heads).
+          built.root.updateMatrixWorld(true)
+          const bb = new THREE.Box3().setFromObject(built.skinned)
           const dim = bb.getSize(new THREE.Vector3())
           const scale = dim.y > 1e-6 ? (1.8 / dim.y) : 1
           built.root.scale.setScalar(scale)
-          built.root.position.set(0, -(bb.min.y || 0) * scale, 0)
+          // Align the visible head with the server hitbox (head center world y
+          // 1.8): measure the head bone world Y at the origin, then lift so the
+          // head lands there (fixes floating-head + missed headshots on remote
+          // bodies, same as the local Zombie path).
+          let hb = null
+          built.root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !hb) hb = o })
+          built.root.position.set(0, 0, 0)
+          built.root.updateMatrixWorld(true)
+          const headWorldAtOrigin = hb ? hb.matrixWorld.elements[13] : 1.5
+          built.root.position.set(0, 1.8 - headWorldAtOrigin, 0)
           this.scene.add(built.root)
           e2.root = built.root
           e2.mesh = built.skinned
