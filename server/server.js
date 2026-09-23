@@ -110,6 +110,18 @@ export class Room {
     if (input.look.dy) is.turnY = Math.max(-1.5, Math.min(1.5, is.turnY + input.look.dy))
   }
 
+  /** Apply an authoritative client-confirmed hit on a zombie: the client's
+   *  crosshair hit a remote zombie, so the server applies the damage (attributed
+   *  to this socket's player) regardless of the server-side aim ray. */
+  applyHit(socket, msg) {
+    const id = this.sockets.get(socket)
+    if (!id) return
+    const victim = msg && msg.victim
+    const dmg = msg && typeof msg.dmg === 'number' ? Math.max(0, Math.min(200, msg.dmg)) : 0
+    if (victim == null || !(dmg > 0)) return
+    this.match.applyHit(victim, dmg, !!msg.head, id)
+  }
+
   /** Advance one authoritative tick and, on the snapshot cadence, broadcast. */
   tick(dt = SERVER_TICK) {
     this.match.step(dt)
@@ -155,6 +167,7 @@ export function startServer(opts = {}) {
       }
       switch (msg.t) {
         case MSG.INPUT: room.applyInput(socket, msg); break
+        case MSG.HIT: room.applyHit(socket, msg); break
         case MSG.PING: socket.send(JSON.stringify({ t: MSG.PONG, now: msg.now })); break
         case MSG.LEAVE: room.leave(socket); socket.close(); break
       }

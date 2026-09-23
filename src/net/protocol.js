@@ -26,6 +26,7 @@ export const MSG = {
   PING: 'ping', // client -> server: latency probe
   PONG: 'pong', // server -> client: latency reply
   LEAVE: 'leave', // client -> server: voluntary disconnect
+  HIT: 'hit', // client -> server: a confirmed client-side hit on a zombie (authoritative damage)
 }
 
 export const WEAPONS = ['axe', 'shotgun', 'pistol', 'sword']

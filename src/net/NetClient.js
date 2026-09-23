@@ -118,6 +118,13 @@ export class NetClient {
     inputState.turnX = 0; inputState.turnY = 0
   }
 
+  /** Send an authoritative hit the client confirmed on a remote zombie so the
+   *  server applies the damage (the client has the authoritative crosshair). */
+  sendHit(victim, dmg, head) {
+    if (!this.connected || this.pid === null || victim == null || !(dmg > 0)) return
+    try { this.socket.send(JSON.stringify({ t: MSG.HIT, victim, dmg: Math.round(dmg), head: !!head })) } catch { /* socket closed */ }
+  }
+
   /** Advance timers by dt (called from the Game loop). Accumulates input rate. */
   update(dt) {
     this.snapAge += dt

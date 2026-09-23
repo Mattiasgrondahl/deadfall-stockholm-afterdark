@@ -328,7 +328,7 @@ export class Game {
     })
     // WIRING:WEAPON
     this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
-    this.weapon.getZombies = () => this.zombies
+    this.weapon.getZombies = () => (this.multiplayer ? this.zombies.concat(this.multiplayer.getTargets()) : this.zombies)
     this.weapon.inputState = this.inputState
     // WIRING:DROPS (V6)
     this.drops = new AmmoDrops(this.scene, this.audio)

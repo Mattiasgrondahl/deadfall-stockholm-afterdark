@@ -15,15 +15,19 @@
 // Game tears it all down cleanly.
 import { RemotePlayer } from '../game/RemotePlayer.js'
 import { NetClient } from './NetClient.js'
-import { loadSkin, buildSkin, SKIN_TINT, buildFaceFor } from '../game/Zombie.js'
+import { loadSkin, buildSkin } from '../game/Zombie.js'
 
 // A tiny primitive zombie silhouette used as a fallback until the skinned rig
 // loads (and as the permanent body if the rig fails). Shared geometry/material
 // so fallback boxes add only 1 mesh each. The dim co-op scene crushed the dark
-// olive box into a black square, so it carries a bright color + emissive.
+// olive box into a black square, so it carries a muted color + low emissive.
 import * as THREE from 'three'
 const ZGEO = new THREE.BoxGeometry(0.6, 1.7, 0.4)
-const ZMAT = new THREE.MeshStandardMaterial({ color: 0xb9c4ad, roughness: 0.9, emissive: 0x6f8a4a, emissiveIntensity: 0.55 })
+const ZMAT = new THREE.MeshStandardMaterial({ color: 0x5f6b4a, roughness: 0.95, emissive: 0x3a4530, emissiveIntensity: 0.18 })
+// Per-type zombie-skin tones for remote bodies: darker, more saturated corpse
+// colors (the pale SKIN_TINT read as white under the dim light) so the bodies
+// read as greenish/grey zombies rather than glowing white blobs.
+const REMOTE_TINT = { walker: 0x6f7d54, shambler: 0x7a6f4a, screamer: 0x8a5560, brute: 0x5a6350 }
 // Remote zombies get the same skinned walker body as local zombies so they read
 // up close. Cap skinned bodies so a full 24-zombie wave stays inside the mesh
 // budget; overflow zombies fall back to the shared box.
@@ -137,21 +141,23 @@ export class Multiplayer {
           if (!e2 || e2.root) return
           // Tint + emissive per the zombie's type so remote bodies read as varied
           // people (not all pale-white) and stay readable under the dim scene.
-          const tint = SKIN_TINT[z.type] || SKIN_TINT.walker
+          // Use darker, more saturated zombie-skin tones (the pale SKIN_TINT read
+          // as white under the dim light) with a low emissive so the body is a
+          // muted greenish/grey corpse, not a glowing white blob.
+          const tint = REMOTE_TINT[z.type] || REMOTE_TINT.walker
           const bodyMat = built.skinned.material ? built.skinned.material.clone() : new THREE.MeshStandardMaterial()
           bodyMat.map = null; bodyMat.emissiveMap = null
           bodyMat.color.setHex(tint)
           bodyMat.emissive = new THREE.Color(tint)
-          bodyMat.emissiveIntensity = 0.55
-          bodyMat.roughness = 0.9
+          bodyMat.emissiveIntensity = 0.18
+          bodyMat.roughness = 0.95
           built.skinned.material = bodyMat
           built.skinned.castShadow = true; built.skinned.receiveShadow = true
           // Place the body deterministically from the REST-pose geometry bounds
           // (measured once, before any scale/lift), so every remote clone lands
-          // identically: scale the mesh so its crown reaches 1.8 m, lift the
-          // root so the scaled feet land on y 0, and drop the face/eyes onto the
-          // visible crown. Per-instance post-lift measurement gave inconsistent
-          // lifts (some bodies hovered, faces sat on the stomach).
+          // identically: scale the mesh so its crown reaches 1.8 m and lift the
+          // root so the scaled feet land on y 0. Per-instance post-lift
+          // measurement gave inconsistent lifts (some bodies hovered).
           built.root.position.set(0, 0, 0)
           built.root.scale.setScalar(1)
           built.root.updateMatrixWorld(true)
@@ -161,21 +167,9 @@ export class Multiplayer {
           built.root.scale.setScalar(scale)
           built.root.position.set(0, -bb.min.y * scale, 0)
           e2._liftY = built.root.position.y
-          // Parent a face portrait + glowing eyes onto the rig's head bone so
-          // remote bodies match local zombies (the GLB has no face). Drop them
-          // onto the visible mesh crown (the head bone sits above it).
-          let hb = null
-          built.root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !hb) hb = o })
-          if (hb) {
-            // The head bone sits ~0.7 m above the visible mesh crown (verified
-            // on the local rig: faceOnBoneY -0.7 puts the face on the crown at
-            // 1.75). Use that fixed drop so remote bodies match local exactly.
-            const ff = buildFaceFor(z.type || 'walker', -0.7)
-            hb.add(ff.face)
-            for (const eye of ff.eyes) hb.add(eye)
-            e2._face = ff.face
-            e2._eyes = ff.eyes
-          }
+          // No face portrait on remote bodies: the face image sat on the back of
+          // the head (the rig head faces away from the camera-relative primitive
+          // face), so it reads wrong in co-op. The body alone reads as a zombie.
           this.scene.add(built.root)
           e2.root = built.root
           e2.mesh = built.skinned
@@ -199,6 +193,10 @@ export class Multiplayer {
   /** Position + face + visibility for a remote zombie entry (skinned root or
    *  fallback box). Dead zombies hide. */
   _poseRemoteZombie(entry, z) {
+    entry._z = z // latest snapshot data for the weapon hit proxy
+    // Once the server confirms the zombie alive again (not dead), clear any
+    // client-predicted death so it becomes targetable again.
+    if (!z.dead && z.state !== 'dead') { entry._predictedDead = false }
     const node = entry.root || entry._box
     if (!node) return
     // Skinned root keeps its build-time lift Y (feet/head alignment); only x/z
@@ -209,6 +207,41 @@ export class Multiplayer {
     if (z.facing != null) node.rotation.y = z.facing
     node.visible = !z.dead && z.state !== 'dead'
     if (entry._box) entry._box.visible = node.visible
+  }
+
+  /** Hit-testable proxies for the live remote zombies, so the local weapon can
+   *  register hits + show feedback in co-op (the server is authoritative and
+   *  receives an authoritative HIT per confirmed hit). Each proxy mirrors the
+   *  server hitbox contract (torso y+1.2 r0.45, head y+1.8 r0.3) and client-
+   *  predicts death on a fatal hit for instant feedback. */
+  getTargets() {
+    const out = []
+    for (const [id, e] of this.zombies) {
+      const z = e._z
+      if (!z || z.dead || z.state === 'dead') continue
+      if (e._predictedDead) continue // client-predicted fatal hit, awaiting server confirm
+      const hp0 = z.health != null ? z.health : (z.hp != null ? z.hp : 50)
+      const proxy = {
+        isDead: false,
+        _id: id,
+        _hp: e._predHp != null ? e._predHp : hp0,
+        getHitboxes() {
+          return [
+            { center: new THREE.Vector3(z.x, 1.2, z.z), radius: 0.45, isHead: false },
+            { center: new THREE.Vector3(z.x, 1.8, z.z), radius: 0.3, isHead: true }
+          ]
+        },
+        damage(amount, dir, by, head) {
+          proxy._hp -= amount
+          e._predHp = proxy._hp
+          if (proxy._hp <= 0) { proxy.isDead = true; e._predictedDead = true }
+          if (proxy.net) proxy.net.sendHit(id, amount, head)
+        }
+      }
+      proxy.net = this.net
+      out.push(proxy)
+    }
+    return out
   }
 
   /** Format + paint the scoreboard DOM from the snapshot's score/kills maps. */

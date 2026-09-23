@@ -264,3 +264,32 @@ test('client pings the server and shows RTT + connection status', () => {
   assert.equal(mp._sbEl.firstChild.textContent, 'CONNECTION LOST', 'lost status shown')
   mp.dispose()
 })
+
+test('remote zombies are hit-testable targets; a hit sends authoritative HIT + predicts death', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const targets = mp.getTargets()
+  assert.equal(targets.length, 2, 'two live remote zombies exposed as targets')
+  const z1 = targets.find((t) => t._id === 'z1')
+  assert.ok(z1, 'z1 proxy present')
+  const boxes = z1.getHitboxes()
+  assert.equal(boxes.length, 2, 'torso + head hitboxes')
+  assert.equal(boxes[1].isHead, true, 'second sphere is the head')
+  assert.equal(boxes[1].center.y, 1.8, 'head hitbox at y 1.8 (matches server)')
+  assert.equal(boxes[0].center.y, 1.2, 'torso hitbox at y 1.2')
+  // A hit sends an authoritative HIT message to the server and client-predicts.
+  mp.socket.sent.length = 0
+  z1.damage(60, null, 'me', false)
+  const hit = mp.socket.sent.find((m) => m.t === MSG.HIT)
+  assert.ok(hit, 'HIT message sent to the server')
+  assert.equal(hit.victim, 'z1', 'HIT targets z1')
+  assert.equal(hit.dmg, 60, 'HIT carries the damage')
+  assert.equal(hit.head, false, 'body hit flagged not-head')
+  assert.equal(z1.isDead, false, 'z1 survives a 60/100 hit')
+  // A fatal headshot flips the proxy dead immediately (client prediction).
+  z1.damage(60, null, 'me', true)
+  assert.equal(z1.isDead, true, 'fatal hit client-predicts death')
+  // Dead zombies drop out of the target list.
+  assert.equal(mp.getTargets().find((t) => t._id === 'z1'), undefined, 'dead zombie no longer a target')
+  mp.dispose()
+})

@@ -146,6 +146,22 @@ test('corpses sink, then are removed about 5 s after death', () => {
   assert.ok(!m.zombies.includes(z), 'corpse removed after 5 s')
 })
 
+test('applyHit: a client-confirmed hit damages + attributes the server zombie', () => {
+  const m = makeMatch([{ id: 'A', x: 12, z: 0 }])
+  const z = m.spawnZombie('walker', 12, -3)
+  const id = z._matchId
+  m.applyHit(id, 30, false, 'A') // one body hit
+  assert.equal(z.health, 20, 'walker 50 - 30 = 20')
+  assert.equal(m.kills.get('A') || 0, 0, 'survives the first hit')
+  m.applyHit(id, 30, true, 'A') // fatal headshot
+  assert.ok(z.isDead, 'applyHit killed the zombie')
+  m.step(DT)
+  assert.equal(m.kills.get('A'), 1, 'kill attributed to the hitting player')
+  // Unknown / dead ids are ignored (no throw).
+  m.applyHit('nope', 30, false, 'A')
+  m.applyHit(id, 30, false, 'A')
+})
+
 test('ammo drops: nearest player picks up; ties go to roster order', () => {
   const m = makeMatch([{ id: 'A', x: 12, z: 0 }, { id: 'B', x: 13, z: 0 }])
   const a = m.getPlayer('A').weapon.shotgun

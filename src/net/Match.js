@@ -246,6 +246,20 @@ export class Match {
     this.events.push({ k: 'kill', victim: z._matchId, by: by !== null ? by : null, type: z.type })
   }
 
+  /** Authoritative hit from a client: a client-side shot confirmed a hit on the
+   *  zombie with this match id. Applies the damage on the server so the kill is
+   *  attributed + counted even when the server-side aim ray missed (the client
+   *  has the authoritative crosshair). Ignores unknown/dead ids. */
+  applyHit(id, dmg, head, by) {
+    if (!(dmg > 0)) return
+    for (const z of this.zombies) {
+      if (z._matchId === id && !z.isDead) {
+        z.damage(dmg, null, by !== null && by !== undefined ? by : null, !!head)
+        return
+      }
+    }
+  }
+
   _onDropPickup(d, p) {
     let slot = null
     for (const s of this.players.values()) {
