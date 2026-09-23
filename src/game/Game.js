@@ -568,6 +568,10 @@ export class Game {
     updateWorld(dt, this._ws)
     // WIRING:GROANS (V8)
     if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
+    // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
+    // player is — alive-zombie pressure vs the wave cap, blended with low
+    // health, plus a bump while the boss stands. Smoothed inside AudioBank.
+    if (this.audio) this.audio.setTension(this._computeTension(), dt)
     // Boss HUD: the bar tracks the live boss while it stands; it clears when
     // the brute dies (the corpse is still in the list for a few seconds).
     if (this._boss && this._boss.isDead) this._boss = null
@@ -577,6 +581,26 @@ export class Game {
     // dt drives the star twinkle clock (deterministic: accumulated game time).
     if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position, dt)
     if (this.city) this.city.update(this.player ? this.player.position : this.camera.position, dt)
+  }
+
+  /**
+   * Phase 4: audio tension level 0..1 from the current danger. Alive-zombie
+   * pressure (count vs the wave cap) is the base; low player health adds up to
+   * +0.4, and a standing boss adds +0.3. Clamped to [0,1]. Headless-safe (pure
+   * reads). Calm moments (few zombies, full health) read near 0 so the tension
+   * bed stays silent.
+   */
+  _computeTension() {
+    let alive = 0
+    for (const z of this.zombies) if (!z.isDead) alive++
+    const cap = this.waveManager ? this.waveManager.cap : 8
+    const pressure = Math.min(1, alive / Math.max(1, cap))
+    const hp = this.player ? this.player.health : this.player?.maxHealth ?? 100
+    const maxHp = this.player ? this.player.maxHealth : 100
+    const healthDanger = maxHp > 0 ? Math.max(0, 1 - hp / maxHp) : 0
+    const boss = this._boss && !this._boss.isDead ? 0.3 : 0
+    const level = 0.6 * pressure + 0.4 * healthDanger + boss
+    return Math.max(0, Math.min(1, level))
   }
 
   /** Spawn a zombie (used by WaveManager and debug). */

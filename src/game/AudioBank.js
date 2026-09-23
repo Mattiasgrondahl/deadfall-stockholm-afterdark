@@ -70,6 +70,16 @@ export class AudioBank {
     this._onMusicEnded = null
     this._onMusicTimeUpdate = null
     this._musicLen = 0
+    // Phase 4: adaptive tension bed. A low drone + a slow pulse whose level and
+    // rate follow the danger the player is in (alive-zombie pressure + low
+    // health). Created lazily on the first non-zero tension, so quiet moments
+    // cost nothing; fully torn down in stopAmbient/dispose. Headless-safe.
+    this._tensionOn = false
+    this._tensionNodes = null
+    this._tensionTarget = 0   // 0..1 requested level (set by Game each frame)
+    this._tensionCur = 0      // smoothed actual level driving the gain/pulse
+    this._tensionPulseNext = 0
+    this._tensionSeed = 20250923
     if (typeof window !== 'undefined') {
       const Ctx = window.AudioContext || window.webkitAudioContext
       if (Ctx) {
@@ -758,6 +768,7 @@ export class AudioBank {
 
   stopAmbient() {
     if (!this.ctx || !this._ambientOn) return
+    this._stopTension()
     const t = this.ctx.currentTime
     const a = this._ambientNodes
     a.g.gain.cancelScheduledValues(t)
@@ -787,6 +798,98 @@ export class AudioBank {
     this._applyMasterGain()
     this._applyMusicGain()
     if (this._settings) this._settings.set('muted', this.muted)
+  }
+
+  /** Seeded LCG in [0,1) for tension-pulse jitter (independent stream). */
+  _tensionRand() {
+    this._tensionSeed = (Math.imul(this._tensionSeed, 48271) >>> 0) % 65537
+    return this._tensionSeed / 65537
+  }
+
+  /**
+   * Phase 4: drive the adaptive tension bed. `level` is 0..1 (caller computes it
+   * from alive-zombie pressure + low player health). The bed is created lazily
+   * on the first non-zero level and torn down when the level returns to 0 (or on
+   * stopAmbient/dispose), so calm moments cost nothing. Each call smooths the
+   * actual level toward the target and, when due, fires a transient low "pulse"
+   * whose rate rises with tension — a heartbeat that quickens as danger closes.
+   * Headless-safe: no ctx -> records the target only, never throws.
+   */
+  setTension(level, dt = 0) {
+    const target = Math.max(0, Math.min(1, Number(level) || 0))
+    this._tensionTarget = target
+    if (!this.ctx) return
+    // Ease the realized level toward the target (frame-rate independent).
+    const k = dt > 0 ? Math.min(1, dt * 2.5) : 1
+    this._tensionCur += (target - this._tensionCur) * k
+    if (this._tensionCur < 0.005 && target < 0.005) {
+      if (this._tensionOn) this._stopTension()
+      return
+    }
+    if (!this._tensionOn) this._startTension()
+    const t = this.ctx.currentTime
+    const n = this._tensionNodes
+    if (!n) return
+    // Drone gain rises with tension (sub-bass dread under the mix).
+    n.g.gain.setTargetAtTime(0.02 + 0.06 * this._tensionCur, t, 0.4)
+    // Pulse rate: from a slow ~1.1 s interval at low tension to ~0.5 s at max.
+    const interval = 1.1 - 0.6 * this._tensionCur
+    if (this._tensionCur > 0.12 && this._ambClock >= this._tensionPulseNext) {
+      this._fireTensionPulse(this._tensionCur)
+      this._tensionPulseNext = this._ambClock + interval * (0.85 + 0.3 * this._tensionRand())
+    }
+  }
+
+  /** Build the persistent tension drone (two detuned low sawtooths through a
+   *  lowpass into a tension-scaled gain). Transient pulses are separate. */
+  _startTension() {
+    if (!this.ctx || this._tensionOn) return
+    const t = this.ctx.currentTime
+    const o1 = this.ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 41
+    const o2 = this.ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 43.5
+    const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180
+    const g = this.ctx.createGain(); g.gain.value = 0.02
+    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this._fxDest())
+    o1.start(t); o2.start(t)
+    this._tensionNodes = { o1, o2, lp, g }
+    this._tensionOn = true
+    this._tensionPulseNext = this._ambClock
+  }
+
+  /** A single low heartbeat pulse: a short sub-bass thump, gain scaled by the
+   *  current tension. Transient (auto-stopped), routed through the SFX bus. */
+  _fireTensionPulse(cur) {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const osc = this.ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(58, t)
+    osc.frequency.exponentialRampToValueAtTime(34, t + 0.18)
+    const g = this.ctx.createGain()
+    const peak = 0.05 + 0.12 * cur
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.linearRampToValueAtTime(peak, t + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22)
+    osc.connect(g); g.connect(this._fxDest())
+    osc.start(t)
+    osc.stop(t + 0.28)
+  }
+
+  /** Tear down the tension drone (called when level returns to 0 and on stop). */
+  _stopTension() {
+    if (!this.ctx || !this._tensionOn) return
+    const t = this.ctx.currentTime
+    const n = this._tensionNodes
+    if (n) {
+      n.g.gain.cancelScheduledValues(t)
+      n.g.gain.setValueAtTime(n.g.gain.value, t)
+      n.g.gain.linearRampToValueAtTime(0, t + 0.4)
+      const stopAt = t + 0.5
+      n.o1.stop(stopAt); n.o2.stop(stopAt)
+    }
+    this._tensionNodes = null
+    this._tensionOn = false
+    this._tensionCur = 0
   }
 
   /** Master bus gain: 0 while muted, else the masterVolume ceiling (0.6 = the
@@ -933,6 +1036,7 @@ export class AudioBank {
 
   dispose() {
     this.stopAmbient()
+    this._stopTension()
     this.stopMusic()
     if (this._musicEl) {
       if (this._onMusicEnded) { try { this._musicEl.removeEventListener('ended', this._onMusicEnded) } catch (err) {} }
@@ -958,6 +1062,10 @@ export class AudioBank {
     this._gustSrc = null
     this._gustGainNode = null
     this._humNodes = null
+    this._tensionNodes = null
+    this._tensionOn = false
+    this._tensionTarget = 0
+    this._tensionCur = 0
     this.shaper = null
     if (this.ctx) {
       try { this.ctx.close() } catch (err) {}

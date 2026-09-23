@@ -58,6 +58,7 @@ function makeFakeAudioContext() {
     setValueAtTime(v) { this.value = v },
     linearRampToValueAtTime(v) { this.value = v },
     exponentialRampToValueAtTime(v) { this.value = Math.max(0.0001, v) },
+    setTargetAtTime(v) { this.value = v },
     cancelScheduledValues() {}
   })
   const node = (name) => ({
@@ -627,6 +628,78 @@ function bankWithFakeCtx() {
   assert.equal(endedHandlers.length, 0, 'dispose removes the ended listener')
   assert.equal(timeHandlers.length, 0, 'dispose removes the timeupdate listener')
   delete globalThis.Audio
+}
+
+// ---- Phase 4: adaptive tension bed ---------------------------------------
+{
+  // Headless: setTension records the target only, never throws, never builds.
+  const bank = new AudioBank()
+  bank.setTension(0.5, 1 / 60)
+  assert.strictEqual(bank.ctx, null)
+  assert.strictEqual(bank._tensionTarget, 0.5)
+  assert.strictEqual(bank._tensionOn, false)
+  bank.dispose()
+  bank.setTension(1, 1 / 60) // safe after dispose
+}
+{
+  // Lazy creation: a non-zero level builds the drone once (idempotent); a zero
+  // level tears it down. Drone = 2 osc + lowpass + gain = 4 persistent nodes.
+  const bank = bankWithFakeCtx()
+  const before = bank.ctx._created.length
+  bank.setTension(0.6, 1 / 60)
+  assert.strictEqual(bank._tensionOn, true, 'tension bed started')
+  assert.strictEqual(bank.ctx._created.length - before, 4, 'drone is 4 nodes')
+  const droneGain = bank._tensionNodes.g
+  bank.setTension(0.6, 1 / 60) // idempotent: no second drone
+  assert.strictEqual(bank.ctx._created.length - before, 4)
+  // Gain rises with tension: a higher level drives a higher drone gain.
+  const lowG = droneGain.gain.value
+  bank.setTension(1.0, 1 / 60)
+  assert.ok(droneGain.gain.value > lowG, 'drone gain did not rise with tension')
+  // Returning to zero fades the level out over ~1 s, then tears the drone down
+  // and clears the flag.
+  for (let i = 0; i < 180; i++) bank.setTension(0, 1 / 60)
+  assert.strictEqual(bank._tensionOn, false, 'tension bed stopped after fading to zero')
+  assert.strictEqual(bank._tensionNodes, null)
+  bank.dispose()
+}
+{
+  // Pulse fires only while tension is meaningful, and node growth stays bounded
+  // (transient bursts only, no persistent leak). Twin banks stay deterministic.
+  const b1 = bankWithFakeCtx(), b2 = bankWithFakeCtx()
+  b1.startAmbient(); b2.startAmbient()
+  const bed1 = b1.ctx._created.length
+  const counts1 = [], counts2 = []
+  for (let i = 0; i < 60 * 30; i++) {
+    b1.setTension(0.9, 1 / 60); b1.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    b2.setTension(0.9, 1 / 60); b2.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    counts1.push(b1._tensionNodes ? 1 : 0)
+    counts2.push(b2._tensionNodes ? 1 : 0)
+  }
+  assert.deepStrictEqual(counts1, counts2, 'tension pulse nondeterministic')
+  // Persistent nodes beyond the bed are exactly the 4-node drone; pulses are
+  // transient (osc+gain = 2 each) and do not accumulate persistently.
+  const persistent = b1.ctx._created.filter(n => n.name === 'osc' && n.frequency.value === 41 || n.name === 'osc' && n.frequency.value === 43.5)
+  assert.strictEqual(persistent.length, 2, 'exactly the two drone oscillators persist')
+  assert.ok(b1.ctx._created.length > bed1 + 4, 'pulses fired')
+  b1.dispose(); b2.dispose()
+}
+{
+  // stopAmbient and dispose both tear the tension bed down.
+  const bank = bankWithFakeCtx()
+  bank.startAmbient()
+  bank.setTension(0.8, 1 / 60)
+  assert.strictEqual(bank._tensionOn, true)
+  bank.stopAmbient()
+  assert.strictEqual(bank._tensionOn, false, 'stopAmbient stopped the tension bed')
+  bank.dispose()
+
+  const bank2 = bankWithFakeCtx()
+  bank2.setTension(0.8, 1 / 60)
+  assert.strictEqual(bank2._tensionOn, true)
+  bank2.dispose()
+  assert.strictEqual(bank2._tensionOn, false, 'dispose stopped the tension bed')
+  assert.strictEqual(bank2._tensionNodes, null)
 }
 
 console.log('audio OK')
