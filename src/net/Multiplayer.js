@@ -131,7 +131,9 @@ export class Multiplayer {
     // Rebuild rows without innerHTML of live data (plain text only).
     while (this._sbEl.firstChild) this._sbEl.removeChild(this._sbEl.firstChild)
     const head = this.doc.createElement('div')
-    head.textContent = `WAVE ${snap.wave}  LEFT ${snap.remaining}`
+    const ping = this.net.pingMs
+    const status = this.net.connected ? (ping ? `WAVE ${snap.wave}  LEFT ${snap.remaining}  ${ping}ms` : `WAVE ${snap.wave}  LEFT ${snap.remaining}`) : 'CONNECTION LOST'
+    head.textContent = status
     this._sbEl.appendChild(head)
     for (const r of rows) {
       const row = this.doc.createElement('div')
@@ -156,6 +158,7 @@ export class Multiplayer {
   update(dt, inputState, yaw) {
     this.net.update(dt)
     if (inputState) this.net.maybeSendInput(inputState, yaw)
+    this.net.maybePing()
     // Re-pose existing avatars with fresh interpolation between snapshots.
     const interp = this.net.interpolated()
     for (const p of interp.players) {

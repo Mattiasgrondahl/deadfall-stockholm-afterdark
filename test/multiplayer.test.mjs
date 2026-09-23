@@ -240,3 +240,27 @@ test('co-op self death respawns instead of ending the run', () => {
   mp.dispose(); game.multiplayer && game.multiplayer.dispose()
   solo.dispose && solo.dispose()
 })
+
+test('client pings the server and shows RTT + connection status', () => {
+  const { scene, mp, doc } = makeMP()
+  mp.net.socket.open()
+  mp.net.socket.receive({ t: MSG.WELCOME, pid: 'me', roster: [] })
+  // Drive past the ping interval -> a PING frame is sent with a timestamp.
+  for (let i = 0; i < 200; i++) mp.update(1 / 60, { forward: false }, 0)
+  const pings = mp.net.socket.sent.filter(m => m.t === MSG.PING)
+  assert.ok(pings.length >= 1, 'ping frame sent')
+  assert.equal(typeof pings.at(-1).now, 'number', 'ping carries a timestamp')
+  // Server echoes the timestamp back in a PONG; RTT = now - sent.
+  const sent = pings.at(-1).now
+  mp.net._now = () => sent + 42
+  mp.net.socket.receive({ t: MSG.PONG, now: sent })
+  assert.equal(mp.net.pingMs, 42, 'RTT measured from the echoed timestamp')
+  // Scoreboard header shows the ping.
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  assert.ok(mp._sbEl.firstChild.textContent.includes('42ms'), 'ping shown in scoreboard')
+  // Disconnected -> header reads CONNECTION LOST.
+  mp.net.connected = false
+  mp._renderScoreboard(mp.lastSnap)
+  assert.equal(mp._sbEl.firstChild.textContent, 'CONNECTION LOST', 'lost status shown')
+  mp.dispose()
+})

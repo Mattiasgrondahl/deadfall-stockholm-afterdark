@@ -14,6 +14,9 @@
 // three.js scene — the Game consumes its output.
 import { MSG, SERVER_TICK, SNAPSHOT_INTERVAL, INPUT_RATE, buildHello, buildWelcome } from './protocol.js'
 
+// Latency probe cadence: one PING every 2 s (RTT shown in the scoreboard).
+const PING_INTERVAL = 2.0
+
 /**
  * Pure interpolation helper: lerp between two snapshot player entries.
  * `alpha` in [0,1] (0 = older snapshot, 1 = newer). Pure function so it is
@@ -66,6 +69,14 @@ export class NetClient {
     this.snapAge = 0 // seconds since last snapshot (for interpolation alpha)
     this._inputAccum = 0
     this._handlers = { welcome: [], snap: [], close: [] }
+    // Latency probe: the client stamps a monotonic time on each PING and the
+    // server echoes it back in PONG; RTT = now - sent. `now` is injectable so
+    // the probe is testable headlessly (defaults to Date.now).
+    this._now = opts.now || (typeof performance !== 'undefined' && performance && performance.now
+      ? () => performance.now() : () => Date.now())
+    this.pingMs = 0
+    this._pingSentAt = 0
+    this._pingAccum = 0
     this.socket.onopen = () => { this.connected = true; this.socket.send(JSON.stringify(buildHello(this.name, this.room))) }
     this.socket.onmessage = (ev) => this._onMessage(JSON.parse(ev.data))
     this.socket.onclose = () => { this.connected = false; this._emit('close', {}) }
@@ -83,6 +94,9 @@ export class NetClient {
       this.lastSnap = msg
       this.snapAge = 0
       this._emit('snap', msg)
+    } else if (msg.t === MSG.PONG) {
+      // RTT from the echoed client timestamp.
+      if (this._pingSentAt) this.pingMs = Math.max(0, Math.round(this._now() - this._pingSentAt))
     }
   }
 
@@ -108,6 +122,17 @@ export class NetClient {
   update(dt) {
     this.snapAge += dt
     this._inputAccum += dt
+    this._pingAccum += dt
+  }
+
+  /** Throttled latency probe: call each frame; sends a PING at ~PING_RATE. */
+  maybePing() {
+    if (!this.connected || this.pid === null) return
+    if (this._pingAccum >= PING_INTERVAL) {
+      this._pingAccum = 0
+      this._pingSentAt = this._now()
+      this.socket.send(JSON.stringify({ t: MSG.PING, now: this._pingSentAt }))
+    }
   }
 
   /** Throttled input send: call each frame; it sends at ~INPUT_RATE. */
