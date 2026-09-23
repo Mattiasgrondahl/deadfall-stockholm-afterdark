@@ -565,6 +565,15 @@ export class Game {
           url: this._mpOpts.url, Socket: this._mpOpts.Socket
         })
         this._wireMpHooks(this.multiplayer)
+        // Co-op renders many remote bodies on top of the city + post-processing,
+        // which saturates weak/integrated GPUs and can hang the whole machine.
+        // Drop to the lighter lighting/postfx tier for co-op; restored when the
+        // session ends. Headless: these are no-ops.
+        this._mpPrevQuality = this.quality
+        if (this.quality === 'high') {
+          if (this.lighting) this.lighting.setQuality('low')
+          if (this.postfx) this.postfx.setEnabled(false)
+        }
       } catch (err) {
         this.multiplayer = null
         if (this.screens) this.screens.showBanner('CO-OP UNAVAILABLE')

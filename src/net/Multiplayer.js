@@ -23,8 +23,9 @@ import * as THREE from 'three'
 const ZGEO = new THREE.BoxGeometry(0.6, 1.7, 0.4)
 const ZMAT = new THREE.MeshStandardMaterial({ color: 0x5f6b4a, roughness: 0.95, emissive: 0x3a4530, emissiveIntensity: 0.18 })
 // Cap the number of full primitive remote bodies so a full wave stays inside the
-// mesh budget; overflow zombies use the shared fallback box.
-const MAX_REMOTE = 18
+// mesh budget AND the GPU draw-call budget on weak machines; overflow zombies
+// use the cheap shared fallback box instead of a full PBR body.
+const MAX_REMOTE = 12
 
 export class Multiplayer {
   /**

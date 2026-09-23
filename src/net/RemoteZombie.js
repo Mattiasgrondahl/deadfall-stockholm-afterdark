@@ -191,12 +191,18 @@ export class RemoteZombie {
   /** True once the corpse has fully expired and should be dropped from the map. */
   get gone() { return this._removed }
 
-  /** A weapon-hit proxy for the local weapon (server hitbox contract). */
+  /** A weapon-hit proxy for the local weapon (server hitbox contract). Cached
+   *  per body so the weapon's per-frame hit loop allocates nothing. */
   getTarget() {
+    if (this._proxy) return this._proxy
     const self = this
-    return {
-      isDead: this.isDead || this._predictedDead,
-      _id: this.id,
+    const hb = [
+      { center: new THREE.Vector3(), radius: 0.45, isHead: false },
+      { center: new THREE.Vector3(), radius: 0.3, isHead: true }
+    ]
+    const proxy = {
+      get isDead() { return self.isDead || self._predictedDead },
+      _id: self.id,
       // Melee weapons read z.position.{x,y,z} for range + blood; the proxy has
       // no real Vector3, so expose a live plain object (and a no-op knockback)
       // so melee hits register instead of throwing and freezing the loop.
@@ -204,14 +210,16 @@ export class RemoteZombie {
       knockback() {},
       shotgunArmor: SHOTGUN_ARMOR[self.type] != null ? SHOTGUN_ARMOR[self.type] : 1,
       getHitboxes() {
-        return [
-          { center: new THREE.Vector3(self._x, 1.2, self._z), radius: 0.45, isHead: false },
-          { center: new THREE.Vector3(self._x, 1.8, self._z), radius: 0.3, isHead: true }
-        ]
+        // Reuse two scratch vectors (no per-frame allocation) and refresh the
+        // live position for melee range checks.
+        proxy.position.x = self._x; proxy.position.y = 0; proxy.position.z = self._z
+        hb[0].center.set(self._x, 1.2, self._z)
+        hb[1].center.set(self._x, 1.8, self._z)
+        return hb
       },
       damage(amount, dir, by, head) {
         self._predHp = (self._predHp == null ? self._hp : self._predHp) - amount
-        if (self._predHp <= 0) { self._predictedDead = true; this.isDead = true }
+        if (self._predHp <= 0) self._predictedDead = true
         if (self.onHit) self.onHit(self.id, amount, head)
       },
       hitLimbAt(x, y, z) {
@@ -231,6 +239,8 @@ export class RemoteZombie {
         return null
       }
     }
+    this._proxy = proxy
+    return proxy
   }
 
   /** Remove the body + any falling pieces from the scene. */

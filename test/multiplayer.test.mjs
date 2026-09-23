@@ -364,6 +364,7 @@ test('remote target exposes position + knockback + shotgunArmor (melee-safe)', (
   const { mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })
   const t = mp.getTargets().find((q) => q._id === 'z1')
+  t.getHitboxes() // refreshes the live position for melee range checks
   assert.ok(t.position && typeof t.position.x === 'number', 'proxy exposes a numeric position')
   assert.equal(t.position.x, 1, 'position.x tracks the snapshot')
   assert.equal(t.position.z, 2, 'position.z tracks the snapshot')

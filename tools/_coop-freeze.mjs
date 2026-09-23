@@ -58,10 +58,10 @@ async function sample(label) {
 }
 
 let firstHang = null
-for (let t = 0; t <= 24; t += 2) {
-  await page.waitForTimeout(2000)
-  const r = await sample('t=' + (t + 2) + 's')
-  if (r === 'HUNG' && firstHang === null) { firstHang = t + 2; console.log('*** FIRST HANG at', firstHang, 's ***'); break }
+for (let t = 0; t <= 60; t += 5) {
+  await page.waitForTimeout(5000)
+  const r = await sample('t=' + (t + 5) + 's')
+  if (r === 'HUNG' && firstHang === null) { firstHang = t + 5; console.log('*** FIRST HANG at', firstHang, 's ***'); break }
 }
 console.log('done. firstHang=', firstHang)
 await browser.close().catch(() => {})
