@@ -111,7 +111,15 @@ pickup wiring). 245 tests, verify 81/81.
 - **Headless**: `npm test` 245/245, `verify-game` 81/81/0.
 - **Checkpoints**: Phase 3 committed `1e655a2`, Phase 4 committed `11013d3`
   (per-phase commits, working tree clean).
-- All five phases of the improvement mission are COMPLETE.
+- **Deployed**: `v2` pushed to origin (`6f4078f..e9e3741`); gh-pages `14436a0`
+  (build of `e9e3741` via `npm run pages` in a temp `.deploy-ghpages` worktree,
+  synced + committed + pushed + worktree removed; first push hit a transient
+  GitHub Pages "Internal Server Error", retried clean). Live-verified: index
+  references `index-DJxiCtn5.js` + `index-C4CqS745.css` (both 200, JS byte-size
+  793,110 matches the local build), Phase 3/4 markers (`PCFShadowMap`,
+  `setTension`, `_computeTension`) present in the live bundle, and
+  weapons/faces/ground/poster assets all 200 image/jpeg. (Supersedes `9f878c6`.)
+- All five phases of the improvement mission are COMPLETE and LIVE.
 
 ## Working conventions
 
