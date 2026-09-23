@@ -293,21 +293,19 @@ const SKIN_TINT = {
 }
 // Per-type asset path under assets/zombies/. A type without a file keeps the
 // primitive body (the loader warns and leaves the stub in place).
-const SKIN_ASSET = { walker: 'walker-final.glb', shambler: 'walker-final.glb', screamer: 'walker-final.glb', brute: 'walker-final.glb' }
+const SKIN_ASSET = { walker: 'walker-fixed.glb', shambler: 'walker-fixed.glb', screamer: 'walker-fixed.glb', brute: 'walker-fixed.glb' }
 // Shared per-type loaded rig (geometry + clips + skeleton template). One GLB
 // parse per type is shared by every zombie of that type; each zombie clones the
 // skinned mesh and gets its own mixer (cloning a SkinnedMesh shares geometry,
 // and Skeleton.clone gives an independent pose).
 const skinCache = {} // type -> { scene, animations } | 'loading' | 'missing'
 let skinLoader = null
-// v5 skinned-rig swap is DISABLED: the walker-final.glb rig is corrupted (all
-// bones collapsed to the origin and skin weights mis-assigned to the wrong
-// bones — the Head bone drives the torso, the arms are weighted to finger
-// bones). That made the body render small, the face sit mid-body, and the arms
-// disappear. Until the rig is re-authored from source, the full-size primitive
-// body (torso/head/arms/legs + face) is the visual. Flip this to true to
-// re-enable the skinned path.
-const USE_SKINNED_RIG = false
+// v5 skinned-rig swap: the walker-final.glb rig was corrupted (bones collapsed
+// to ~cm scale, mis-assigned weights). tools/blender/repair-rig.py re-scales the
+// foot->head bone span onto the 1.8 m mesh (verified: span 1.823 vs mesh 1.8,
+// 2340 tris, 14 animations preserved) and exports walker-fixed.glb. The skinned
+// path is now enabled for that repaired rig.
+const USE_SKINNED_RIG = true
 
 function loadSkin(type, onReady) {
   if (!USE_SKINNED_RIG) return // primitive body is the visual; skip the rig
