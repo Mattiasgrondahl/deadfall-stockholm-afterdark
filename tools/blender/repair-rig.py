@@ -105,6 +105,19 @@ def main():
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
+    # Brighten the baked body texture: the source bake averages ~47/255 per
+    # channel (near-black), so multiplying it by the muted type tint rendered the
+    # body as a featureless shadow. Scale every pixel up so surface detail
+    # (clothing, skin tone) reads under the flashlight while keeping the bake.
+    for img in bpy.data.images:
+        if img.size[0] == 0 or img.size[1] == 0:
+            continue
+        px = list(img.pixels)
+        factor = 2.6
+        for i in range(0, len(px)):
+            px[i] = min(1.0, px[i] * factor) if (i % 4) != 3 else px[i]
+        img.pixels = px
+
     bpy.ops.export_scene.gltf(
         filepath=args.out,
         export_format='GLB',

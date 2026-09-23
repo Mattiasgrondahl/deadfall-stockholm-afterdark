@@ -294,6 +294,9 @@ const SKIN_TINT = {
 // Per-type asset path under assets/zombies/. A type without a file keeps the
 // primitive body (the loader warns and leaves the stub in place).
 const SKIN_ASSET = { walker: 'walker-fixed.glb', shambler: 'walker-fixed.glb', screamer: 'walker-fixed.glb', brute: 'walker-fixed.glb' }
+// Per-type body width multiplier on the shared rig so the crowd reads as varied
+// silhouettes (screamer lanky, brute broad) rather than one tinted model.
+const SKIN_WIDTH = { walker: 1.0, shambler: 1.08, screamer: 0.86, brute: 1.28 }
 // Shared per-type loaded rig (geometry + clips + skeleton template). One GLB
 // parse per type is shared by every zombie of that type; each zombie clones the
 // skinned mesh and gets its own mixer (cloning a SkinnedMesh shares geometry,
@@ -619,7 +622,9 @@ export class Zombie {
     const dim = new THREE.Box3().setFromObject(skinned).getSize(new THREE.Vector3())
     const bb = new THREE.Box3().setFromObject(skinned)
     const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? 1.4 : 1) : 1
-    root.scale.setScalar(scale)
+    // Non-uniform: height on Y, per-type width on X/Z so silhouettes vary.
+    const w = SKIN_WIDTH[this.type] || 1
+    root.scale.set(scale * w, scale, scale * w)
     // The rig's origin sits at its hips/center, so its bind-pose feet are at a
     // negative local y (≈ -0.88 m). The group origin is the FEET (y 0), so
     // without a lift the body hangs half-buried with its head-top far below the
@@ -633,11 +638,11 @@ export class Zombie {
     // zombie its own color (and lets hit-flash / death swap it safely).
     const srcMat = Array.isArray(skinned.material) ? skinned.material[0] : skinned.material
     const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
-    // The baked body texture is very dark, so multiplying it by the muted type
-    // tint rendered the skinned body as a featureless shadow ("shadow moves, no
-    // body"). Drop the dark baseColor map and render the body as the bright type
-    // color with a subtle emissive — matching how the old primitive body read
-    // clearly under the dim flashlight — while keeping the skinned geometry.
+    // The baked body texture is dark even after brightening, so under the dim
+    // flashlight it still read as a featureless shadow. Drop the map and render
+    // the body as the bright type color + emissive (proven to read as a clear
+    // humanoid silhouette), and vary the color per type so the crowd reads as
+    // distinct people rather than one tinted model.
     bodyMat.map = null
     bodyMat.emissiveMap = null
     bodyMat.color.setHex(SKIN_TINT[this.type])
