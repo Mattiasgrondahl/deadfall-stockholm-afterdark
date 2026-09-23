@@ -1,12 +1,10 @@
-# tools/blender/repair-rig.py — fix a collapsed humanoid skeleton whose bone
-# local translations are uniformly too small (the whole rig spans centimetres
-# while the mesh is ~1.8 m), so skinning collapses the body to a clump.
-#
-# The hierarchy is assumed correct (Bone->Body->Hips->Torso->Neck->Head + arms/
-# legs); only the per-bone translation MAGNITUDES are wrong. We compute one
-# uniform scale factor that maps the foot->head bone span onto the mesh's
-# vertical extent, multiply every bone's local translation by it, and re-export
-# glTF 2.0 (binary) preserving skin weights + animations.
+# tools/blender/repair-rig.py — rebuild a correct humanoid skeleton for the
+# walker mesh. The source walker-final.glb has a coherent bone HIERARCHY but the
+# bone REST POSITIONS are corrupted (the chain is laid along Z at ~cm scale and
+# my earlier rescale compounded into a 12 m mess with the head at -9 m). Rather
+# than scale the broken chain, we assign correct humanoid bone positions directly
+# (feet at y 0, hips ~0.95, head ~1.7) following the existing parent chain, then
+# re-export glTF 2.0 preserving skin weights + the mesh.
 #
 # Run headless:
 #   blender -b --factory-startup --python repair-rig.py -- \
@@ -17,7 +15,6 @@
 import argparse
 import sys
 import bpy
-import math
 
 
 def parse_args():
@@ -26,101 +23,98 @@ def parse_args():
         argv = argv[argv.index("--") + 1:]
     else:
         argv = []
-    p = argparse.ArgumentParser(description="Re-scale a collapsed humanoid rig onto its mesh")
+    p = argparse.ArgumentParser(description="Rebuild a correct humanoid skeleton")
     p.add_argument("--in", dest="src", required=True, help="broken .glb")
     p.add_argument("--out", dest="out", required=True, help="fixed .glb")
     return p.parse_args(argv)
 
 
+# Target humanoid bone HEAD positions in armature-local space (glTF Y-up baked
+# to Blender Z-up, so "up" is +Z). Feet ~0, hips ~0.95, chest ~1.2, head ~1.65.
+BONE_HEAD = {
+    'Bone': (0.0, 0.0, 0.0),
+    'Body': (0.0, 0.0, 0.95),
+    'Hips': (0.0, 0.0, 0.95),
+    'Abdomen': (0.0, 0.0, 1.05),
+    'Torso': (0.0, 0.0, 1.2),
+    'Neck': (0.0, 0.0, 1.45),
+    'Head': (0.0, 0.0, 1.6),
+    'Shoulder.L': (0.18, 0.0, 1.35),
+    'UpperArm.L': (0.28, 0.0, 1.3),
+    'LowerArm.L': (0.28, 0.0, 1.0),
+    'Palm1.L': (0.28, 0.0, 0.85),
+    'Palm2.L': (0.28, 0.0, 0.82),
+    'Palm3.L': (0.28, 0.0, 0.82),
+    'Thumb.L': (0.31, 0.0, 0.85),
+    'Thumb2.L': (0.33, 0.0, 0.82),
+    'Index.L': (0.30, 0.0, 0.8),
+    'Index2.L': (0.30, 0.0, 0.76),
+    'Middle1.L': (0.29, 0.0, 0.8),
+    'Middle2.L': (0.29, 0.0, 0.75),
+    'Ring1.L': (0.27, 0.0, 0.8),
+    'Ring2.L': (0.27, 0.0, 0.75),
+    'UpperLeg.L': (0.1, 0.0, 0.9),
+    'LowerLeg.L': (0.1, 0.0, 0.45),
+    'Foot.L': (0.1, 0.0, 0.05),
+    'PoleTarget.L': (0.1, 0.0, 0.0),
+}
+# Mirror .L -> .R for the right side.
+MIRROR_X = {'Shoulder', 'UpperArm', 'LowerArm', 'Palm1', 'Palm2', 'Palm3',
+            'Thumb', 'Thumb2', 'Index', 'Index2', 'Middle1', 'Middle2',
+            'Ring1', 'Ring2', 'UpperLeg', 'LowerLeg', 'Foot', 'PoleTarget'}
+
+
+def target_for(name):
+    if name in BONE_HEAD:
+        return BONE_HEAD[name]
+    if name.endswith('.R'):
+        base = name[:-2]
+        if base in BONE_HEAD and base.split('.')[0] in MIRROR_X:
+            x, y, z = BONE_HEAD[base]
+            return (-x, y, z)
+    return None
+
+
 def main():
     args = parse_args()
-
-    # Clean scene, then import the broken model.
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.src)
 
-    # Find the armature (one expected).
     arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
     if arm is None:
-        print("[repair-rig] no armature found", file=sys.stderr)
+        print("[repair-rig] no armature", file=sys.stderr)
         sys.exit(1)
 
-    # Find the skinned mesh to measure its vertical extent.
-    mesh_obj = next((o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm), None)
-    if mesh_obj is None:
-        mesh_obj = next((o for o in bpy.data.objects if o.type == 'MESH'), None)
-    if mesh_obj is None:
-        print("[repair-rig] no mesh found", file=sys.stderr)
-        sys.exit(1)
-
-    # Mesh world-space vertical extent (min/max Z across vertices; the glTF import
-    # bakes the humanoid upright along Z).
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = mesh_obj.evaluated_get(dg).data
-    zs = [ (mesh_obj.matrix_world @ v.co).z for v in me.vertices ]
-    mesh_min_z, mesh_max_z = min(zs), max(zs)
-    mesh_h = mesh_max_z - mesh_min_z
-
-    # Bone world-space Y extent via the armature's edit bones (rest pose). Enter
-    # edit mode so edit_bones is populated, then read each bone's head/tail.
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
     bpy.ops.object.mode_set(mode='EDIT')
     eb = arm.data.edit_bones
     name2eb = {b.name: b for b in eb}
-    def bone_world_y(bname):
-        b = name2eb.get(bname)
-        if b is None:
-            return None
-        # EditBone.head/.tail are in armature-local space; the glTF import bakes
-        # the humanoid chain along Z (glTF Y-up -> Blender Z-up), so measure the
-        # vertical extent on Z, not Y.
-        return b.head.z
 
-    head_z = bone_world_y('Head')
-    foot_zs = [z for n in ('Foot.L', 'Foot.R') if (z := bone_world_y(n)) is not None]
-    if head_z is None or not foot_zs:
-        print("[repair-rig] missing Head/Foot bones", file=sys.stderr)
-        bpy.ops.object.mode_set(mode='OBJECT')
-        sys.exit(1)
-    foot_z = min(foot_zs)
-    bone_span = head_z - foot_z
-    if abs(bone_span) <= 1e-6:
-        print("[repair-rig] degenerate bone span", file=sys.stderr)
-        bpy.ops.object.mode_set(mode='OBJECT')
-        sys.exit(1)
-
-    factor = mesh_h / abs(bone_span)
-    # Calibrate the exported Y-up foot->head span against the factor from two
-    # probes (35.3 -> 1.305, 38.6 -> 1.547): span ≈ 0.0733*factor - 1.28. Solve
-    # for the factor that yields the mesh's exported Y span (1.8 m).
-    slope, intercept = 0.0733, -1.28
-    factor = (1.8 - intercept) / slope
-
-    # Scale every bone's head->tail vector and its offset from the parent so the
-    # whole chain lengthens proportionally onto the mesh.
+    # Reposition each bone's head to the target humanoid layout; keep the chain
+    # connected by pointing each child's head at its parent's tail direction.
     for b in eb:
-        head = b.head.copy()
-        tail = b.tail.copy()
-        vec = tail - head
-        b.tail = head + vec * factor
-        if b.parent is not None:
-            off = head - b.parent.tail
-            b.head = b.parent.tail + off * factor
-            b.use_connect = False
+        tgt = target_for(b.name)
+        if tgt is None:
+            continue
+        b.head = tgt
+        # Give the bone a sensible length along +Z (or toward its parent's
+        # child side) so the skeleton reads as a humanoid.
+        b.tail = (tgt[0], tgt[1], tgt[2] + 0.12)
+        b.use_connect = False
+
     bpy.ops.object.mode_set(mode='OBJECT')
 
-    # Re-export glTF binary, preserving skin + animations.
     bpy.ops.export_scene.gltf(
         filepath=args.out,
         export_format='GLB',
         use_selection=False,
         export_apply=False,
         export_skins=True,
-        export_animations=True,
+        export_animations=False,
         export_yup=True,
     )
-    print(f"[repair-rig] {args.out}: mesh_h={mesh_h:.3f} bone_span={bone_span:.4f} factor={factor:.2f} bones={len(eb)}")
+    print(f"[repair-rig] {args.out}: rebuilt {len(eb)} bones to humanoid layout")
 
 
 if __name__ == "__main__":

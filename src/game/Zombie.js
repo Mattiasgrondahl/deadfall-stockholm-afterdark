@@ -340,7 +340,12 @@ function loadSkin(type, onReady) {
   function start() {
     const url = ASSET_BASE + 'assets/zombies/' + SKIN_ASSET[type]
     skinLoader.load(url, (gltf) => {
-      const rec = { scene: gltf.scene, animations: gltf.animations }
+      // The walker-fixed.glb animation clips were authored against the original
+      // cm-scale rest pose; after repair-rig.py rescaled the bones they export
+      // as inconsistent, oversized translation curves (e.g. Torso Y 3.5 m) that
+      // collapse/distort the body when played. Strip them so the body renders in
+      // its correct 1.8 m rest pose; Zombie drives a small procedural bob instead.
+      const rec = { scene: gltf.scene, animations: [] }
       skinCache[type] = rec
       onReady(rec)
     }, undefined, () => {
@@ -622,12 +627,24 @@ export class Zombie {
     // Lift the root so the scaled feet land on y 0; the scaled top then reaches
     // the target height, aligning the skinned head with the head primitive.
     root.position.set(0, -bb.min.y * scale, 0)
+    this._skinRestY = root.position.y
     // Per-instance material clone tinted to the type so shared-rig zombies of
     // different types read distinctly. Cloning keeps the baked map but gives this
     // zombie its own color (and lets hit-flash / death swap it safely).
     const srcMat = Array.isArray(skinned.material) ? skinned.material[0] : skinned.material
     const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
+    // The baked body texture is very dark, so multiplying it by the muted type
+    // tint rendered the skinned body as a featureless shadow ("shadow moves, no
+    // body"). Drop the dark baseColor map and render the body as the bright type
+    // color with a subtle emissive — matching how the old primitive body read
+    // clearly under the dim flashlight — while keeping the skinned geometry.
+    bodyMat.map = null
+    bodyMat.emissiveMap = null
     bodyMat.color.setHex(SKIN_TINT[this.type])
+    bodyMat.emissive = new THREE.Color(SKIN_TINT[this.type])
+    bodyMat.emissiveIntensity = 0.55
+    bodyMat.roughness = 0.9
+    bodyMat.needsUpdate = true
     skinned.material = bodyMat
     this._skinRestMat = bodyMat
     // The rig GLB already contains its own head (the skinned mesh spans up to
@@ -774,6 +791,15 @@ export class Zombie {
     // Advance the skinned-mixer (browser-only) on every frame, including dead /
     // stagger frames, so a death animation plays out and clips stay in sync.
     if (this._skin) this._skin.mixer.update(dt)
+    // The repaired rig's clips are broken (stripped at load), so drive a small
+    // procedural walk bob/lean on the skinned root for a living silhouette.
+    if (this._skin && this._skin.root) {
+      this._bobPhase = (this._bobPhase || 0) + dt * (this.isDead ? 0 : 6)
+      const bob = this.isDead ? 0 : Math.sin(this._bobPhase) * 0.04
+      const lean = this.isDead ? 0 : Math.sin(this._bobPhase * 0.5) * 0.06
+      this._skin.root.position.y = (this._skinRestY !== undefined ? this._skinRestY : this._skin.root.position.y) + bob
+      this._skin.root.rotation.z = lean
+    }
     if (this.isDead) {
       this._setSkinState('death')
       this.deathTimer += dt
