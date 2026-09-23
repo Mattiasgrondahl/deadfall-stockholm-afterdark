@@ -18,11 +18,16 @@ async function mkClient(name) {
 }
 
 const a = await mkClient('alice')
-const b = await mkClient('bob')
 await a.waitForTimeout(2500)
-await b.waitForTimeout(500)
-// Move B so A should see the avatar move.
-await b.evaluate(() => { window.__game.debug.setInput({ forward: true }) })
+// Inject a tiny snapshot with 2 zombies so the skinned build path runs without
+// the full wave (SwiftShader can't render many skinned bodies at once).
+await a.evaluate(() => {
+  const mp = window.__game.multiplayer
+  if (mp && mp._sync) mp._sync({ wave: 1, remaining: 2, players: [{ id: mp.pid, dead: false }], zombies: [
+    { id: 'zA', type: 'walker', x: -1, z: 3, health: 90, state: 'walk', facing: 0 },
+    { id: 'zB', type: 'walker', x: 1, z: 3, health: 90, state: 'walk', facing: 0 }
+  ], events: [], score: {}, kills: {} })
+})
 await a.waitForTimeout(1500)
 
 const diag = await a.evaluate(() => {
@@ -43,11 +48,12 @@ const diag = await a.evaluate(() => {
   for (const [id, e] of mp.zombies) {
     out.zombies.push({
       id,
-      pos: [Math.round(e.mesh.position.x * 100) / 100, Math.round(e.mesh.position.y * 100) / 100, Math.round(e.mesh.position.z * 100) / 100],
-      color: e.mesh.material.color.getHexString(),
-      emissive: e.mesh.material.emissive.getHexString(),
-      emissiveInt: e.mesh.material.emissiveIntensity,
-      visible: e.mesh.visible
+      skinned: !!e.root,
+      pos: [Math.round((e.root || e._box || e.mesh).position.x * 100) / 100, Math.round((e.root || e._box || e.mesh).position.y * 100) / 100, Math.round((e.root || e._box || e.mesh).position.z * 100) / 100],
+      color: (e.mesh && e.mesh.material) ? e.mesh.material.color.getHexString() : null,
+      emissive: (e.mesh && e.mesh.material) ? e.mesh.material.emissive.getHexString() : null,
+      emissiveInt: (e.mesh && e.mesh.material) ? e.mesh.material.emissiveIntensity : null,
+      visible: (e.root || e._box || e.mesh) ? (e.root || e._box || e.mesh).visible : null
     })
   }
   let lights = 0

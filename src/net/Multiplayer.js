@@ -15,15 +15,19 @@
 // Game tears it all down cleanly.
 import { RemotePlayer } from '../game/RemotePlayer.js'
 import { NetClient } from './NetClient.js'
+import { loadSkin, buildSkin, SKIN_TINT } from '../game/Zombie.js'
 
-// A tiny primitive zombie silhouette for remote (server-authoritative) zombies.
-// Shared geometry/material so 18 remote zombies add only 18 meshes. The dim
-// co-op scene crushed the dark olive box into a black square, so the material
-// now carries a bright green color + emissive (matching the local skinned
-// walker's readable config) so remote zombies read as glowing figures.
+// A tiny primitive zombie silhouette used as a fallback until the skinned rig
+// loads (and as the permanent body if the rig fails). Shared geometry/material
+// so fallback boxes add only 1 mesh each. The dim co-op scene crushed the dark
+// olive box into a black square, so it carries a bright color + emissive.
 import * as THREE from 'three'
 const ZGEO = new THREE.BoxGeometry(0.6, 1.7, 0.4)
 const ZMAT = new THREE.MeshStandardMaterial({ color: 0xb9c4ad, roughness: 0.9, emissive: 0x6f8a4a, emissiveIntensity: 0.55 })
+// Remote zombies get the same skinned walker body as local zombies so they read
+// up close. Cap skinned bodies so a full 24-zombie wave stays inside the mesh
+// budget; overflow zombies fall back to the shared box.
+const SKIN_CAP = 18
 
 export class Multiplayer {
   /**
@@ -105,25 +109,76 @@ export class Multiplayer {
     for (const [id, rp] of this.players) {
       if (!seen.has(id)) { rp.dispose(); this.players.delete(id) }
     }
-    // Remote zombies: reconcile by match id, remove vanished ones.
+    // Remote zombies: reconcile by match id, remove vanished ones. Prefer the
+    // skinned walker body (same as local zombies) once the rig is loaded; fall
+    // back to the shared box until then or past the skin cap.
     const zseen = new Set()
+    let skinnedCount = 0
+    for (const [id, e] of this.zombies) if (e.root) skinnedCount++
     for (const z of (snap.zombies || [])) {
       zseen.add(z.id)
       let entry = this.zombies.get(z.id)
       if (!entry) {
-        const mesh = new THREE.Mesh(ZGEO, ZMAT)
-        this.scene.add(mesh)
-        entry = { mesh }
+        // Create a fallback box immediately so every remote zombie has a visible
+        // body even before (or without) the skinned rig — headless keeps boxes.
+        entry = { mesh: null, root: null, _box: null }
+        const box = new THREE.Mesh(ZGEO, ZMAT)
+        this.scene.add(box)
+        entry._box = box
+        entry.mesh = box
         this.zombies.set(z.id, entry)
       }
-      entry.mesh.position.set(z.x, 0.85, z.z)
-      if (z.facing != null) entry.mesh.rotation.y = z.facing
-      entry.mesh.visible = !z.dead && z.state !== 'dead'
+      // Build/upgrade to a skinned body if we have room and the rig is ready.
+      if (!entry.root && skinnedCount < SKIN_CAP) {
+        loadSkin('walker', (rec) => {
+          const built = buildSkin(rec)
+          if (!built) return
+          const e2 = this.zombies.get(z.id)
+          if (!e2 || e2.root) return
+          // Tint + emissive so the body reads under the dim scene.
+          const bodyMat = built.skinned.material ? built.skinned.material.clone() : new THREE.MeshStandardMaterial()
+          bodyMat.map = null; bodyMat.emissiveMap = null
+          bodyMat.color.setHex(SKIN_TINT.walker)
+          bodyMat.emissive = new THREE.Color(SKIN_TINT.walker)
+          bodyMat.emissiveIntensity = 0.55
+          bodyMat.roughness = 0.9
+          built.skinned.material = bodyMat
+          built.skinned.castShadow = true; built.skinned.receiveShadow = true
+          const bb = new THREE.Box3().setFromObject(built.root)
+          const dim = bb.getSize(new THREE.Vector3())
+          const scale = dim.y > 1e-6 ? (1.8 / dim.y) : 1
+          built.root.scale.setScalar(scale)
+          built.root.position.set(0, -(bb.min.y || 0) * scale, 0)
+          this.scene.add(built.root)
+          e2.root = built.root
+          e2.mesh = built.skinned
+          if (e2._box) { this.scene.remove(e2._box); e2._box = null }
+          skinnedCount++
+          this._poseRemoteZombie(e2, z)
+        })
+      }
+      this._poseRemoteZombie(entry, z)
     }
     for (const [id, entry] of this.zombies) {
-      if (!zseen.has(id)) { this.scene.remove(entry.mesh); this.zombies.delete(id) }
+      if (!zseen.has(id)) {
+        if (entry.root) { this.scene.remove(entry.root); entry.root.traverse((o) => { if (o.isSkinnedMesh && o.material) o.material.dispose() }) }
+        if (entry._box) this.scene.remove(entry._box)
+        this.zombies.delete(id)
+      }
     }
     this._renderScoreboard(snap)
+  }
+
+  /** Position + face + visibility for a remote zombie entry (skinned root or
+   *  fallback box). Dead zombies hide. */
+  _poseRemoteZombie(entry, z) {
+    const node = entry.root || entry._box
+    if (!node) return
+    if (entry.root) node.position.set(z.x, 0, z.z)
+    else node.position.set(z.x, 0.85, z.z)
+    if (z.facing != null) node.rotation.y = z.facing
+    node.visible = !z.dead && z.state !== 'dead'
+    if (entry._box) entry._box.visible = node.visible
   }
 
   /** Format + paint the scoreboard DOM from the snapshot's score/kills maps. */
@@ -175,7 +230,10 @@ export class Multiplayer {
   dispose() {
     for (const rp of this.players.values()) rp.dispose()
     this.players.clear()
-    for (const entry of this.zombies.values()) this.scene.remove(entry.mesh)
+    for (const entry of this.zombies.values()) {
+      if (entry.root) { this.scene.remove(entry.root); entry.root.traverse((o) => { if (o.isSkinnedMesh && o.material) o.material.dispose() }) }
+      if (entry._box) this.scene.remove(entry._box)
+    }
     this.zombies.clear()
     if (this._sbEl && this._sbEl.parentNode) this._sbEl.parentNode.removeChild(this._sbEl)
     this._sbEl = null

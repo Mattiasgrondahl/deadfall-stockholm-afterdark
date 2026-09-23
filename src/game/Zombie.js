@@ -394,6 +394,10 @@ function buildSkin(rec) {
   return { root, skinned, mixer, clips }
 }
 
+// Skin helpers exported so the co-op controller can give remote (server-
+// authoritative) zombies the same skinned walker body as local zombies.
+export { loadSkin, buildSkin, SKIN_TINT }
+
 const ATTACK_RANGE = 1.3
 /** Fraction of the attack cooldown spent in the telegraphed windup before the
  *  hit lands. Per type: screamers strike almost instantly (fast, annoying),
