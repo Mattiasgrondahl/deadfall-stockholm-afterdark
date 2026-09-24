@@ -1310,3 +1310,24 @@ spending a single mesh, light or point.
   applied, tests updated to assert rest on the completion frame.
 - Evidence: pistol+shotgun 25/25, `npm test` 305/305 (0 fail / 0 skipped),
   `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.
+
+## v6 gameplay (6) — restart-state coverage (round 55)
+
+- Research finding: the restart path (Game.startGame, Game.js:567-604) was
+  only pinned by a state-PLAYING assertion (headless-boot.test.mjs:21-22);
+  nothing proved it actually clears run state.
+- Change: new test/restart-state.test.mjs (test-only, no src changes).
+  `dirty()` spends ammo, damages the player, drains flashlight battery,
+  debug-spawns + kills 6 walkers, steps 120 frames (kills/score/drops/clock
+  move), forceWaveClear + 240 frames (wave 1→2); `assertClean()` then pins
+  after restart: PLAYING, zombies 0, kills 0, score 0, wave 1, health 100,
+  timeInGame 0, drops 0, full mag + reserve, flashlight battery 1 + off,
+  `_boss` null. Three tests: resetRun path, GAMEOVER→startGame path, and
+  the PLAYING early-return guard (startGame while PLAYING must NOT wipe
+  kills/score/wave — Game.js:568).
+- Review: ACCEPT-WITH-FIXES (no must-fix); all three should-fixes applied
+  (flashlight/boss coverage added, early-return micro-test added, reserve
+  assert shared via assertClean so both restart paths check it).
+- No restart bugs found — startGame already clears every field.
+- Evidence: restart-state 3/3, `npm test` 308/308 (0 fail / 0 skipped),
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.
