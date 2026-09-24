@@ -8,6 +8,8 @@
 // V8: per-type zombie groans (LCG-scheduled, distance falloff, 4-voice cap)
 // plus one-shot voices: axeSwing, pickup, drop, flashlightClick, weaponSwitch.
 
+import { MusicEngine } from './MusicEngine.js'
+
 // Groan scheduler constants: per-type base period (s), voice length (s),
 // base gain at 0 m. Cutoff 30 m; at most 4 concurrent groan voices.
 const GROAN_CUTOFF = 30
@@ -67,6 +69,14 @@ export class AudioBank {
     this._musicUrl = null
     this._musicOn = false
     this._musicMuted = false
+    // Procedural soundtrack (additive to the mp3 layer above): three
+    // oscillator-scheduled tracks owned by MusicEngine. Created always, even
+    // headless, so music state is observable without an AudioContext. Its
+    // output gain is routed through the music bus (or master) by _wireMusic.
+    this._musicEngine = new MusicEngine()
+    this._musicEngineWired = false
+    this._musicEngineCeil = 0.5
+    this._musicEngineClock = 0
     this._onMusicEnded = null
     this._onMusicTimeUpdate = null
     this._musicLen = 0
@@ -701,6 +711,9 @@ export class AudioBank {
     if (this._ambientOn && this._gustGainNode && this._ambClock >= this._gustNextAt) {
       this._scheduleGust(this._ambClock)
     }
+    // Procedural soundtrack scheduler tick (same per-frame piggyback): keeps
+    // the pattern loop scheduled ahead of the clock. No-op headless.
+    this._updateMusicEngine(dt)
     return scheduled
   }
 
@@ -923,11 +936,70 @@ export class AudioBank {
   /** Music bus gain: 0 when either mute flag is set, else the musicVolume
    *  ceiling (0.5 = the shipped baseline). */
   _applyMusicGain() {
-    if (this._musicGain) {
-      const ceil = this._settings ? this._settings.get('musicVolume') : this._musicCeil
-      this._musicCeil = ceil
-      this._musicGain.gain.value = (this.muted || this._musicMuted) ? 0 : ceil
+    const ceil = this._settings ? this._settings.get('musicVolume') : this._musicCeil
+    this._musicCeil = ceil
+    const v = (this.muted || this._musicMuted) ? 0 : ceil
+    if (this._musicGain) this._musicGain.gain.value = v
+    // The procedural engine has its own output gain feeding the same bus, so
+    // mute/volume apply to it too (headless: no node, but the value is kept).
+    this._musicEngineCeil = v
+    if (this._musicEngine) this._musicEngine.setOutputGain(v)
+  }
+
+  /** Route the procedural engine's output into the music bus (browser-only,
+   *  lazy: the graph is built on the first track start, after a gesture). */
+  _wireMusicEngine() {
+    if (!this.ctx || !this._musicEngine || this._musicEngineWired) return
+    const dest = this._musicGain || this.master
+    if (!dest) return
+    this._musicEngine.start(this.ctx, dest)
+    this._musicEngine.setOutputGain(this._musicEngineCeil)
+    this._musicEngineWired = true
+  }
+
+  /** Start/switch the procedural soundtrack to a named track. Headless-safe:
+   *  the engine still records the state so tests can observe it. */
+  playMusicTrack(name) {
+    if (!this._musicEngine) return
+    this._wireMusicEngine()
+    if (this._musicEngine.currentTrack === name && this._musicEngine.isPlaying) return
+    this._musicEngine.switchTrack(name)
+  }
+
+  /** Stop the procedural soundtrack (ramps to silence, tears nodes down). */
+  stopMusicTrack() {
+    if (this._musicEngine) this._musicEngine.stop()
+  }
+
+  /** Pause the procedural soundtrack; the track is remembered for resume. */
+  pauseMusic() {
+    if (this._musicEngine) this._musicEngine.pause()
+  }
+
+  /** Resume the remembered procedural track after a pause. */
+  resumeMusic() {
+    if (!this._musicEngine) return
+    this._wireMusicEngine()
+    this._musicEngine.resume()
+  }
+
+  /** Observable procedural-music state (owned plain object, no live nodes). */
+  get musicState() {
+    if (!this._musicEngine) return { current: null, playing: false, playlist: { order: [], mode: 'none' } }
+    return {
+      current: this._musicEngine.currentTrack,
+      playing: this._musicEngine.isPlaying,
+      playlist: this._musicEngine.playlist
     }
+  }
+
+  /** Advance the procedural scheduler. Called from updateGroans (per frame). */
+  _updateMusicEngine(dt) {
+    if (!this._musicEngine) return
+    this._musicEngineClock += Math.max(0, Number(dt) || 0)
+    if (this._musicEngineClock < 0.5) return
+    this._musicEngineClock = 0
+    this._musicEngine.update()
   }
 
   toggleMuted() { this.setMuted(!this.muted) }
@@ -1051,6 +1123,9 @@ export class AudioBank {
     this._onMusicTimeUpdate = null
     this._musicLen = 0
     this._musicMuted = false
+    if (this._musicEngine) { this._musicEngine.dispose(); this._musicEngine = null }
+    this._musicEngineWired = false
+    this._musicEngineClock = 0
     if (this._settingsOff) { this._settingsOff(); this._settingsOff = null }
     this._settings = null
     this._masterIn = null

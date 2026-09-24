@@ -68,6 +68,7 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
 | F | Flashlight on/off (battery drains, flickers when low) |
 | P / Esc | Pause / resume (Esc releases pointer lock) |
 | M | Mute / unmute |
+| N | Mute / unmute the music only (SFX stay audible) |
 
 ## Gameplay
 
@@ -92,6 +93,19 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
 All sound is synthesized in real time by WebAudio (`AudioBank`) — oscillators,
 filtered noise bursts, and an LFO-driven ambient bed. No audio assets are
 loaded or downloaded.
+
+**Procedural music.** The soundtrack is generated, not streamed: three
+distinct procedural tracks (`MusicEngine`) — **ambient** (slow, calm pad for
+exploration), **combat** (driving pulse and minor riff), and **crisis**
+(fastest, most urgent, for boss waves and high danger). A `MusicDirector`
+picks the track from game state: early/cleared waves play ambient, combat
+waves play combat, boss waves (every 5th) and high tension switch to crisis,
+and pausing pauses the music while game-over and restart reset the playlist
+safely. Switches crossfade over ~0.8 s so there are no clicks, and each track
+loops its fixed pattern seamlessly. Track selection lives entirely in the
+audio subsystem — never in `Game.js`. `musicState()` exposes the current
+track and playlist for tests. **N** mutes only the music; **M** mutes
+everything.
 
 **Autoplay.** Browsers start a fresh `AudioContext` in the *suspended* state
 until a user gesture happens; the game relies on that rule instead of fighting

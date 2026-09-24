@@ -22,23 +22,36 @@ import { updateWorld } from './WorldCore.js'
 import { HUD } from './HUD.js'
 import { Screens } from './Screens.js'
 import { AudioBank } from './AudioBank.js'
+import { MusicDirector } from './MusicDirector.js'
 import { PostFX } from './PostFX.js'
 import { Settings } from './Settings.js'
 
 // Soundtrack mp3s (YuE2 hard-rock zombie songs), served from public/. Resolved
-// against Vite's BASE_URL in the browser; the AudioBank no-ops headless.
+// against Vite's BASE_URL in the browser; the AudioBank no-ops headless. The
+// shipped game plays the procedural MusicEngine soundtrack via MusicDirector,
+// so these constants are no longer wired — they remain as the documented asset
+// paths for the AudioBank mp3 API (exercised directly by test/audio.test.mjs).
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
-// Per-level music: one track per boss-cycle (a "level" = every 5 waves). The
-// set cycles, so each level starts on a different song and the list repeats
-// once exhausted. Tracks are resolved against the asset base.
-const LEVEL_TRACKS = [
+export const LEVEL_TRACKS = [
   ASSET_BASE + 'assets/audio/soundtrack.mp3',
   ASSET_BASE + 'assets/audio/soundtrack2.mp3'
 ]
 // Known true length of each track (seconds). Some browsers misreport an mp3's
 // `duration` and fire `ended` early, so the loop is driven off this explicit
 // length instead of the element's unreliable `duration`.
-const LEVEL_TRACK_SECONDS = 120
+export const LEVEL_TRACK_SECONDS = 120
+
+// v6 visuals (2): quality-tiered fog. Both readability gates are density
+// windows, so every tier sits inside them: vis(d) = exp(-(d*density)^2) needs
+// vis(30) >= 0.60 (density <= 0.02382 — a zombie at 30 m stays clearly
+// readable) and vis(80) < 0.15 (density >= 0.01722 — the city depth cue
+// survives). 'high' keeps the pinned baseline; the cheaper tiers are thinner
+// and clearer, never below the far-falloff floor.
+export const FOG_TIERS = {
+  high: { color: 0x0b1020, density: 0.022 },
+  medium: { color: 0x0b1020, density: 0.019 },
+  low: { color: 0x0b1020, density: 0.018 }
+}
 
 export const GameState = Object.freeze({
   TITLE: 'title',
@@ -249,7 +262,10 @@ export class Game {
   setupScene() {
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(0x060912)
-    this.scene.fog = new THREE.FogExp2(0x0b1020, 0.022)
+    // v6 visuals (2): fog starts on the stored quality tier (default 'high' =
+    // the pinned 0.022 baseline) instead of a single flat density for all.
+    this.scene.fog = new THREE.FogExp2(FOG_TIERS.high.color, FOG_TIERS.high.density)
+    this.setFogQuality(this.quality)
     // Far plane 520: the sky dome (r=420), starfield (r=400) and the distant
     // skyline silhouettes (360-400 m) must all sit inside it, or they are
     // clipped away and the sky falls back to the flat scene.background color.
@@ -257,6 +273,19 @@ export class Game {
     // nothing visible.
     this.camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 520)
     this.camera.position.set(0, 1.7, 12)
+  }
+
+  /**
+   * v6 visuals (2): retune the scene fog for a quality tier. Anything that is
+   * not 'medium' collapses to 'low', mirroring Lighting.setQuality. Pure
+   * property writes on the existing FogExp2 — no allocation, headless-safe.
+   */
+  setFogQuality(q) {
+    const tier = FOG_TIERS[q === 'medium' ? 'medium' : (q === 'high' ? 'high' : 'low')]
+    if (!this.scene || !this.scene.fog) return tier
+    this.scene.fog.color.setHex(tier.color)
+    this.scene.fog.density = tier.density
+    return tier
   }
 
   resize() {
@@ -307,6 +336,9 @@ export class Game {
     }
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
+    // v6 visuals (2): cheap atmospheric layering — a fog:false additive haze
+    // sheet skimming the ground, plus depth-tuned ground/road materials.
+    this._createGroundHaze()
     // WIRING:ENV (V3P-9): IBL environment map baked once from the game's own
     // sky (gradient dome + moon + skyline silhouettes). Gives every standard
     // material a soft ambient sheen and sky reflections consistent with what
@@ -318,6 +350,9 @@ export class Game {
     // WIRING:AUDIO
     this.audio = new AudioBank()
     this.audio.attachSettings(this.settings)
+    // WIRING:MUSIC (procedural soundtrack): all track selection lives in
+    // MusicDirector — Game only forwards state/wave/tension events.
+    if (this.audio) this.musicDirector = new MusicDirector(this.audio, { bossEvery: 5 })
     if (this.player) this.player.audio = this.audio
     if (this.input) this.input.on('mute', () => this.audio.toggleMuted())
     // N toggles ONLY the soundtrack; keep the HUD button label in sync.
@@ -338,15 +373,14 @@ export class Game {
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {
         if (this.screens) { this.screens.showBanner('WAVE ' + w); this.screens.onWaveStarted() }
-        // A new boss-cycle (a "level") begins every 5 waves (waves 1, 6, 11...).
-        // Switch to that level's track so each level has its own song.
-        if (this.audio && (w - 1) % 5 === 0) {
-          this.audio.playLevelMusic(LEVEL_TRACKS, Math.floor((w - 1) / 5), LEVEL_TRACK_SECONDS)
-        }
+        // Procedural soundtrack: the director picks the track for this wave
+        // (boss waves -> crisis, opening waves -> ambient, else combat).
+        if (this.musicDirector) this.musicDirector.onWaveStart(w)
       },
       onWaveCleared: (w) => {
         if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED')
         if (this.audio) this.audio.playWaveCleared?.(w)
+        if (this.musicDirector) this.musicDirector.onWaveCleared(w)
         // Threat preview: tell the player what the next wave brings while the
         // intermission is running (composition + boss warning).
         const p = this.waveManager ? this.waveManager.nextWavePreview : null
@@ -453,8 +487,22 @@ export class Game {
     const s = this.settings.values
     if (!onlyKey || onlyKey === 'quality') {
       this.quality = s.quality
-      if (this.lighting) this.lighting.setQuality(s.quality === 'high' ? 'high' : 'low')
+      if (this.lighting) this.lighting.setQuality(s.quality)
       if (this.postfx) this.postfx.setEnabled(s.quality === 'high')
+      // v6 visuals (2): fog follows the tier live (medium keeps its own
+      // thinner fog, unlike the lighting/postfx collapse to 'low').
+      // v6 visuals (3): so does the snow layering tier (lighting.setQuality
+      // forwards the real tier to the city's snow density).
+      // v6 visuals (4): the enabled bloom path takes the tier's strength
+      // (high 0.18 / medium 0.12 / low 0.08). setTier never enables post by
+      // itself — low/medium stay the cheap no-composer fallback above.
+      if (this.postfx) this.postfx.setTier(s.quality)
+      // v6 visuals (6): the muzzle-flash light follows the tier as well —
+      // 'low' drops the pistol/shotgun flash PointLights (sprite-only flash),
+      // and hit feedback still reads because HITMAT is emissive, not
+      // light-driven. No new light is created at any tier.
+      if (this.weapon) this.weapon.setTier(s.quality)
+      this.setFogQuality(s.quality)
     }
     if (!onlyKey || onlyKey === 'sensitivity') {
       if (this.player) this.player.sensMult = s.sensitivity
@@ -486,6 +534,8 @@ export class Game {
     if (this.state === next) return
     const prev = this.state
     this.state = next
+    // Procedural soundtrack follows the game state (pause/resume/stop).
+    if (this.musicDirector) this.musicDirector.onStateChange(next, prev)
     // WIRING:STATE_TRANSITIONS (screens + pointer lock, owned by task A; F extends)
     console.debug('state', prev, '->', next)
     // Pause releases the pointer lock; re-locking (the 'lock' event above)
@@ -537,7 +587,9 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.(); this.audio.playLevelMusic(LEVEL_TRACKS, 0, LEVEL_TRACK_SECONDS) }
+    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
+    // Fresh run: the director resets and starts the opening ambient track.
+    if (this.musicDirector) this.musicDirector.reset()
     if (this.screens) this.screens.showGameplay()
     if (this.difficulty !== 'normal' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')
@@ -684,7 +736,10 @@ export class Game {
     // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
     // player is — alive-zombie pressure vs the wave cap, blended with low
     // health, plus a bump while the boss stands. Smoothed inside AudioBank.
-    if (this.audio) this.audio.setTension(this._computeTension(), dt)
+    // The same level drives the procedural music director (crisis threshold).
+    const tension = this._computeTension()
+    if (this.audio) this.audio.setTension(tension, dt)
+    if (this.musicDirector) this.musicDirector.onTension(tension)
     // WIRING:MULTIPLAYER (Phase 5): advance the net layer, send local input,
     // and re-pose remote avatars from interpolated snapshots.
     if (this.multiplayer) this.multiplayer.update(dt, this.inputState, this.player ? this.player.yaw : 0)
@@ -696,6 +751,15 @@ export class Game {
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
     // dt drives the star twinkle clock (deterministic: accumulated game time).
     if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position, dt)
+    // v6 visuals (2): the ground haze is a fixed-extent sheet, so it follows
+    // the player on X/Z like the sky dome (heights stay put).
+    if (this.haze) {
+      const p = this.player ? this.player.position : this.camera.position
+      this.haze.near.position.x = p.x
+      this.haze.near.position.z = p.z
+      this.haze.far.position.x = p.x
+      this.haze.far.position.z = p.z
+    }
     if (this.city) this.city.update(this.player ? this.player.position : this.camera.position, dt)
   }
 
@@ -728,6 +792,60 @@ export class Game {
     // The wave-5 boss owns the HUD boss bar for as long as it is alive.
     if (zombie.isBoss) this._boss = zombie
     return zombie
+  }
+
+  /**
+   * v6 visuals (2): atmospheric layering that costs no lights and no points.
+   * Two additive, fog:false sheets skimming the ground, alpha rising with
+   * distance from the sheet centre (a = 1 - exp(-(dist*k)^2), capped):
+   *   near band k=0.010 cap 0.16 — a soft pool right at the player's feet
+   *     (0.09 at 30 m, so it can never wash out the 30 m readability gate);
+   *   far band k=0.008 cap 0.22 — negligible under 30 m (0.06), building to
+   *     the cap past ~130 m, so the street reads as receding mist.
+   * Both reuse the city ground plane geometry (no new geometry) and follow the
+   * player on X/Z like the sky dome.
+   */
+  _createGroundHaze() {
+    if (!this.scene || !this.city || !this.city.ground) return
+    const mat = (color, k, cap) => new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false, // the layer IS the haze; scene fog must not erase it
+      uniforms: {
+        uColor: { value: new THREE.Color(color) },
+        uK: { value: k },
+        uCap: { value: cap }
+      },
+      vertexShader: 'varying float vD; void main() { vD = length(position.xy); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 uColor; uniform float uK; uniform float uCap; varying float vD; void main() { float a = 1.0 - exp(-pow(vD * uK, 2.0)); gl_FragColor = vec4(uColor, min(a, uCap)); }'
+    })
+    const geo = this.city.ground.geometry
+    const near = new THREE.Mesh(geo, mat(0x1b2838, 0.010, 0.16))
+    near.rotation.x = -Math.PI / 2
+    near.position.y = 0.05
+    near.renderOrder = 1
+    near.frustumCulled = false
+    const far = new THREE.Mesh(geo, mat(0x141d2c, 0.008, 0.22))
+    far.rotation.x = -Math.PI / 2
+    far.position.y = 0.11
+    far.renderOrder = 2
+    far.frustumCulled = false
+    this.scene.add(near, far)
+    this.haze = { near, far }
+    // Per-material fog tuning: the ground/road keeps scene fog but is pushed
+    // ~18 % more transparent than the buildings, so distance separates street
+    // from skyline instead of flattening both. Zombie materials untouched.
+    if (this.city.ground.material) this.city.ground.material.fogDensity = 0.82
+  }
+
+  /** Tear down the atmosphere layer this class owns (haze meshes + materials). */
+  dispose() {
+    if (!this.haze) return
+    this.scene.remove(this.haze.near, this.haze.far)
+    this.haze.near.material.dispose()
+    this.haze.far.material.dispose()
+    this.haze = null
   }
 
   render() {

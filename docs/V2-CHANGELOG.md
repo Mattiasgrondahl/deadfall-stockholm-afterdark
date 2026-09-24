@@ -559,3 +559,655 @@ Evidence: npm test 117/117 (0 fail / 0 skipped); node tools/verify-game.mjs 81 o
 - Deployed URL: **https://mattiasgrondahl.github.io/deadfall-stockholm-afterdark/**
 - Verified on the live deployment: assets 200, E2E 18/18 PASS with 0 console/page errors, mouse-look pipeline PASS (in-page movementX → exact LOOK_SENS yaw delta; CDP-synthesized movement stays a headless artifact), WASD/sprint/reload probe PASS.
 - README documents the online URL, `npm run pages`, and the redeploy procedure.
+
+## Procedural music system — 3-track WebAudio soundtrack (round 40)
+
+- New `src/game/MusicEngine.js`: fully procedural soundtrack — three looping
+  tracks built from oscillators + gain envelopes scheduled ahead of time (no
+  mp3 assets, no Math.random): `ambient` (slow minor-key pad over a soft
+  drone), `combat` (driving eighth-note minor pulses), `crisis` (faster,
+  higher-register dissonant stabs). Looping is pattern-based: the scheduler
+  wraps the pattern index back to 0 at each bar boundary, so a loop is just
+  the same pattern again — no abrupt silence, no clicks. `switchTrack`
+  crossfades (cancelScheduledValues + setValueAtTime + 0.8 s linear ramps;
+  outgoing nodes stopped ~0.9 s later). Full lifecycle
+  (`start/switchTrack/stop/pause/resume/dispose`, dispose idempotent and
+  nulling every node/param). Headless-safe: with no AudioContext every method
+  no-ops while state (currentTrack / isPlaying / playlist) still updates.
+- New `src/game/MusicDirector.js`: owns ALL track selection — boss waves
+  (`w % bossEvery === 0`) → crisis, opening waves → ambient, others →
+  combat; cleared waves → ambient; tension ≥ 0.75 → crisis and < 0.2 leaves
+  it (threshold hysteresis, no timers); title/paused pause the music, playing
+  resumes, gameover stops (documented choice). `reset()` restarts ambient.
+- `AudioBank.js`: always owns a MusicEngine (even headless); new
+  `playMusicTrack/stopMusicTrack/pauseMusic/resumeMusic` + `musicState`
+  getter. Engine output routes through the music bus (`_musicGain || master`)
+  and `_applyMusicGain` applies both mute flags + musicVolume to it. The mp3
+  layer (`playMusic/stopMusic/playLevelMusic`) is kept intact and additive.
+  `dispose()` disposes + nulls the engine.
+- `Game.js`: minimal wiring only — constructs the director after audio,
+  forwards state/wave/tension events, `startGame` resets it. The two mp3
+  `playLevelMusic` call sites were removed so exactly one music layer plays;
+  `LEVEL_TRACKS` stays for the AudioBank API. No track-selection logic in
+  Game.js.
+- New `test/music-playlist.test.mjs` (fake AudioContext + fake Audio,
+  `globalThis.Audio` cleaned up in a finally block): engine state/crossfade/
+  scheduler-wrap/dispose/headless, director wave/tension/state matrix,
+  AudioBank integration incl. mute + dispose.
+- Evidence: `node --test test/music-playlist.test.mjs` green; `npm test`
+  262/262 (0 fail / 0 skipped; 255 baseline + 7 new);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE);
+  `npm run build` green (known chunk-size warning only).
+
+### Review pass — reviewer fixes (round 40 follow-up)
+
+Independent review of the music subsystem returned accept-with-fixes; all
+findings addressed:
+- MUST-FIX (unbounded node bookkeeping): `MusicEngine` now keeps an `_ends`
+  queue of each voice's scheduled stop time; `update()` prunes finished
+  voices out of `_nodes` and out of any pending `_fade` entries, so neither
+  array grows without bound over a long session (measured: 1 simulated hour
+  of crisis playback keeps `_nodes` < 120 and `_ends` < 64; a 200-switch
+  storm leaves `_fade` < 16). New bounded-growth assertions added to
+  `test/music-playlist.test.mjs`.
+- Should-fix (mute interaction): `resume()`/`_build()` now ramp to the last
+  output ceiling recorded by `setOutputGain` (`_outCeil`) instead of a hard
+  1, so pause/resume under a volume ceiling or mute cannot jump to full
+  gain. New test asserts resume restores 0.5 after `setOutputGain(0.5)`.
+- Should-fix (dead code): removed the `void LEVEL_TRACKS` retention hack;
+  `LEVEL_TRACKS`/`LEVEL_TRACK_SECONDS` are now exported constants with an
+  honest comment (kept for the AudioBank mp3 API + docs, no call sites).
+- Noted, accepted: `AudioBank._updateMusicEngine` is throttled to one tick
+  per 0.5 s, so a track switch reaches the engine within 0.5 s — bounded,
+  no leak, and imperceptible behind the 0.8 s crossfade.
+- Evidence after fixes: `node --test test/music-playlist.test.mjs` green;
+  `npm test` 262/262 (0 fail / 0 skipped); `node tools/verify-game.mjs`
+  81 ok / 0 fail / 0 skipped; `npm run build` green (chunk-size warning
+  only).
+
+## v6 visuals (1) — stronger night lighting (round 41)
+
+First item of the v6 visuals workstream: lift the night scene so silhouettes
+and streetlight pools read clearly without adding lights or geometry.
+
+- `src/world/Lighting.js`: moon DirectionalLight 1.1 → 1.45 lx (new
+  `MOON_INTENSITY` constant); streetlight pool `POLE_INTENSITY` 55 → 70 cd;
+  HemisphereLight 0.22 → 0.30; AmbientLight 0.08 → 0.12. Light count stays
+  exactly 15 (1 moon + 1 hemi + 1 ambient + 12 pooled points, ≤ 40 budget);
+  colors, distance 14, decay 2, shadow map 2048, biases, ACES tone mapping,
+  moon-follow, nearest-anchor pool with broken-lamp skip, setQuality
+  low(6)/high(12), and dispose are unchanged. No new lights/meshes, no
+  per-frame allocations.
+- `test/lighting.test.mjs`: pinned values updated (moon 1.45; 70 cd in the
+  anchors, setQuality low/high, and streetlights assertions); all other
+  assertions intact.
+- Evidence: `node --test test/lighting.test.mjs` 4/4; `npm test` 262/262
+  (0 fail / 0 skipped); `node tools/verify-game.mjs` 81 ok / 0 fail / 0
+  skipped (FULL ACCEPTANCE).
+- Reviewer risk flags for later rounds: brighter streetlights slightly grow
+  UnrealBloom halos (re-measure in the bloom round); shadow biases are more
+  load-bearing under the stronger moon (check acne/peter-panning in-browser).
+
+## v6 visuals (2) — fog / atmospheric depth (round 42)
+
+Second item of the v6 visuals workstream: replace the single flat FogExp2 with
+a quality-tiered fog plus cheap atmospheric layering, keeping both hard
+readability gates intact for every tier.
+
+- `src/game/Game.js`: new exported `FOG_TIERS` table — `high` 0.022 /
+  `medium` 0.019 / `low` 0.018, all color `0x0b1020` — and a
+  `setFogQuality(q)` helper that mirrors `Lighting.setQuality` (anything that
+  is not `medium`/`high` collapses to `low`). `setupScene()` now seeds the fog
+  from the stored tier and `applySettings('quality')` retunes it live next to
+  `lighting.setQuality` / `postfx.setEnabled`. Every tier sits inside both
+  gates: `vis(d) = exp(-(d*density)^2)` needs `vis(30) >= 0.60`
+  (density <= 0.02382) and `vis(80) < 0.15` (density >= 0.01722), so the
+  cheaper tiers are thinner and clearer but never thinner than the far-falloff
+  floor. `high` stays the pinned 0.022 baseline.
+- `src/game/Game.js` `_createGroundHaze()`: two additive, `depthWrite:false`,
+  `fog:false` ground-haze sheets that reuse the city ground plane geometry (no
+  new geometry, no lights, no points). Alpha rises with distance from the
+  sheet centre: near band `k=0.010` cap `0.16` (0.09 at 30 m — a pool at the
+  player's feet, never a wall of mist), far band `k=0.008` cap `0.22`
+  (0.06 at 30 m, saturating past ~130 m) so the street reads as receding mist.
+  Both follow the player on X/Z in `update()` like the sky dome; `dispose()`
+  removes them and disposes their materials.
+- `src/game/Game.js` + `src/world/City.js`: per-material fog tuning — the
+  ground/road keeps scene fog but gets `fogDensity = 0.82`, so distance
+  separates street from skyline instead of flattening both. `City` now exposes
+  `this.ground` for the haze layer to reuse. Zombie materials untouched.
+- Budgets: meshes 510 -> 512 (<= 600 / verify-game <= 640), lights 18 (<= 40),
+  points unchanged (snow 1500, <= 2500). No `Math.random`, no per-frame
+  allocation (uniform writes only), headless-safe. Moon/stars/skyline keep
+  `fog: false` — `src/world/sky.js` untouched.
+- `test/fog.test.mjs`: rewritten from 2 pinned assertions to 4 tests — the
+  high tier still pins 0.022 / 0x0b1020, the tier fan-out is asserted live via
+  `settings.set('quality', ...)` with per-tier density + both gates for all
+  three tiers, and the haze layer is checked for `fog:false` additive
+  blending, 30 m faintness, caps, ground `fogDensity`, and dispose teardown.
+- Evidence: `node --test test/fog.test.mjs` 4/4; `node --test test/sky.test.mjs`
+  8/8 (fog:false intact); `npm test` 264/264 (0 fail / 0 skipped);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE,
+  walker-at-(30,12) kill flow not skipped); `npm run build` green (chunk-size
+  warning only).
+- Note for later rounds: `tools/fog-sight.mjs` still hard-pins 0.022 and
+  passes because the default tier is `high`; if a future round changes the
+  default quality it must update that probe too.
+
+## v6 visuals (3) — snow / weather layering (round 43)
+
+Third item of the v6 visuals workstream: turn the single uniform snow box into
+a layered weather volume with quality tiers and a deterministic squall beat,
+without spending a single extra light or breaking zombie readability.
+
+- `src/world/snow.js`: the sheet is now a 4-band depth hierarchy — near
+  700 flakes (size 0.15, opacity 0.95, fall 3.1 m/s), mid 700 (0.10 / 0.78 /
+  2.3), far 260 (0.06 / 0.60 / 1.7) and a high-altitude haze band 140
+  (0.035 / 0.34 / 1.1) that reads as weather volume rather than discrete
+  flakes. Size, brightness and fall speed fall monotonically with depth. Each
+  band carries its own crosswind phase (plus a per-flake wind phase), so the
+  bands shear against each other instead of translating as one slab; the
+  existing twin-sine gust clock is unchanged. Geometry allocates 1800 flakes
+  (700/700/260/140 — every tier share is an exact integer, no rounding drift).
+- `src/world/snow.js`: new `setTier(q)` for the quality tiers — low 750 drawn
+  (only the two readable bands stay visible), medium 1050, high 1500 — all
+  driven through `setDrawRange` + `visible`, never a geometry rebuild.
+  `setCount(n)` keeps its legacy proportional contract (750 halves, 1500
+  restores) so the pinned lighting/city assertions stay green.
+- `src/world/snow.js`: cheap weather beat — a deterministic triangle-envelope
+  squall on its own 23 s clock (4.5 s rise, 9.5 s decay, smoothed, no
+  `Math.random`) multiplies density up to x1.4, clamped band-by-band to the
+  1800 allocated flakes. Measured peaks: high 1800, medium 1450, low 1037 —
+  always >= the tier base and <= 1800, i.e. 700 points of margin under the
+  2500-point budget on the worst frame. `update()` returns the drawn count and
+  still allocates nothing per frame (positions mutated in place, buffers and
+  materials reused).
+- `src/world/Lighting.js` `setQuality(q)`: keeps the shadow/lighting collapse
+  (`medium` still behaves as `low` for shadows) but now forwards the real tier
+  to the snow layer (1500 / 1050 / 750). `src/game/Game.js` `applySettings`
+  passes the stored tier through instead of pre-collapsing it, so `medium`
+  reaches the snow tier live (fog already did in round 42).
+- Budgets: points 5 point-objects, 1800 flakes allocated / <= 1800 drawn
+  (<= 2500), meshes 512 at title / 597 peak in play (<= 600 / <= 640), lights
+  18 (<= 40, none added). No `Math.random`, zero per-frame allocation,
+  headless-safe. Zombies stay readable: flakes are 0.035-0.15 world units and
+  the sheet follows the player, so the walker-at-(30,12) kill flow is ok.
+- `test/snow.test.mjs` (new, 6 tests): band count + allocation ceiling,
+  monotonic size/opacity hierarchy and near-vs-haze fall-rate separation, the
+  three tiers (incl. low hiding 2 bands and unknown tiers falling back to
+  high), squall bounds/peaks per tier, twin-instance determinism with
+  independent band crosswind, and a heap-growth + buffer-identity check for
+  zero per-frame allocation. `test/city.test.mjs` snow assertions updated to
+  4 layers / 1800 flakes; `test/lighting.test.mjs` untouched (750 / 1500 pins
+  still pass).
+- Evidence: `node --test test/snow.test.mjs` 6/6; `node --test
+  test/fog.test.mjs` 4/4, `test/sky.test.mjs` 8/8, `test/lighting.test.mjs`
+  4/4, `test/city.test.mjs` 23/23; `npm test` 270/270 (0 fail / 0 skipped);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE,
+  walker-at-(30,12) kill flow not skipped); `npm run build` green (chunk-size
+  warning only).
+- Note for later rounds: the squall peak is now the worst-case point count
+  (1800). Any new point layer (embers, rain, debris) must budget against
+  2500 - 1800 = 700, not against the 1500 baseline.
+
+## v6 visuals (4) — restrained bloom / emissive (round 44)
+
+Fourth item of the v6 visuals workstream: make lamps and landmarks read as
+deliberate glow instead of blown-out discs, without washing out zombies and
+without spending a single mesh, light or point.
+
+- `src/game/PostFX.js`: bloom retuned to source-only via a `BLOOM` constant —
+  strength 0.25→0.18, radius 0.5→0.35, threshold 0.0→0.72. Pass order is
+  untouched (RenderPass → gtao → grade → bloom, bloom last / renderToScreen),
+  GTAO `blendIntensity` 0.5 and the grade uniforms (uGrain 0.012, uVignette
+  0.05) unchanged. The gate that matters is the *tonemapped* luminance:
+  `src/world/Lighting.js` sets ACESFilmic tone mapping at exposure 1.2, so
+  `UnrealBloomPass.highPass` tests post-curve values, not raw HDR. Measured on
+  that curve (x' = x(2.51x+0.03)/(x(2.43x+0.59)+0.14), x = lin·1.2): the
+  round-41 lit band (moon 1.45 / hemi 0.30 / ambient 0.12 / 70 cd pools on
+  stone and snow) lands at 0.50–0.72, while every emissive source stays above
+  it — lamp 0.867, spire 0.880, plaza panel 0.900, facade window 0.776,
+  beacon 0.681. Threshold 0.72 therefore clears the ambient ground band and
+  keeps every source: the whole brightened night scene no longer blooms.
+  Radius 0.35 cuts halo reach (0.5·radius·(2^k−1) at the outermost mip) from
+  15.5 to 10.9 screen units, so halos stop smearing the silhouette; strength
+  0.18 only amplifies the surviving sources because the additive halos carry
+  the perceived glow.
+- `src/world/cityDressing.js`: emissives + halos cut where they were over-
+  glowing. Lamp head 3.2→2.2 (post-tonemap 0.917→0.867, off the ACES shoulder)
+  with its halo 0.5/2.2 → 0.30/1.6 (0.286, far under the cut, so the glow no
+  longer re-blooms the 0.45 m head). Spire 2.5→2.0 with halo 0.6/3 → 0.38/2.2
+  (the halo, not the box, was burning 7.5 m of sky into a disc). Corner
+  beacons keep intensity 2.0 — at 0.681 they are the dimmest source and the
+  reason the threshold cannot go higher — and take the cut on the halo:
+  0.5/2.4 → 0.34/1.8. Round 41's readability survives: every source still
+  clears the cut, and the 70 cd pavement pools are untouched.
+- `src/game/Lamps.js`: relight/reset restore the restrained 2.2 instead of the
+  old blown-out 3.2, so a repaired lamp matches a never-broken one.
+- `src/game/PostFX.js` + `src/game/Game.js`: new `setTier(q)` (high 0.18 /
+  medium 0.12 / low 0.08) called from `applySettings`. It never enables post by
+  itself — low/medium remain the cheap fallback because
+  `setEnabled(s.quality === 'high')` still gates the whole composer, and co-op
+  still disables it. A low-quality path therefore pays nothing.
+- Zombies: no material changes. Body emissive 0x401018×0.5 tonemaps to 0.003
+  and the hit flash 0x661111 to 0.030 — two orders under the cut — so a walker
+  at 30 m is never bloomed and readability came from the threshold, not from
+  touching `src/game/Zombie.js`.
+- Budgets: meshes 512 at title / 597 peak in play (<= 600 / <= 640), lights 18
+  (<= 40), points 1800 drawn (<= 2500), zombies <= 24 — zero objects added,
+  parameters only. No `Math.random`, zero per-frame allocation, headless-safe
+  (StubRenderer keeps PostFX a no-op).
+- `test/postfx.test.mjs` (7 tests, 3 new): the new pin (0.18 / 0.35 / 0.72)
+  with pass order + GTAO + grade uniforms intact; a threshold test that
+  re-derives the ACES curve in-process and asserts the lit band stays under the
+  cut, every source stays above it, the beacon sits within 0.1 of it, each
+  halo stays ≥0.2 under it, and zombie emissives stay two orders below; a
+  halo-reach test proving the 0.35 radius is narrower than the 0.5 baseline;
+  and a per-tier test that `setTier` never enables post by itself. Existing
+  stub/dispose/clamp tests updated to the new default.
+  `test/city.test.mjs` + `test/lamps.test.mjs` pins moved to the new values.
+- Evidence: `node --test test/postfx.test.mjs` 7/7; fog 4/4, sky 8/8, lighting
+  4/4, snow 6/6, city 23/23, zombie 27/27, lamps 1/1; `npm test` 273/273
+  (0 fail / 0 skipped); `node tools/verify-game.mjs` 81 ok / 0 fail / 0
+  skipped (FULL ACCEPTANCE, walker-at-(30,12) kill flow not skipped);
+  `npm run build` green (chunk-size warning only).
+- Note for later rounds: the bloom cut is 0.72 and the corner beacons sit at
+  0.681 — do not dim `beaconMat` below intensity 2.0 or the spawn-zone markers
+  drop out of the bloom. Any new emissive must be checked against the tonemapped
+  table in `PostFX.js`, not against raw intensity. The halos are still
+  unverified in a real browser (headless has no readPixels); re-check them in
+  item (10) with the material/contrast pass.
+
+## v6 visuals (5) — clearer enemy silhouettes (round 45)
+
+Fifth item of the v6 visuals workstream: make a zombie read as a human-shaped
+threat against the dark, foggy, snowy night at combat distance, without
+spending a single mesh, light or point.
+
+- Diagnosis first, with numbers. The gate is Michelson contrast between the
+  zombie body and the fog backdrop, computed through the real pipeline:
+  sRGB→linear→Lambert under the round-41 rig (moon 1.45 lx 0x9db4ff, hemi
+  0.30 0x1a2440/0x0a0a10, ambient 0.12 0x141a2e; camera-facing torso at
+  N.L≈0.5 for the moon)→exposure 1.2→ACESFilmic→FogExp2 blend toward
+  0x0b1020 at the round-42 tier densities (high 0.022 / medium 0.019 / low
+  0.018). The fog backdrop tonemaps to 0.0021. Measured before: walker
+  0.95/0.94/0.93, shambler 0.93/0.92/0.90, screamer 0.94/0.93/0.91 and brute
+  0.86/0.84/**0.81** at 10/20/30 m on 'high'. Against the 0.90 readability
+  gate the brute failed at every distance and shambler/screamer at 30 m —
+  the brute (0x4c5a44, 0.093 linear luminance) was the worst silhouette.
+- `src/game/Zombie.js` MAT2: the four shared body colors lifted ~1.6× in
+  linear luminance — walker 0x6b7d5c→0x8b9c77, shambler 0x7a6a58→0x998873,
+  screamer 0x9c4f5e→0xb46574, brute 0x4c5a44→0x65755b. This is the minimum
+  mechanism that closes the gap: materials are module-level and shared by
+  every zombie, so the change costs zero meshes, zero lights, zero points,
+  and no per-zombie object. Per-type luminance order (walker > shambler >
+  screamer > brute) and hues (screamer R/G > 3, walker/brute green-dominant)
+  are preserved, so the per-type silhouettes stay distinct — shape cues
+  (POSE2, hair cap, accessories) were not touched.
+- `src/game/Zombie.js` FACEMAT: base colors mirror MAT2 exactly (the file
+  documents that they must), so a flat face still blends seamlessly with the
+  lifted head color.
+- Eyes untouched: EYEMAT is MeshBasicMaterial (self-lit), already at C ≥ 0.99
+  against the fog at 10/20/30 m on every tier, so it already carried the
+  silhouette and needed no change.
+- Bloom stays clean (round 44 contract): the lifted bodies tonemap to
+  0.07–0.17 on the ACES curve — still two orders under the 0.72 cut — so
+  zombies never bloom. Screamer emissive 0x401018×0.5 kept as-is.
+- Low/medium fallback: fog is thinner there (0.019 / 0.018), so contrast is
+  strictly easier — every type clears ≥0.91 at 30 m on all three tiers with
+  no extra work. No new quality branches.
+- Budgets: meshes 512 title / 597 peak in play (<= 600 / <= 640), lights 18
+  (<= 40), points 1800 drawn (<= 2500), zombies <= 24 — zero objects added,
+  colors only. No `Math.random`, zero per-frame allocation, headless-safe.
+- `test/zombie.test.mjs` (31 tests, 4 new): a contrast helper that re-derives
+  the whole pipeline in-process (sRGB→linear, Lambert under the shipped rig,
+  exposure 1.2, ACES, FogExp2 per tier); asserts C ≥ 0.90 for every type at
+  10/20/30 m on every tier; asserts every body tonemaps under 0.72; asserts
+  the per-type luminance order and hue distinctness (no homogenizing); and
+  asserts FACEMAT mirrors MAT2.
+- Evidence: `node --test test/zombie.test.mjs` 31/31; postfx 7/7, fog 4/4,
+  sky 8/8, lighting 4/4, snow 6/6, city 23/23, lamps 1/1, zombie-skin 7/7,
+  skin-perf-gate 1/1, decap-head 8/8; `npm test` 277/277 (0 fail / 0
+  skipped); `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL
+  ACCEPTANCE, walker-at-(30,12) kill flow ok); `npm run build` green
+  (chunk-size warning only).
+- Note for later rounds: MAT2 colors are now pinned by the contrast test —
+  any future dimming must be re-measured through the same ACES+Fog model
+  (the test helper shows the exact math), not by eye. The primitive MAT2 path
+  is what the gate measures; the shipped skinned path is brighter still
+  (SKIN_TINT + emissive 0.55 → C ≈ 0.99), so it has margin. HITMAT/DEADMAT
+  are still swapped by reference and never disposed.
+
+## v6 visuals (6) — muzzle flash + hit feedback (round 46)
+
+- Diagnosis first, numbers not taste. Two gates were computed analytically
+  (headless has no readPixels, so both are re-derived inside the tests):
+  (a) does the muzzle flash wash out the target, (b) is hit feedback
+  perceptible. Only (b) fails.
+- (a) Muzzle flash — PASSES unchanged, so the lights stay as they are. The
+  pistol's `flashLight` is 300 cd / 6 m / decay 2 and the shotgun's is 500 cd /
+  8 m / decay 2; the contribution to a zombie is `fY·I·0.5/d²` (fY = luminance
+  of the light color, N·L = 0.5 front-facing). Pistol: 3.889 linear at 5 m
+  (tonemapped 0.882 on a walker body — a brief pop, not a white-out) and
+  exactly 0 at 15 m because the 6 m cutoff is already spent. Shotgun: 2.431 at
+  6 m, 0 at 15 m. Nothing beyond reach can be pushed over the round-44 0.72
+  bloom cut, and the brief in-range pop is the intended read. The sniper keeps
+  its deliberate no-flash design (bolt-action report carried by audio).
+- (b) Hit feedback — FAILED, and this is the round-45 regression. Lifting MAT2
+  pushed every body above HITMAT (0x8a1f2a / emissive 0x661111, tonemapped
+  0.069): Michelson C went negative — walker −0.434, shambler −0.332, screamer
+  −0.247, brute −0.011 — so a non-fatal hit read as a dark patch instead of a
+  flash.
+- Fix (minimum): HITMAT → color 0xe84a38 + emissive 0xb02214
+  (`src/game/Zombie.js:41-49`). Emissive is view-independent, so the flash
+  reads at any distance and on 'low' where the muzzle light is dropped.
+  Result: tonemapped 0.327, C 0.305 (walker, the hardest) to 0.646 (brute),
+  still under the 0.72 bloom cut — a hit must not bloom — and still deep red
+  (R/G 11.8). The 0.15 s window is unchanged; it survives a 60 fps frame
+  budget (still flashing at 0.133 s, restored by 0.167 s). HITMAT stays a
+  shared material swapped by reference, never disposed per zombie.
+- Low-quality fallback: new `setTier(q)` on `Pistol` / `Shotgun` and
+  `WeaponBank.setTier` forwarded from `Game.applySettings`
+  (`src/game/Game.js:500-504`). 'low' hides both flash PointLights and pins
+  their intensity to 0, and dims the additive sprite 0.9 → 0.45; the sprite
+  alone still reads and hit feedback still lands because HITMAT is emissive,
+  not light-driven. No light is ever created or removed, so the 18-light
+  budget is untouched.
+- Budgets: meshes 512 title / 597 peak in play (<= 600 / <= 640), lights 18
+  (<= 40), points 1800 drawn (<= 2500), zombies <= 24, blood <= 300 — zero
+  objects added. No `Math.random`, zero per-frame allocation, headless-safe
+  (`typeof document === 'undefined'` path in Pistol.js kept).
+- Tests: `test/zombie.test.mjs` (34 tests, 3 new) asserts HITMAT is brighter
+  than every lifted MAT2 body (C >= 0.30), stays under the bloom cut, still
+  clears C >= 0.90 through 30 m fog on every tier, stays red, and that the
+  0.15 s window survives 60 fps. `test/pistol.test.mjs` (11, 2 new) and
+  `test/shotgun.test.mjs` (12, 2 new) re-derive the flash contribution and
+  assert the tier gate.
+- Evidence: pistol 11/11, shotgun 12/12, zombie 34/34, blood 6/6, postfx 7/7,
+  fog 4/4, sky 8/8, lighting 4/4, snow 6/6, city 23/23, lamps 1/1;
+  `npm test` 284/284 (0 fail / 0 skipped); `node tools/verify-game.mjs`
+  81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE, walker-at-(30,12) kill flow
+  ok); `npm run build` green (chunk-size warning only).
+- Note for later rounds: HITMAT is now pinned by the contrast test — the muzzle
+  flash lights are pinned at 300 cd/6 m and 500 cd/8 m by the pistol/shotgun
+  tests, so any future flash retune must re-run the same `fY·I·0.5/d²` model.
+  Perceptibility of the flash and the hit flash is still unverified in a real
+  browser (headless has no readPixels).
+
+## v6 visuals (7) — damage vignette (round 47)
+
+- Diagnosis first, numbers not taste. The damage vignette is DOM/CSS
+  (`HUD.js` builds `.fx-damage` / `.fx-lowhealth` / `.fx-dmg-edge` into
+  `#fx-root`), not post-processing — PostFX `uVignette` 0.05 is a separate,
+  pinned grade-pass term and was left alone. Both red layers were measured by
+  compositing their sRGB gradient over the round-45 pipeline output
+  (fog backdrop tonemapped 0.0021, walker at 30 m C 0.967 with no overlay):
+  `.fx-damage` (0 @50% → 0.55 @100%) kept the center clear only to t=0.50 but
+  put 60% of the screen above 5% alpha at the 0.35 fallback peak and 67% at
+  the 0.60 hook peak, rim alpha 0.19/0.33 effective — enough to pull a 30 m
+  walker to C 0.67/0.54, under the 0.90 readability gate. `.fx-lowhealth`
+  (0 @40% → 0.45 @100%) was the actual offender: 78% of the screen covered,
+  C 0.511 at t=0.5 and 0.097 at the rim, and it never fades while pct < 0.3 —
+  a constant full-strength frame exactly when the player is panicking.
+- Fix (minimum): `.fx-damage` stops → `rgba(180,20,20,0) 72% / 0.32 100%`
+  (`src/styles.css:68-73`). The clear disc now spans the central 40% band
+  (72% of screen height, 128% of width at 16:9), the tinted fraction at the
+  worst hook peak is 0.360, and the rim's 0.176 worst-case alpha only dents
+  local C (0.72) in the outer ring where no 10–30 m enemy appears.
+  `.fx-lowhealth` → `rgba(0,0,0,0) 62% / rgba(140,10,10,0.30) 100%`
+  (`src/styles.css:95-100`) and it now breathes: a deterministic 1.8 s sine
+  pulse in [0.25, 0.75] (`src/game/HUD.js:201-206`) written through the
+  opacity write that already ran every frame — no extra per-frame style
+  write, no `Math.random`. Worst-case rim alpha 0.225 instead of a constant
+  0.45, and the frame lifts periodically so peripheral silhouettes re-read.
+- Severity now scales with damage taken instead of a flat 0.35: the
+  health-drop fallback is `0.18 + 0.006/pt` capped at 0.40
+  (`src/game/HUD.js:190`) and the `dmgFeedback` hook peak is
+  `0.25 + 0.012/pt` capped at 0.55 (was 0.02/pt cap 0.60,
+  `src/game/HUD.js:353-355`). The damage vignette is suppressed while the
+  low-health frame is on (`HUD.js:204`) so the two red layers never stack.
+- Low-quality fallback: on 'low' there is no PostFX pass, so the DOM vignette
+  is the only vignette — it still reads (rim 0.32 × peak ≥ 0.25 at the edges),
+  and no second mechanism was added, so nothing doubles the darkening.
+- Budgets: zero new DOM nodes, lights, meshes or points; the per-frame DOM
+  write count is unchanged (two opacity writes before, two after).
+  Headless-safe: HUD is still constructed only when `env.document` exists and
+  `update(null, null, null)` stays a no-op.
+- Tests: `test/hud-screens.test.mjs` parses the two CSS gradients from
+  `src/styles.css` and asserts the center 40% band stays at zero alpha, the
+  clear disc reaches t >= 0.55–0.60, rim alphas stay capped, the tinted
+  fraction is <= 0.40, the low-health pulse stays inside [0.25, 0.75] with a
+  >= 0.30 range and is deterministic across two HUDs on the same clock, and
+  the headless no-op path holds. One pinned assertion (vignette fires at
+  20% HP) was updated to the no-stack rule.
+- Evidence: hud-screens green; postfx 7/7, zombie 34/34, pistol 11/11,
+  shotgun 12/12, fog 4/4, sky 8/8, lighting 4/4, snow 6/6, city 23/23,
+  lamps 1/1, blood 6/6; `npm test` 284/284 (0 fail / 0 skipped);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE,
+  walker-at-(30,12) kill flow ok, 597 meshes / 18 lights / 1800 points
+  unchanged); `npm run build` green (chunk-size warning only).
+- Note for later rounds: the two gradient stop pairs and the HUD peak-opacity
+  formulas are now pinned by `test/hud-screens.test.mjs` — any future vignette
+  retune must keep the clear disc >= 0.55–0.60 of the gradient extent and the
+  rim alphas capped, and must re-run the same sRGB-over-tonemap compositing
+  model. Actual on-screen perception still needs a real-browser check.
+
+## v6 visuals (8) — wave / danger indicators (round 48)
+
+- Diagnosis first, numbers not taste. The wave HUD exposed exactly two
+  numbers (`HUD.js:278-281`): "WAVE n" and "left: n". During an intermission
+  (3 s after wave 1, +0.5 s per wave to a 6 s cap, 7 s after a boss wave —
+  `intermissionFor`) the player could not see how much time remained, what
+  composition was coming, or what the next wave total was; while fighting
+  there was no readout of how close the wave sat to its concurrent cap
+  `min(8 + wave, 18)` (wave 1 cap 9, wave 5 cap 13). The composition data
+  already existed (`WaveManager.nextWavePreview`) but only reached the
+  transient Screens banner, which clears after 2.5 s.
+- Fix (minimum): the two existing top-center elements gained a second line
+  each — no new overlay, nothing covering the center. `.hud-wave` now shows
+  "in <s>s — <composition>" built verbatim from `nextWavePreview`
+  (`src/game/HUD.js:296-310`) with an `imminent` highlight at ≤2 s;
+  `.hud-threat` shows "next: <total>" + "cap <n>" during the intermission and
+  "room <r>/<cap>" — red "CAP <n>/<cap>" via the `danger` class — while
+  fighting (`src/game/HUD.js:311-322`, styles `src/styles.css:309-333`).
+- The boss never counts against the spawn cap but is counted in `remaining`,
+  so the cap-pressure test subtracts the wired `hud.boss` when alive
+  (`src/game/HUD.js:288-293`); without that, wave 5 would read over-cap for
+  the whole brute fight. No WaveManager getter was added.
+- Low-quality fallback: everything here is DOM/CSS, so it works on 'low' by
+  construction; no second mechanism was added, and the round-47 rule holds —
+  the fx root still contains exactly `fx-damage` / `fx-dmg-edge` /
+  `fx-lowhealth`, and the vignette stays suppressed while low-health is on.
+- Budgets: zero new lights, meshes or points; the two pre-existing per-frame
+  text writes are unchanged and the two sub-lines are write-gated (written
+  only when their string changes), so steady-state DOM writes did not grow.
+  Headless-safe: HUD is still built only when `env.document` exists, and a
+  wave source without `intermission`/`cap`/`nextWavePreview` degrades to the
+  old readouts instead of throwing.
+- Tests: `test/hud-screens.test.mjs` gained six blocks — intermission
+  countdown text tracks `intermission`, composition matches
+  `nextWavePreview` verbatim (including BOSS), next-total + cap readout,
+  room/CAP danger incl. the wave-5 boss exclusion, the write-gate (unchanged
+  sub-lines are not rewritten, changed ones are), headless degradation, and
+  the fx-layer count/identity staying at three.
+- Evidence: hud-screens green; postfx 7/7, zombie 34/34, pistol 11/11,
+  shotgun 12/12, fog 4/4, sky 8/8, lighting 4/4, snow 6/6, city 23/23,
+  lamps 1/1, blood 6/6; `npm test` 284/284 (0 fail / 0 skipped);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE,
+  walker-at-(30,12) kill flow ok, 597 meshes / 18 lights / 1800 points
+  unchanged); `npm run build` green (chunk-size warning only).
+- Note for later rounds: the countdown/preview/cap strings are pinned by
+  `test/hud-screens.test.mjs` — any future wave-HUD change must keep reading
+  `nextWavePreview` / `cap` / `intermission` from WaveManager rather than
+  re-deriving composition in the HUD, and must keep the boss excluded from
+  the cap-pressure test. Co-op snapshots (`Game.js:214-218`) carry only
+  wave/remaining, so co-op HUD degrades to the old readouts by design.
+
+## v6 visuals (9) — screen/HUD readability (round 49)
+
+- Diagnosis first, numbers not taste. Michelson contrast was computed for
+  every text element against its actual composited background: `.screen`
+  rgba(4,6,12,0.78) over `--bg` #05070c first, then `.panel`
+  rgba(10,14,24,0.82) over that, with sRGB↔linear conversion and alpha
+  compositing done in linear light. The panel composite lands at sRGB
+  (9,13,22) — so most palette colors already cleared the dark-panel regime
+  easily; the real offenders were opacity-diluted text (`.weapon-slot`
+  0.55 → effective C 0.43, `.tagline.dim` 0.65 → C 0.51,
+  `.difficulty-label` 0.7 → C 0.56) and the two top readouts
+  (`.hud-threat` / `.hud-threat-sub`) reading bare off the snow-lit ground
+  (0x93a9c2) at C 0.06.
+- Threshold stated explicitly: 0.60 C for text over the dark panel (a
+  defensible floor for small UI text on near-black — distinct from the
+  in-world zombie gate of C ≥ 0.90 vs fog), and 0.30 C for bare text over a
+  bright snow-lit scene. After the fix every panel pair measures ≥ 0.96 and
+  bare ink over snow measures 0.379.
+- Minimum fixes, DOM/CSS only, palette identity kept (values lifted, not
+  restyled): `--ink` #d6deee→#e2e9f6, `--ink-dim` #8b98b0→#a4b0c6,
+  `--banner` #eef4ff→#f2f6ff; `.weapon-slot` opacity 0.55→0.8 moved to
+  `:not(.active)` so the active slot is untouched; `.tagline.dim`
+  0.65→0.85; `.difficulty-label` 0.7→0.85 + explicit `color: var(--ink)`;
+  `.stat` text lifted to `--banner` so the wave/kills/pts line is the
+  clearest thing on the game-over screen (RESTART/RESUME and the stat line
+  now sit at the top of their screens' contrast ladder); `.hud-threat` +
+  `.hud-threat-sub` given the same panel backing the other HUD clusters
+  use; and the previously unstyled `.setting-row` / `.setting-label` /
+  `.setting-value` rules added so settings-screen text is explicit.
+- Narrow screens: the `@media (max-width: 560px)` block had shrunk
+  `.hud-value`/`.weapon-ammo` to 16px and the music button to 11px —
+  restored to 20px/20px/12px; the 900px `.hud-threat` 11px stays (legible
+  at that size on its new panel).
+- Budgets: zero new lights, meshes or points; zero new full-screen tint
+  layers (fx root still exactly `fx-damage` / `fx-dmg-edge` /
+  `fx-lowhealth`, round-47 no-stack rule intact); no new per-frame DOM
+  writes (the round-48 sub-line write-gate is untouched); headless-safe
+  (Screens/HUD still no-op without `document`).
+- Tests: `test/hud-screens.test.mjs` gained a round-49 block that re-derives
+  the panel/screen composites from the CSS tokens and asserts every panel
+  pair ≥ 0.60, the action lines (banner) ≥ the secondary colors, the two
+  top readouts carry `background: var(--panel)` + border, and the narrow
+  block keeps hud-value/weapon-ammo ≥ 20px and the music button ≥ 12px.
+- Evidence: hud-screens green; `npm test` 284/284 (0 fail / 0 skipped);
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL ACCEPTANCE,
+  walker-at-(30,12) kill flow ok); `npm run build` green (chunk-size
+  warning only).
+- Note for later rounds: the new contrast assertions read token values and
+  rule text out of `src/styles.css` — any future palette change must keep
+  ink/ink-dim/banner above the 0.60 floor over the panel composite, and the
+  `.hud-threat`/`.hud-threat-sub` panel backing must stay.
+
+## v6 visuals (10) — material roughness / contrast / color hierarchy (round 50)
+
+- Diagnosis first, numbers not taste. Every material group was tabulated for
+  roughness / metalness / color and re-measured for tonemapped luminance
+  through the shipped curve (sRGB→linear→Lambert under the night rig — moon
+  1.45 lx `0x9db4ff`, hemi 0.30 `0x1a2440`/`0x0a0a10`, ambient 0.12
+  `0x141a2e` — then exposure 1.2 → ACESFilmic). `verify-game` has no
+  `readPixels`, so every claim here is analytic and re-derived inside
+  `test/material-hierarchy.test.mjs`.
+- The hierarchy collapse was a **roughness-band collision, not a brightness
+  one**. Zombie bodies occupy 0.90 (walker/shambler/screamer) / 0.95 (brute),
+  and static scenery sat *inside* that band: ground 0.85, building bodies and
+  facade variants 0.88, roofs 0.95, barricade planks 0.85, bus 0.60–0.65, pole
+  0.60. Brightness ordering was already correct — ground 0.2320 > walker 0.1741
+  > shambler 0.1369 > screamer 0.1139 > brute 0.0703 > plank 0.0196 > pole
+  0.0018 > wheel 0.0008, with HITMAT 0.3272 above every body — so no color was
+  touched. What was missing was a material cue that separates an actor from
+  the wall behind it at a glance.
+- Threshold stated explicitly: bodies stay in the ROUGH band (≥ 0.90), static
+  scenery moves to the SMOOTH band (≤ 0.70), and the two bands must be
+  separated by ≥ 0.20. That gap is asserted numerically, not eyeballed.
+- Minimum fix, roughness values only, palette identity untouched:
+  `src/world/City.js` ground 0.85→0.55, building body 0.88→0.62, facade
+  variant 0.88→0.62, roof 0.95→0.70; `src/world/cityDressing.js` bus body
+  0.6→0.42, cabin 0.65→0.48, wheels 0.5→0.30, planks 0.85→0.68, pole
+  0.6→0.42. Roughness scales only the specular term, never the diffuse
+  silhouette, so the round-45 body band (0.0703–0.1741), the C ≥ 0.91-at-30 m
+  fog gate and HITMAT 0.3272 are unchanged by construction — no gate needed
+  re-tuning.
+- Which light drives the effect: the moon (1.45 lx) is the only directional
+  term, and the 70 cd streetlight pools own the close-range specular. Lowering
+  roughness widens each specular lobe, so the wet-snow sheen spreads further
+  across the plaza and bus flanks read as sheet metal rather than matte blocks
+  — the separation is visible on `high` and `low` alike, because roughness is
+  not a tier-dependent input anywhere in the `Game.applySettings` fan-out
+  (`Lighting.setQuality` / `PostFX.setTier` / `WeaponBank.setTier`,
+  `Game.js:490-504`). No second mechanism doubles the effect on `low`.
+- The IBL env map is genuinely installed (`src/world/envmap.js:61` sets
+  `scene.environment`, `:62` sets `scene.environmentIntensity`), so the lower
+  roughness produces a real sky reflection rather than a dead parameter — at
+  zero added draw calls, lights, meshes or points. Metalness was deliberately
+  left alone (facades 0.05, ground 0) so no scenery surface gains a mirror
+  highlight that could compete with a body.
+- Budgets: zero new lights, meshes, points or full-screen tint layers; city
+  mesh count stays 388 and global budgets stay 597 meshes / 18 lights / 1800
+  points. No new per-frame material writes — `City.update()` flickers facade
+  `emissiveIntensity` only, and the test asserts ground/facade roughness is
+  identical across two update frames. Headless-safe.
+- Tests: new `test/material-hierarchy.test.mjs` (11 assertions) pins the rough
+  body band, the smooth scenery band, the ≥ 0.20 separation, HITMAT 0.3272 >
+  every body at C ≥ 0.30, the round-45 0.07–0.175 body band and sub-0.72 bloom
+  cut, the C ≥ 0.91-at-30 m gate, the dark-scenery floor under the brute, the
+  unchanged mesh/light counts, the no-per-frame-write rule, tier invariance,
+  and that `DEADMAT` corpses fall out of the actor band.
+- Evidence: material-hierarchy 11/11; `npm test` 295/295 (0 fail / 0 skipped,
+  up from 284); `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped (FULL
+  ACCEPTANCE, walker-at-(30,12) kill flow ok); `npm run build` green
+  (chunk-size warning only).
+- Note for later rounds: the body roughness band (0.90/0.95) and HITMAT are
+  now load-bearing for this separation test — any future zombie-material change
+  must keep bodies ≥ 0.90 and every static scenery material ≤ 0.70, or the
+  ≥ 0.20 band gap fails.
+
+## v6 gameplay (1) — wave pacing curve (round 51, WIP landed + green)
+
+- `src/game/WaveManager.js` rewritten from constant knobs to curves, all
+  deterministic (no `Math.random`, no per-frame allocation):
+  - **Spawn cadence**: `SPAWN_BASE` 0.7 s at wave 1, −0.05 s per wave to a
+    `SPAWN_MIN` 0.45 s floor at wave 6 (still above the pistol's 0.28 s fire
+    interval, so a wave can never outrun the player's rate of fire). Waves
+    1–3 keep the exact 0.7 s cadence pinned by wave.test / match.test /
+    verify S6. Exposed as `WaveManager.spawnInterval`.
+  - **Intermission ceiling** 6.0→5.0 s (`INTERMISSION_MAX`): above wave 5 the
+    curve flattens so pressure comes from cadence + cap, not from ever-longer
+    waits. Waves 1–4 keep the pinned 3.0/3.5/4.0/4.5 s; boss waves keep the
+    7 s `BOSS_INTERMISSION`.
+  - **Concurrency cap**: `capFor(wave)` = 8+wave through wave 9, then
+    +0.5/wave to a 16 ceiling (was `min(8+wave, 18)`). Wave 1/2/3 stay
+    9/10/11 and wave 5 stays 13; wave 12 + boss stays inside the 24-zombie
+    budget.
+  - **Composition**: shared `queueTypeAt(wave, i)` rule now drives both
+    `buildQueue` and `nextWavePreview` (no duplicated logic). Waves 1–2 keep
+    their pinned shape; wave 3 is the first screamer wave; from wave 4
+    shamblers move from every 5th slot to every 4th (25 %) while screamers
+    stay on odd slots.
+  - `reset()` sets `timer = 0` so wave 1's first spawn lands on the 0.05 s
+    frame (match.test pins 0.05/0.75/1.45/2.15/2.85 s); every later wave's
+    transition sets `timer = spawnIntervalFor(wave)`, so its first spawn waits
+    a full cadence tick after the intermission expires.
+- Test re-pins: `test/wave.test.mjs` forceClear + natural-clear cases now
+  expect the 3.0 s wave-2 intermission and the 0.7 s first-spawn delay;
+  `test/boss.test.mjs` wave-10 forceClear loop uses 7.1 s at i=4 (wave-5 boss
+  BOSS_INTERMISSION) instead of 6.1 s.
+- Evidence: wave 11/11, boss 14/14, match 9/9; `npm test` 295/295
+  (0 fail / 0 skipped); `node tools/verify-game.mjs` 81 ok / 0 fail /
+  0 skipped (FULL ACCEPTANCE, walker-at-(30,12) kill flow ok);
+  `npm run build` green (chunk-size warning only).
+- Review pass (round 51, ACCEPT-WITH-FIXES, all fixes applied): stale
+  `min(8+wave,18)` comments/labels updated to `capFor` (WaveManager.js:253,
+  tools/verify-game.mjs S6 labels); `nextWavePreview` collapsed to a single
+  `queueTypeAt` call (no duplicated rules); `queueTypeAt` docstring corrected
+  (wave 3's i%5 branch is dead — the odd-slot screamer rule wins first);
+  late-wave shambler pin added to wave.test (waves 4/10 exceed the 7-entry
+  SAFE list and must still resolve to real points). New dedicated acceptance
+  test `test/wave-pacing.test.mjs` (6 tests) pins the full curves:
+  spawnInterval 0.7→0.45 floor (above the pistol's 0.28 s), capFor 9..17 then
+  the 16 ceiling (cap+boss ≤ 24), intermission 3.0/4.5/5.0 ceiling + boss 7.0,
+  queueTypeAt composition + preview/buildQueue consistency, wave-6 live
+  0.45 s cadence, and cross-instance determinism.
+- Note: the 24-zombie budget is a design bound, not a runtime enforcement —
+  `MAX_ZOMBIES` exists only in `src/net/protocol.js` and is never imported;
+  `Game.spawnZombie`/`Match.spawnZombie` push unconditionally. Cap ≤ 16 (+1
+  boss) keeps the bound true by construction.
+- Evidence (post-review): wave 11/11, wave-pacing 6/6, boss 14/14, match 9/9;
+  `npm test` 301/301 (0 fail / 0 skipped); `node tools/verify-game.mjs`
+  81 ok / 0 fail / 0 skipped; `npm run build` green.
