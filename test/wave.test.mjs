@@ -90,6 +90,16 @@ test('spawn-point safety vs player at (0,12)', () => {
   assert.ok(q2.filter(q => q.type === 'shambler').every(q => dist(q) <= 30))
   const idx = q => PTS.findIndex(p => p.x === q.x && p.z === q.z)
   assert.deepEqual(q2.filter(q => q.type === 'walker').map(idx), [1, 2, 3, 4, 6, 7, 9, 0])
+  // v6 gameplay (1): from wave 4 the shambler share (every 4th slot) grows
+  // until it exceeds the 7-entry SAFE list (wave 6: 17 zombies → 5 shamblers
+  // is still ≤ 7; wave 10: 35 → 9 > 7), so extra shamblers fall through to
+  // the cycling path — pin that they still resolve to real city points.
+  for (const w of [6, 10]) {
+    const qw = wm.buildQueue(w)
+    const shams = qw.filter(q => q.type === 'shambler')
+    assert.ok(shams.every(q => idx(q) >= 0), `wave ${w}: every shambler on a real point`)
+    if (shams.length > 7) assert.ok(shams.some(q => dist(q) > 13), `wave ${w}: overflow shamblers use far points`)
+  }
 })
 
 test('forceClear kills live, discards remainder, fires no onWaveCleared', () => {
@@ -103,6 +113,9 @@ test('forceClear kills live, discards remainder, fires no onWaveCleared', () => 
   assert.equal(clears.length, 0)
   step(3.6)
   assert.equal(wm.wave, 2)
+  // v6 gameplay (1): the new wave's first spawn waits a full cadence tick
+  // after the intermission expires, so wave 2 opens at t=3.7, not t=3.0.
+  step(0.7)
   assert.ok(wm.spawned >= 1)
   assert.deepEqual(starts, [1, 2])
   assert.equal(clears.length, 0)
@@ -114,10 +127,18 @@ test('natural clear fires on alive===0 with unspawned remainder (S6 case)', () =
   step(1.4)
   assert.equal(wm.spawned, 2)
   killAll()
-  step(3.7)
+  // v6 gameplay (1): the wave-2 intermission is 3.0 s and the new wave's first
+  // spawn waits a full 0.7 s cadence tick after it expires, so the clear lands
+  // at t=3.0 and the first wave-2 spawn at t=3.7.
+  step(3.6)
   assert.deepEqual(clears, [1])
   assert.equal(wm.wave, 2)
   assert.deepEqual(starts, [1, 2])
+  assert.equal(alive(), 0) // intermission expired, first spawn not due yet
+  assert.equal(wm.spawned, 0)
+  assert.equal(game.zombies.length, 2)
+  assert.ok(game.zombies.slice(0, 2).every(z => z.isDead))
+  step(0.7)
   assert.equal(alive(), 1) // exactly one new wave-2 spawn; 6 unspawned discarded
   assert.equal(wm.spawned, 1)
   assert.equal(game.zombies.length, 3)

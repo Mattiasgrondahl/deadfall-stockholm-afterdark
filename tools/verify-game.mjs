@@ -244,13 +244,13 @@ stage('S6 waves: cadence / scaling / cap / intermission', () => !!g.waveManager,
   const alive = g.debug.zombiesAlive()
   ok('wave 1 spawning at ~0.7 s cadence', alive >= 4, `alive ${alive}`)
   ok('wave 1 total 5 + 3·1 = 8', g.waveManager.total === 8, `total ${g.waveManager.total}`)
-  ok('concurrent cap min(8+wave,18)=9', alive <= 9, `alive ${alive}`)
+  ok('concurrent cap capFor(1)=9', alive <= 9, `alive ${alive}`)
   g.debug.forceWaveClear()
   step(270) // > 4 s intermission
   ok('wave 2 after intermission', g.debug.wave() === 2, `wave ${g.debug.wave()}`)
   ok('wave 2 total 11', g.waveManager.total === 11, `total ${g.waveManager.total}`)
   step(300)
-  ok('wave 2 cap min(8+2,18)=10', g.debug.zombiesAlive() <= 10, `alive ${g.debug.zombiesAlive()}`)
+  ok('wave 2 cap capFor(2)=10', g.debug.zombiesAlive() <= 10, `alive ${g.debug.zombiesAlive()}`)
   const walker2 = g.zombies.find(z => z.type === 'walker')
   if (walker2) ok('wave 2 hp scaled ×1.12', walker2.health >= 50 * 1.12 - 1, `hp ${walker2.health}`)
   // Natural clear -> wave 3, first screamers.

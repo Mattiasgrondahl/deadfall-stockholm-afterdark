@@ -84,7 +84,8 @@ function makeWave() {
       }
     }
   }
-  // Run waves 1..4 via forceClear (debug path skips the boss gate).
+  // Run waves 1..4 via forceClear (debug path skips the boss gate). Wave 5 is a
+  // boss wave, so its forceClear intermission is 7 s (BOSS_INTERMISSION).
   const toWave5 = () => {
     wm.reset()
     for (let i = 0; i < 4; i++) { step(1); wm.forceClear(game); step(6.1) }
@@ -380,8 +381,10 @@ test('HUD boss bar: hidden at rest, tracks health while the boss lives', () => {
 test('boss appears every 5 waves: wave 10 spawns a higher-HP brute', () => {
   const { wm, game, bossIncoming, bossSpawn, step, alive, killAll, spawnAll } = makeWave()
   wm.reset()
-  // Advance to wave 10 via forceClear (debug path skips the boss gate each time).
-  for (let i = 0; i < 9; i++) { step(1); wm.forceClear(game); step(6.1) }
+  // Advance to wave 10 via forceClear (debug path skips the boss gate each
+  // time). Boss waves (5, 10) clear to the 7 s BOSS_INTERMISSION, so they need
+  // 7.1 s of stepping to expire.
+  for (let i = 0; i < 9; i++) { step(1); wm.forceClear(game); step(i === 4 ? 7.1 : 6.1) }
   assert.equal(wm.wave, 10)
   spawnAll()
   killAll()
