@@ -189,3 +189,52 @@ test('view model + dispose: 3 weapon meshes; detach from camera; double-safe', (
   assert.ok(!camera.children.includes(p.view), 'view detached from camera')
   p.dispose() // never throws when called twice
 })
+
+// v6 visuals (6): muzzle flash + hit feedback. The flash light is analytic,
+// not taste: 300 cd at decay 2 over a 6 m reach adds luminance
+//   fY * I * 0.5 / d^2   (fY = luminance of 0xffc988, N.L = 0.5 front-facing)
+// to whatever the light reaches. At 5 m that is 3.889 linear on top of the
+// round-45 body irradiance (tonemapped 0.88 — a visible pop, not a wash), and
+// at 15 m it is exactly 0 because the 6 m cutoff is already spent, so the
+// flash can never lift a distant body over the 0.72 bloom cut.
+const s2l = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+const linOf = (h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255].map((v) => s2l(v / 255))
+const lumY = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+const aces = (x) => Math.min(1, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
+const FLASH_Y = lumY(linOf(0xffc988))
+const flashAdd = (d) => (d <= 6 ? FLASH_Y * 300 * 0.5 / (d * d) : 0)
+
+test('muzzle flash: 300 cd / 6 m reach — lights 5 m, adds nothing at 15 m', () => {
+  const { pistol: p } = makePistol()
+  p.inputState = { fire: false, reload: false }
+  assert.equal(p.flashLight.intensity, 0, 'starts dark')
+  assert.equal(p.flashLight.distance, 6, '6 m cutoff')
+  assert.equal(p.flashLight.decay, 2, 'inverse-square')
+  p.shoot()
+  assert.equal(p.flashLight.intensity, 300, 'peak 300 cd')
+  assert.ok(flashAdd(5) > 1, `5 m contribution ${flashAdd(5).toFixed(3)} linear is a real pop`)
+  assert.equal(flashAdd(15), 0, '15 m is outside the cutoff: zero wash-out')
+  // The 5 m hit lands below 1.0 but above the 0.72 cut: a brief pop, not a
+  // white-out of the target.
+  assert.ok(aces((0.34553 + flashAdd(5)) * 1.2) < 1.0, 'never saturates to pure white')
+})
+
+test('setTier low: flash light dropped, sprite dimmed, feedback still reads', () => {
+  const { pistol: p } = makePistol()
+  p.inputState = { fire: false, reload: false }
+  assert.equal(p.setTier('low'), 'low')
+  assert.equal(p.flashLight.visible, false, "'low' pays no dynamic light")
+  p.shoot()
+  assert.equal(p.flashLight.intensity, 0, 'light stays pinned at 0 on low')
+  assert.ok(p.flash.visible, 'sprite still flashes')
+  assert.equal(p.flash.material.opacity, 0.45, 'sprite peak halved-ish on low')
+  p.update(0.05, null)
+  assert.equal(p.flash.material.opacity, 0, 'sprite decays over the 0.05 s window')
+  assert.equal(p.setTier('high'), 'high')
+  p._flashT = 0
+  p._fireT = 0 // clear the 0.28 s interval gate so the re-arm actually fires
+  p.shoot()
+  assert.equal(p.flashLight.visible, true, 'high restores the light')
+  assert.equal(p.flashLight.intensity, 300)
+  assert.equal(p.flash.material.opacity, 0.9)
+})

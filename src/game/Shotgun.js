@@ -12,6 +12,11 @@ const HEAD_MULT = 2, RANGE = 18, SPREAD = 0.16
 const STAGGER_BASE = 0.9
 const RELOAD_TIME = 1.4, FIRE_INTERVAL = 0.9
 const FLASH_TIME = 0.07, RECOIL_KICK = 0.09, RECOIL_DECAY = 0.15
+// v6 visuals (6): muzzle-flash peak. 500 cd over an 8 m reach adds 2.43 linear
+// luminance to a zombie at 6 m (tonemapped 0.83) and 0 beyond 8 m, so a blast
+// lights only what it can actually hit and never washes out a 15 m target.
+// 'low' drops the light entirely (peak 0) and dims the sprite.
+const FLASH_PEAK = 500, FLASH_PEAK_LOW = 0, FLASH_OPACITY = 0.9, FLASH_OPACITY_LOW = 0.45
 const KICK = 0.018
 const UP = new THREE.Vector3(0, 1, 0)
 
@@ -88,8 +93,24 @@ export class Shotgun {
     this.flashLight = new THREE.PointLight(0xffb878, 0, 8, 2)
     this.flashLight.position.copy(this.flash.position)
     this.view.add(this.flashLight)
+    // v6 visuals (6): tier-aware flash peak (see Pistol.setTier).
+    this.tier = 'high'
+    this._peak = FLASH_PEAK
     this.camera.add(this.view)
     scene.add(this.camera)
+  }
+
+  /**
+   * v6 visuals (6): quality tier for the muzzle flash. 'low' drops the dynamic
+   * point light and halves the sprite peak; the sprite alone still reads and
+   * HITMAT-based hit feedback needs no light. Returns the applied tier.
+   */
+  setTier(q) {
+    this.tier = q === 'low' ? 'low' : 'high'
+    this._peak = this.tier === 'low' ? FLASH_PEAK_LOW : FLASH_PEAK
+    this.flashLight.visible = this.tier !== 'low'
+    this.flashLight.intensity = 0
+    return this.tier
   }
 
   /** Per frame: bob/recoil recovery, flash decay, reload progress, input edges. */
@@ -104,9 +125,9 @@ export class Shotgun {
     if (this._flashT > 0) {
       this._flashT -= dt
       const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
-      this.flash.material.opacity = 0.9 * f
+      this.flash.material.opacity = FLASH_OPACITY * f
       this.flash.scale.setScalar(0.1 + 0.2 * f)
-      this.flashLight.intensity = 500 * f
+      this.flashLight.intensity = this._peak * f
       if (this._flashT <= 0) this.flash.visible = false
     }
     if (this.isReloading) {
@@ -132,10 +153,10 @@ export class Shotgun {
     this._recoil = RECOIL_KICK
     if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
-    this.flash.material.opacity = 0.9
+    this.flash.material.opacity = this.tier === 'low' ? FLASH_OPACITY_LOW : FLASH_OPACITY
     this.flash.scale.setScalar(0.3)
     this.flash.visible = true
-    this.flashLight.intensity = 500
+    this.flashLight.intensity = this._peak
     this.camera.getWorldDirection(this._dir)
     this._right.crossVectors(this._dir, UP)
     if (this._right.lengthSq() < 1e-8) this._right.set(1, 0, 0)
@@ -225,7 +246,7 @@ export class Shotgun {
     this.reserve = RESERVE
     this.isReloading = false
     this._flashT = 0
-    this.flash.material.opacity = 0.9
+    this.flash.material.opacity = this.tier === 'low' ? FLASH_OPACITY_LOW : FLASH_OPACITY
     this.flash.scale.setScalar(0.3)
     this.flash.visible = false
     this.flashLight.intensity = 0

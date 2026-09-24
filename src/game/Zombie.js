@@ -21,16 +21,31 @@ const GEO2 = {
   leg: new THREE.BoxGeometry(0.16, 0.95, 0.16)
 }
 
+// v6 visuals (5): body colors lifted ~1.6x in linear luminance (hue order and
+// per-type separation preserved: walker brightest green, brute darkest). Under
+// the night rig (moon 1.45 + hemi 0.30 + ambient 0.12) the old colors only
+// reached Michelson contrast 0.81-0.93 against the fog backdrop at 30 m —
+// below the 0.90 readability gate, and the brute failed at 20 m too. These
+// values lift every type to C >= 0.91 at 30 m on every fog tier with no new
+// lights or meshes. Bodies stay far under the 0.72 bloom cut (tonemapped
+// 0.07-0.17, so zombies still never bloom).
 const MAT2 = {
-  walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
-  shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
-  brute: new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 })
+  walker: new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+  shambler: new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+  screamer: new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+  brute: new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 })
 }
 
 // Shared flash/death materials: non-fatal hit = 0.15 s red swap; death =
 // dull desaturated swap. Swapped by reference only — never disposed.
-const HITMAT = new THREE.MeshStandardMaterial({ color: 0x8a1f2a, emissive: 0x661111, roughness: 0.8 })
+// v6 visuals (6): the old 0x8a1f2a/0x661111 pair went *darker* than every MAT2
+// body once round 45 lifted them — Michelson C −0.01…−0.43, so a hit read as a
+// dark patch rather than a flash. Lifted to 0xe84a38 + emissive 0xb02214 so the
+// flash self-lights (emissive is view-independent, so it reads at any distance
+// and on 'low' where the muzzle-flash light is dropped): tonemapped 0.327,
+// C >= 0.30 vs the brightest walker body and 0.65 vs the brute, still under the
+// 0.72 bloom cut (a hit must not bloom) and still deep red (R/G 11.8).
+const HITMAT = new THREE.MeshStandardMaterial({ color: 0xe84a38, emissive: 0xb02214, roughness: 0.8 })
 const DEADMAT = new THREE.MeshStandardMaterial({ color: 0x3a3129, roughness: 1 })
 const EYE = new THREE.BoxGeometry(0.07, 0.07, 0.04)
 const EYEMAT = {
@@ -110,26 +125,28 @@ const POSE2 = {
 // same texture is also set as emissiveMap (self-lit) so the face stays visible
 // wherever the zombie is.
 const FACE_GEO = new THREE.PlaneGeometry(0.26, 0.26)
+// v6 visuals (5): base colors mirror MAT2 exactly (see the MAT2 comment) so the
+// flat face blends with the lifted head color.
 const FACEMAT = {
   walker: [
-    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 })
   ],
   shambler: [
-    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 })
   ],
   screamer: [
-    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
-    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
-    new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
   ],
   brute: [
-    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 }),
-    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 }),
-    new THREE.MeshStandardMaterial({ color: 0x4c5a44, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 })
   ]
 }
 

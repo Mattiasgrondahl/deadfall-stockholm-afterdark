@@ -192,3 +192,45 @@ test('shooting up at a lamp head breaks it (lamps.hitAt called, no bullet hole)'
   assert.ok(breaks.every((b) => Math.abs(b.y - 5.2) < 2.0), 'break point is near the head height')
   assert.equal(holes.length, 0, 'a lamp hit leaves no bullet hole')
 })
+
+// v6 visuals (6): the shotgun's flash light is 500 cd over an 8 m reach. Same
+// analytic model as the pistol: contribution = fY * I * 0.5 / d^2 inside the
+// cutoff, 0 outside it. At 6 m it adds 2.43 linear (tonemapped 0.83 on a
+// round-45 body); at 15 m it adds exactly 0, so a blast never washes out or
+// blooms a target it cannot reach.
+const s2l = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+const linOf = (h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255].map((v) => s2l(v / 255))
+const lumY = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+const aces = (x) => Math.min(1, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
+const FLASH_Y = lumY(linOf(0xffb878))
+const flashAdd = (d) => (d <= 8 ? FLASH_Y * 500 * 0.5 / (d * d) : 0)
+
+test('muzzle flash: 500 cd / 8 m reach — lights 6 m, adds nothing at 15 m', () => {
+  const { shotgun: s } = makeShotgun()
+  assert.equal(s.flashLight.distance, 8, '8 m cutoff')
+  assert.equal(s.flashLight.decay, 2, 'inverse-square')
+  s.shoot()
+  assert.equal(s.flashLight.intensity, 500, 'peak 500 cd')
+  assert.ok(flashAdd(6) > 1, `6 m contribution ${flashAdd(6).toFixed(3)} linear`)
+  assert.equal(flashAdd(15), 0, '15 m is outside the cutoff: zero wash-out')
+  assert.ok(aces((0.34553 + flashAdd(6)) * 1.2) < 1.0, 'never saturates to pure white')
+})
+
+test('setTier low: flash light dropped, sprite dimmed, peak halved', () => {
+  const { shotgun: s } = makeShotgun()
+  assert.equal(s.setTier('low'), 'low')
+  assert.equal(s.flashLight.visible, false, "'low' pays no dynamic light")
+  s.shoot()
+  assert.equal(s.flashLight.intensity, 0, 'light pinned at 0 on low')
+  assert.ok(s.flash.visible, 'sprite still flashes')
+  assert.equal(s.flash.material.opacity, 0.45, 'sprite peak dimmed on low')
+  s.update(0.07, null)
+  assert.equal(s.flash.material.opacity, 0, 'sprite decays over the 0.07 s window')
+  assert.equal(s.setTier('high'), 'high')
+  s._flashT = 0
+  s._fireT = 0 // clear the 0.9 s interval gate so the re-arm actually fires
+  s.shoot()
+  assert.equal(s.flashLight.visible, true)
+  assert.equal(s.flashLight.intensity, 500)
+  assert.equal(s.flash.material.opacity, 0.9)
+})

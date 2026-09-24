@@ -1,15 +1,19 @@
 import * as THREE from 'three'
 
 // Task 8c: night lighting, three.js r185 physical units.
-// Moon = single shadow-casting DirectionalLight (1.1 lx) that follows the
-// player; streetlight pool = 12 PointLights (55 cd) assigned to the nearest
+// Moon = single shadow-casting DirectionalLight (1.45 lx) that follows the
+// player; streetlight pool = 12 PointLights (70 cd) assigned to the nearest
 // streetlight anchors each frame; hemi + ambient backstops. No per-frame
 // allocation (scratch array reused, in-place sort).
 
 const POINTS_HIGH = 12
 const POINTS_LOW = 6
-const POLE_INTENSITY = 55 // cd
+// Raised 55 -> 70 cd so streetlight pools read clearly against the night
+// ground (readable street pools).
+const POLE_INTENSITY = 70 // cd
 const MOON_OFFSET = { x: -18, y: 30, z: -15 } // NW-above the player
+// Raised 1.1 -> 1.45 lx: stronger moonlight so silhouettes stay readable.
+const MOON_INTENSITY = 1.45
 
 export class Lighting {
   constructor(scene, city, renderer, quality) {
@@ -33,7 +37,8 @@ export class Lighting {
     }
 
     // Moon: the only shadow caster; light + target follow the player.
-    this.moon = new THREE.DirectionalLight(0x9db4ff, 1.1)
+    // Raised 1.1 -> 1.45 lx for readable silhouettes and stronger shadows.
+    this.moon = new THREE.DirectionalLight(0x9db4ff, MOON_INTENSITY)
     this.moon.castShadow = true
     this.moon.shadow.mapSize.set(2048, 2048)
     this.moon.shadow.bias = 0.004
@@ -44,9 +49,11 @@ export class Lighting {
     scene.add(this.moon)
     scene.add(this.moon.target) // target must be in the scene graph
 
-    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.22)
+    // Hemi/ambient raised (0.22 -> 0.30, 0.08 -> 0.12) so night shapes and
+    // silhouettes stay readable without adding lights.
+    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.30)
     scene.add(this.hemi)
-    this.ambient = new THREE.AmbientLight(0x141a2e, 0.08)
+    this.ambient = new THREE.AmbientLight(0x141a2e, 0.12)
     scene.add(this.ambient)
 
     // Streetlight pool: fixed settings; positions assigned in update().
@@ -96,9 +103,13 @@ export class Lighting {
   }
 
   setQuality(q) {
-    this.quality = q === 'low' ? 'low' : 'high'
+    const tier = q === 'low' ? 'low' : q === 'medium' ? 'medium' : 'high'
+    this.quality = tier === 'high' ? 'high' : 'low'
     if (this.renderer.shadowMap) this.renderer.shadowMap.enabled = this.quality === 'high'
-    if (this.city.setSnowCount) this.city.setSnowCount(this.quality === 'high' ? 1500 : 750)
+    // v6 visuals (3): snow layering follows the quality tier. 'low' keeps the
+    // pinned 750-drawn halve, 'medium' gets an intermediate 1050, 'high' the
+    // full 1500. Snow tiers are independent of the shadow/lighting collapse.
+    if (this.city.setSnowCount) this.city.setSnowCount(tier === 'high' ? 1500 : tier === 'medium' ? 1050 : 750)
     this.update(this.moon.target.position)
   }
 

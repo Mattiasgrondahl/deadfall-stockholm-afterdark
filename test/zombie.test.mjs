@@ -467,3 +467,117 @@ test('limb damage: a hit on the torso severs nothing', () => {
   assert.equal(zombie.armsLost, 0)
   assert.equal(zombie.legsLost, 0)
 })
+
+// v6 visuals (5): clearer enemy silhouettes. The readability gate is Michelson
+// contrast between the zombie body and the fog backdrop, computed exactly as
+// the renderer does it: sRGB->linear -> Lambert under the shipped night rig
+// (moon 1.45 lx 0x9db4ff, hemi 0.30 0x1a2440/0x0a0a10, ambient 0.12 0x141a2e)
+// -> exposure 1.2 -> ACESFilmic -> FogExp2 blend toward the fog color. Gate:
+// C >= 0.90 at 10/20/30 m on every fog tier, and the body must stay under the
+// 0.72 bloom cut so zombies never bloom (round 44).
+const s2l = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+const linOf = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255].map((v) => s2l(v / 255))
+const lumY = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+const aces = (x) => Math.min(1, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
+const EXPOSURE = 1.2
+const FOG_RGB = linOf(0x0b1020)
+const BG = aces(lumY(FOG_RGB) * EXPOSURE)
+// Irradiance on a camera-facing vertical torso: hemi at N.L=0.5, ambient 1.0,
+// moon at N.L=0.5 (average of front/back-lit, moon elevation ~50 deg).
+const IRR = [0, 1, 2].map((i) =>
+  0.30 * 0.5 * (linOf(0x1a2440)[i] + linOf(0x0a0a10)[i]) +
+  0.12 * linOf(0x141a2e)[i] +
+  1.45 * 0.5 * linOf(0x9db4ff)[i])
+const YIRR = lumY(IRR)
+const FOG_DENSITY = { high: 0.022, medium: 0.019, low: 0.018 }
+// Screamer emissive 0x401018 x 0.5 expressed as a multiplier on body luminance.
+const SCREAM_EM = 0.5 * lumY(linOf(0x401018)) / lumY(linOf(0xb46574))
+
+function bodyContrast(hex, emMult, tier, d) {
+  const vis = Math.exp(-((d * FOG_DENSITY[tier]) ** 2))
+  const lit = aces(lumY(linOf(hex)) * (YIRR + emMult) * EXPOSURE)
+  const body = lit * vis + BG * (1 - vis)
+  return (body - BG) / (body + BG)
+}
+
+test('silhouette contrast: every type clears C >= 0.90 at 10/20/30 m on all tiers', () => {
+  const EM = { walker: 0, shambler: 0, screamer: SCREAM_EM, brute: 0 }
+  for (const tier of ['high', 'medium', 'low']) {
+    for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
+      for (const d of [10, 20, 30]) {
+        const c = bodyContrast(MAT2[type].color.getHex(), EM[type], tier, d)
+        assert.ok(c >= 0.90, `${tier}/${type} at ${d} m: C=${c.toFixed(3)} >= 0.90`)
+      }
+    }
+  }
+})
+
+test('silhouette contrast: bodies stay under the 0.72 bloom cut (round 44)', () => {
+  for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
+    const em = type === 'screamer' ? SCREAM_EM : 0
+    const lit = aces(lumY(linOf(MAT2[type].color.getHex())) * (YIRR + em) * EXPOSURE)
+    assert.ok(lit < 0.72, `${type} body tonemapped ${lit.toFixed(4)} < 0.72`)
+  }
+})
+
+test('silhouette contrast: per-type luminance order preserved (no homogenizing)', () => {
+  const y = (t) => lumY(linOf(MAT2[t].color.getHex()))
+  assert.ok(y('walker') > y('shambler'), 'walker brighter than shambler')
+  assert.ok(y('shambler') > y('screamer'), 'shambler brighter than screamer')
+  assert.ok(y('screamer') > y('brute'), 'screamer brighter than brute')
+  // Per-type hues stay distinct: R/G separates the red screamer from the
+  // green walker/brute, and the greens keep G > R while the screamer does not.
+  const rg = (t) => { const v = linOf(MAT2[t].color.getHex()); return v[0] / v[1] }
+  const gb = (t) => { const v = linOf(MAT2[t].color.getHex()); return v[1] / v[2] }
+  assert.ok(rg('screamer') > 3, 'screamer stays the red one (R/G > 3)')
+  assert.ok(rg('walker') < 1 && rg('brute') < 1, 'walker/brute stay green-dominant')
+  assert.ok(gb('brute') > 1 && gb('screamer') < 1, 'brute stays green-vs-blue dominant')
+})
+
+test('silhouette contrast: FACEMAT mirrors the lifted MAT2 colors', () => {
+  for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
+    for (const m of FACEMAT[type]) assert.equal(m.color.getHex(), MAT2[type].color.getHex())
+  }
+})
+
+// v6 visuals (6): hit feedback. Round 45 lifted MAT2, which pushed every body
+// above the old HITMAT: Michelson C went NEGATIVE (−0.01…−0.43), so a hit read
+// as a dark patch. HITMAT is now 0xe84a38 + emissive 0xb02214. Emissive is
+// view-independent, so the flash reads at any distance and on 'low' where the
+// muzzle-flash light is dropped. Numbers reuse the round-45 rig above.
+const hitLit = () => aces((lumY(linOf(HITMAT.color.getHex())) * YIRR + HITMAT.emissiveIntensity * lumY(linOf(HITMAT.emissive.getHex()))) * EXPOSURE)
+
+test('hit feedback: HITMAT is brighter than every lifted MAT2 body (C >= 0.30)', () => {
+  const lit = hitLit()
+  assert.ok(lit > 0.3, `HITMAT tonemapped ${lit.toFixed(4)} must read as a flash`)
+  assert.ok(lit < 0.72, `HITMAT tonemapped ${lit.toFixed(4)} stays under the bloom cut`)
+  const EM = { walker: 0, shambler: 0, screamer: SCREAM_EM, brute: 0 }
+  for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
+    const body = aces(lumY(linOf(MAT2[type].color.getHex())) * (YIRR + EM[type]) * EXPOSURE)
+    const c = (lit - body) / (lit + body)
+    assert.ok(c >= 0.30, `${type}: C=${c.toFixed(3)} >= 0.30 (body ${body.toFixed(4)})`)
+  }
+})
+
+test('hit feedback: the flash still reads through fog at 30 m and stays red', () => {
+  const lit = hitLit()
+  for (const tier of ['high', 'medium', 'low']) {
+    const vis = Math.exp(-((30 * FOG_DENSITY[tier]) ** 2))
+    const fogged = lit * vis + BG * (1 - vis)
+    const c = (fogged - BG) / (fogged + BG)
+    assert.ok(c >= 0.90, `${tier} at 30 m: C=${c.toFixed(3)} >= 0.90`)
+  }
+  const v = linOf(HITMAT.color.getHex())
+  assert.ok(v[0] / v[1] > 8, 'the hit flash stays deep red (R/G > 8)')
+})
+
+test('hit feedback: 0.15 s window survives a 60 fps frame budget', () => {
+  const { collision, zombie } = makeZombie('walker', 3, 0, 1)
+  const player = fakePlayer(-3, 0)
+  zombie.damage(10)
+  for (const p of zombie._parts) assert.equal(p.material, HITMAT)
+  for (let i = 0; i < 8; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.equal(zombie._parts[0].material, HITMAT, 'still flashing at 0.133 s')
+  for (let i = 0; i < 2; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.notEqual(zombie._parts[0].material, HITMAT, 'restored by 0.167 s')
+})

@@ -41,6 +41,18 @@ export class WeaponBank {
     this.sniper.view.visible = false
   }
 
+  /**
+   * v6 visuals (6): forward the quality tier to the two weapons that own a
+   * muzzle-flash light (shotgun, pistol). 'low' drops their dynamic point
+   * lights and dims the sprite; axe/sword/sniper have no flash light, so the
+   * tier is a no-op for them. Returns the applied tier.
+   */
+  setTier(q) {
+    this.shotgun.setTier(q)
+    this.pistol.setTier(q)
+    return q === 'low' ? 'low' : 'high'
+  }
+
   get getZombies() { return this._getZombies }
   set getZombies(fn) {
     this._getZombies = fn

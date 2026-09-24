@@ -216,9 +216,16 @@ export class City {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
-      // Roughness 0.85 (not 0.95): wet snow catches a soft sheen from the
-      // IBL sky and streetlight halos instead of reading as flat matte.
-      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.85 })
+      // v6 visuals (10): roughness 0.85 -> 0.55. The old value sat inside the
+      // zombie-body roughness band (0.90/0.95), so under the moon rig (1.45 lx)
+      // the pavement shaded identically to a body and nothing separated
+      // gameplay surfaces from scenery. 0.55 keeps the wet sheen the IBL sky +
+      // 70 cd streetlight pools give the snow (specular widens as roughness
+      // drops, so the pool halo spreads further across the ground) while
+      // pulling the pavement a full band below every body. Color untouched:
+      // ground tonemaps 0.2320, still above every body (0.070-0.174), so it
+      // reads as a lit backdrop rather than as an actor.
+      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.55 })
     )
     // Realism pass: cracked/wet-pavement normal + roughness maps so the ground
     // stops reading as flat card. Headless (canvasFactory null) leaves them off.
@@ -244,13 +251,21 @@ export class City {
     ground.rotation.x = -Math.PI / 2
     ground.receiveShadow = true
     group.add(ground)
+    // v6 visuals (2): exposed so the atmosphere layer can reuse this plane
+    // geometry and tune its fog response instead of adding new meshes.
+    this.ground = ground
 
     const buildings = []
     const building = (x, z, w, d, h, zone) => {
       const color = new THREE.Color(PALETTE[Math.floor(rnd() * 4)]).multiplyScalar(TINTS[zone])
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0.05 })
+        // v6 visuals (10): roughness 0.88 -> 0.62 so the untextured building
+        // body sits in the scenery band, clearly below the 0.90/0.95 zombie
+        // band. Facades keep metalness 0.05 (env map is installed, but at this
+        // metalness the IBL adds no mirror highlight that could compete with a
+        // body).
+        new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05 })
       )
       mesh.position.set(x, h / 2, z)
       mesh.castShadow = true
@@ -293,7 +308,10 @@ export class City {
     // source decodes (setting needsUpdate at clone time warns "no image data").
     const facadeImageClones = []
     if (facadeImage) facadeImage.addEventListener('load', () => { for (const c of facadeImageClones) c.needsUpdate = true })
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x1d2430, roughness: 0.95, metalness: 0.02 })
+    // v6 visuals (10): 0.95 -> 0.70. Roofs are pure scenery and must not share
+      // the zombie band; 0.70 keeps them matte-dark (they tonemap to 0.0024,
+      // nearly the fog floor) while leaving 0.90/0.95 exclusive to bodies.
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0x1d2430, roughness: 0.70, metalness: 0.02 })
     let fv = 113
     const variants = []
     this._flickerMats = []
@@ -301,7 +319,10 @@ export class City {
       const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 4)
       variants.push(v)
       const facade = new THREE.MeshStandardMaterial({
-        color: b.color, roughness: 0.88, metalness: 0.05,
+        // v6 visuals (10): roughness 0.88 -> 0.62 (see the building-body note). The
+        // procedural roughness map multiplies this base, so concrete stays
+        // rougher than the glass insets within the same lowered band.
+        color: b.color, roughness: 0.62, metalness: 0.05,
         // V3P-10: emissiveIntensity 1.1 -> 1.5 so lit windows read as warm
         // beacons against the dark facades (checked against metrics below).
         emissive: 0xffa64d, emissiveIntensity: 1.5

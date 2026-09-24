@@ -52,7 +52,9 @@ export class Lamps {
     lamp.broken = false
     if (lamp.material) {
       lamp.material.emissive.setHex(0xffb066)
-      lamp.material.emissiveIntensity = 3.2
+      // v6 visuals (4): restore to the restrained value used by
+      // cityDressing.js (emissiveIntensity 2.2), not the old blown-out 3.2.
+      lamp.material.emissiveIntensity = 2.2
     }
     if (lamp.halo) lamp.halo.visible = true
     if (lamp.shaft) lamp.shaft.visible = true
@@ -81,7 +83,7 @@ export class Lamps {
 
   /** Restore every lamp to lit (restart). */
   reset() {
-    for (const l of this.lamps) { l.broken = false; l.timer = 0; if (!l.material || l.material.emissiveIntensity !== 3.2) this._relight(l) }
+    for (const l of this.lamps) { l.broken = false; l.timer = 0; if (!l.material || l.material.emissiveIntensity !== 2.2) this._relight(l) }
   }
 
   dispose() {

@@ -45,11 +45,27 @@ function makeShaftMap() {
 
 export function addStreetlights(group, collision) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
+  // v6 visuals (10): roughness 0.6 -> 0.42 so the pole sits in the same
+  // painted-metal scenery band as the bus. Poles tonemap to 0.0018 (below the
+  // brute body at 0.0703), so brightness already separates them from actors;
+  // this only removes the shared roughness band.
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.42, metalness: 0.3 })
   const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 3.2 })
+  // V6 visuals (4): the head is a bloom source, so what matters is its
+  // luminance AFTER the ACES tone map (renderer.toneMapping = ACESFilmic,
+  // exposure 1.2 — src/world/Lighting.js:29-30). 0xffb066×3.2 → lin 1.705 →
+  // tonemapped 0.917, i.e. deep into the shoulder where the bloom mip is
+  // already saturated and the halo smears the 0.45 m box into a disc. 2.2
+  // (lin 1.172 → 0.867) keeps the head a crisp shape while still clearing the
+  // 0.72 bloom cut (PostFX BLOOM.threshold), and the 70 cd pool
+  // (src/world/Lighting.js POLE_INTENSITY) still lights the pavement on its
+  // own, so round 41's readability stands. Halo opacity 0.5→0.30, scale
+  // 2.2→1.6: the glow map peaks at alpha 1.0, so at 0.5 the additive disc
+  // alone reached 0.45 tonemapped and washed the head out; at 0.30 it sits at
+  // 0.286, well under the cut, so the halo glows without re-blooming.
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb066, emissiveIntensity: 2.2 })
   const haloMap = makeGlowMap()
-  const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  const haloMat = new THREE.SpriteMaterial({ color: 0xffb066, map: haloMap, transparent: true, opacity: 0.30, blending: THREE.AdditiveBlending, depthWrite: false })
   // Realism pass: a shared vertical light-shaft sprite under each lamp head for
   // a soft volumetric beam in the night air.
   const shaftMap = makeShaftMap()
@@ -67,7 +83,7 @@ export function addStreetlights(group, collision) {
     const head = new THREE.Mesh(headGeo, hm)
     head.position.set(x, 5.2, z)
     group.add(head)
-    const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(2.2, 2.2, 1); group.add(halo)
+    const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(1.6, 1.6, 1); group.add(halo) // v6 visuals (4): 2.2→1.6, glow stays inside the head silhouette
     // Shaft hangs from the head down toward the pavement (tall, narrow). Only
     // the vertical-street lamps get one, to stay inside the mesh/sprite budget.
     let shaftSprite = null
@@ -120,9 +136,16 @@ export function addVehicles(group, collision) {
   const bodyGeoH = new THREE.BoxGeometry(4.5, 1.0, 1.8)
   const cabinGeoH = new THREE.BoxGeometry(2.4, 0.9, 1.7)
   const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3)
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333b46, roughness: 0.6, metalness: 0.25 })
-  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x3d4656, roughness: 0.65, metalness: 0.2 })
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.5, metalness: 0.35 })
+  // v6 visuals (10): roughness 0.6 -> 0.42. Painted metal bus bodies are
+  // scenery and must leave the 0.90/0.95 zombie band entirely; 0.42 also
+  // sharpens the moonlight (1.45 lx) specular streak along the 4.5 m flank so
+  // a parked bus reads as sheet metal, not as a matte block like a body.
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333b46, roughness: 0.42, metalness: 0.25 })
+  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x3d4656, roughness: 0.48, metalness: 0.2 })
+  // v6 visuals (10): 0.5 -> 0.30. Rubber keeps the lowest roughness of the
+  // three bus parts (a tyre is the glossest surface on the vehicle) and the
+  // whole bus now sits under 0.5, far below the body band.
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.3, metalness: 0.35 })
   // Realism pass: glass windshields + head/tail lights. A SINGLE shared
   // InstancedMesh (one draw call) covers all 12 cars — 12 dark glass panels +
   // 24 warm headlights + 24 red taillights — so the mesh budget grows by only
@@ -217,7 +240,11 @@ export function addBarricades(group, collision) {
     { x: 72, z: -48 },    // 8
   ]
   const plankGeo = new THREE.BoxGeometry(2.5, 0.4, 0.4) // long axis = X
-  const plankMat = new THREE.MeshStandardMaterial({ color: 0x5f4734, roughness: 0.85, metalness: 0 })
+  // v6 visuals (10): roughness 0.85 -> 0.68. Barricade planks are static cover,
+  // not actors; they must not sit in the 0.90/0.95 body band. Wood stays the
+  // roughest thing in the dressing set (0.68) so it still reads as grainy
+  // timber under the moon rather than as painted metal like the bus.
+  const plankMat = new THREE.MeshStandardMaterial({ color: 0x5f4734, roughness: 0.68, metalness: 0 })
   const aabbs = []
   for (const { x, z } of TABLE) {
     // 2 planks at the same (x, z): plank 1 center y = 0.5, plank 2 center y = 0.9
@@ -238,17 +265,30 @@ export function addBarricades(group, collision) {
 export function addLandmarks(group) {
   const glow = makeGlowMap()
   // Center spire: 6 m box on the center tower roof (roof y=9, top y=15).
-  const spireMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xffc878, emissiveIntensity: 2.5, roughness: 0.6, metalness: 0.1 })
+  // V6 visuals (4): post-tonemap luminance (ACES, exposure 1.2) 0xffc878×2.5 →
+  // 0.910 vs ×2.0 → 0.880. The intensity drop is deliberately small: the
+  // blow-out came from the halo, not the box. At opacity 0.6 / scale 3 the
+  // sprite burned ~7.5 m of sky into a disc and tonemapped to 0.640 — close
+  // enough to the 0.72 cut that the halo was blooming itself. 0.38 / scale 2.2
+  // sits at 0.428 (under the cut) while 2.0 still clears it, so the tower
+  // keeps a crisp glowing crown at distance.
+  const spireMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xffc878, emissiveIntensity: 2.0, roughness: 0.6, metalness: 0.1 })
   const spire = new THREE.Mesh(new THREE.BoxGeometry(0.6, 6, 0.6), spireMat)
   spire.castShadow = true
   spire.position.set(0, 12, 0)
   group.add(spire)
-  const spireHaloMat = new THREE.SpriteMaterial({ color: 0xffc878, map: glow, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
-  const spireHalo = new THREE.Sprite(spireHaloMat); spireHalo.position.set(0, 15, 0); spireHalo.scale.set(3, 3, 1); group.add(spireHalo)
+  const spireHaloMat = new THREE.SpriteMaterial({ color: 0xffc878, map: glow, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false })
+  const spireHalo = new THREE.Sprite(spireHaloMat); spireHalo.position.set(0, 15, 0); spireHalo.scale.set(2.2, 2.2, 1); group.add(spireHalo)
   // 4 corner beacons at (±84, ±84), marking the diagonal wave spawn zones (±85, ±85).
   const beaconGeo = new THREE.BoxGeometry(0.6, 7, 0.6)
+  // V6 visuals (4): 0xff4433 is the dimmest source (post-tonemap 0.681 at
+  // intensity 2.0), so its intensity stays pinned — lowering it would drop the
+  // corner markers below the 0.72 bloom cut and lose the spawn-zone read. The
+  // blow-out was the halo: at opacity 0.5 / scale 2.4 it smeared a 7 m post
+  // into a red disc. 0.34 (tonemapped 0.134, far under the cut) / scale 1.8
+  // still marks the zone at 3× the 0.6 m post without re-blooming.
   const beaconMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xff4433, emissiveIntensity: 2.0, roughness: 0.6, metalness: 0.1 })
-  const beaconHaloMat = new THREE.SpriteMaterial({ color: 0xff4433, map: glow, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  const beaconHaloMat = new THREE.SpriteMaterial({ color: 0xff4433, map: glow, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false })
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const bx = sx * 84
@@ -257,7 +297,7 @@ export function addLandmarks(group) {
       beacon.castShadow = true
       beacon.position.set(bx, 3.5, bz)
       group.add(beacon)
-      const halo = new THREE.Sprite(beaconHaloMat); halo.position.set(bx, 7, bz); halo.scale.set(2.4, 2.4, 1); group.add(halo)
+      const halo = new THREE.Sprite(beaconHaloMat); halo.position.set(bx, 7, bz); halo.scale.set(1.8, 1.8, 1); group.add(halo) // v6 visuals (4): 2.4→1.8
     }
   }
   // 10 street strips along street center lines (always walkable, no aabbs).

@@ -71,7 +71,7 @@ test('streetlight anchors: 40, y=5.2, within bounds; total meshes <= 600', () =>
   assert.ok(meshes <= 600, `meshes ${meshes} > 600`)
 })
 
-test('streetlight halos: 40 orange (0xffb066) sprites share one SpriteMaterial (additive, opacity 0.5)', () => {
+test('streetlight halos: 40 orange (0xffb066) sprites share one SpriteMaterial (additive, restrained v6 opacity 0.30)', () => {
   const sprites = []
   city.group.traverse(o => { if (o.isSprite && o.material.color.getHex() === 0xffb066) sprites.push(o) })
   assert.equal(sprites.length, 40, `expected 40 halo sprites, got ${sprites.length}`)
@@ -81,12 +81,15 @@ test('streetlight halos: 40 orange (0xffb066) sprites share one SpriteMaterial (
   assert.equal(m.color.getHex(), 0xffb066, 'halo color')
   assert.equal(m.blending, THREE.AdditiveBlending, 'additive blending')
   assert.equal(m.depthWrite, false, 'depthWrite off')
-  assert.equal(m.opacity, 0.5, 'opacity 0.5')
+  // v6 visuals (4): opacity 0.5→0.30 and scale 2.2→1.6 so the additive glow
+  // stays inside the 0.45 m head silhouette instead of smearing it out.
+  assert.equal(m.opacity, 0.30, 'restrained halo opacity 0.30')
+  for (const s of sprites) assert.ok(s.scale.x === 1.6 && s.scale.y === 1.6, `halo scale ${s.scale.x}x${s.scale.y}, expected 1.6`)
   let headOk = false
   city.group.traverse(o => {
-    if (o.isMesh && o.material.emissive && o.material.emissive.getHex() === 0xffb066 && o.material.emissiveIntensity === 3.2) headOk = true
+    if (o.isMesh && o.material.emissive && o.material.emissive.getHex() === 0xffb066 && o.material.emissiveIntensity === 2.2) headOk = true
   })
-  assert.ok(headOk, 'no head mesh with emissive 0xffb066 / intensity 3.2')
+  assert.ok(headOk, 'no head mesh with emissive 0xffb066 / restrained intensity 2.2')
 })
 
 test('city aabbs: 87 total, bounds, key points walkable', () => {
@@ -104,13 +107,13 @@ test('barricades: 8 in empty plazas, key points walkable', () => {
   assert.ok(collision.isWalkable(30, 12, 0.4), 'zombie spawn (30,12) blocked')
 })
 
-test('snow: 3 depth layers, 1500 flakes, falls + drifts, setSnowCount scales layers', () => {
+test('snow: 4 depth layers, 1800-flake hierarchy, falls + drifts, setSnowCount scales layers', () => {
   const layers = city.snow.points
-  assert.equal(layers.length, 3, '3 depth layers')
+  assert.equal(layers.length, 4, '4 depth layers (v6 visuals (3))')
   for (const pts of layers) assert.ok(pts.isPoints, 'layer is a THREE.Points')
   let total = 0
   for (const pts of layers) total += pts.geometry.attributes.position.count
-  assert.equal(total, 1500, '1500 flakes total')
+  assert.equal(total, 1800, '1800 flakes allocated (drawn peak, <= 2500 budget)')
   for (const pts of layers) {
     const pos = pts.geometry.attributes.position
     for (let i = 0; i < pos.count; i += 100) {
@@ -180,7 +183,9 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
   assert.equal(spires.length, 1, `expected 1 center spire, got ${spires.length}`)
   const spire = spires[0]
   assert.ok(Math.abs(spire.position.x) < 1e-9 && Math.abs(spire.position.y - 12) < 1e-9 && Math.abs(spire.position.z) < 1e-9, `spire at ${spire.position}`)
-  assert.equal(spire.material.emissiveIntensity, 2.5, 'spire emissiveIntensity 2.5')
+  // v6 visuals (4): spire emissive 2.5→2.0 (post-tonemap 0.910→0.880, still
+  // above the 0.72 bloom cut) and its halo 0.6/3 → 0.38/2.2.
+  assert.equal(spire.material.emissiveIntensity, 2.0, 'spire emissiveIntensity 2.0')
   assert.ok(spire.castShadow, 'spire castShadow')
   assert.equal(beacons.length, 4, `expected 4 corner beacons, got ${beacons.length}`)
   const seen = new Set()
@@ -200,6 +205,12 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
     if (o.material.color.getHex() === 0xff4433) beaconHalos.push(o)
   })
   assert.equal(spireHalos.length, 1, `expected 1 spire halo, got ${spireHalos.length}`)
+  // v6 visuals (4): landmark halos narrowed — spire 0.6/3 → 0.38/2.2,
+  // beacons 0.5/2.4 → 0.34/1.8 (beacon emissive stays 2.0: 0.681 post-tonemap
+  // is the dimmest source and must stay above the 0.72 bloom cut).
+  assert.equal(spireHalos[0].material.opacity, 0.38, 'spire halo opacity 0.38')
+  assert.ok(spireHalos[0].scale.x === 2.2 && spireHalos[0].scale.y === 2.2, `spire halo scale ${spireHalos[0].scale.x}`)
+  for (const b of beacons) assert.equal(b.material.emissiveIntensity, 2.0, 'beacon emissiveIntensity 2.0 (kept: dimmest bloom source)')
   assert.ok(Math.abs(spireHalos[0].position.x) < 1e-9 && Math.abs(spireHalos[0].position.y - 15) < 1e-9 && Math.abs(spireHalos[0].position.z) < 1e-9, `spire halo at ${spireHalos[0].position}`)
   assert.equal(beaconHalos.length, 4, `expected 4 beacon halos, got ${beaconHalos.length}`)
   const haloSeen = new Set()
@@ -208,6 +219,8 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
     assert.ok(!haloSeen.has(key), `duplicate beacon halo ${key}`)
     haloSeen.add(key)
     assert.ok(Math.abs(Math.abs(h.position.x) - 84) < 1e-6 && Math.abs(Math.abs(h.position.z) - 84) < 1e-6 && Math.abs(h.position.y - 7) < 1e-6, `beacon halo position ${h.position}`)
+    assert.equal(h.material.opacity, 0.34, 'beacon halo opacity 0.34')
+    assert.ok(h.scale.x === 1.8 && h.scale.y === 1.8, `beacon halo scale ${h.scale.x}`)
   }
   assert.equal(collision.aabbs.length, 127, `aabbs changed (87 + 40 lamp AABBs): ${collision.aabbs.length}`)
 })

@@ -10,7 +10,7 @@ const DT = 1 / 60
 
 function fakeLamp(x, z) {
   return { x, z, broken: false, timer: 0, halo: { visible: true }, shaft: { visible: true },
-    material: new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0xffb066), emissiveIntensity: 3.2 }) }
+    material: new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0xffb066), emissiveIntensity: 2.2 }) }
 }
 
 // ---- Lamps: break, dark, relight after 60 s --------------------------------
@@ -37,7 +37,7 @@ function fakeLamp(x, z) {
   // Cross the 60 s mark: relights automatically.
   for (let i = 0; i < Math.ceil(2 / DT); i++) lamps.update(DT)
   assert.strictEqual(a.broken, false, 'relit after 60 s')
-  assert.strictEqual(a.material.emissiveIntensity, 3.2, 'emissive restored')
+  assert.strictEqual(a.material.emissiveIntensity, 2.2, "emissive restored to the restrained v6 value")
   assert.strictEqual(a.halo.visible, true, 'halo restored')
   assert.strictEqual(a.shaft.visible, true, 'shaft restored')
   assert.strictEqual(lamps.brokenCount(), 0)

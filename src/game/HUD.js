@@ -18,10 +18,13 @@ export class HUD {
     this._vignettePeak = 0 // V5P-2: current vignette peak opacity
     this._dmgEdgeT = 0 // V5P-2: edge-glow lifetime (s), decayed in update()
     this._dmgHitPending = false // V5P-2: hook already accounted for this drop
+    this._pulseT = 0 // v6 visuals (7): low-health pulse phase (s), deterministic
     this._player = null // V5P-2: last player seen by update()
     this.flashlight = null // set by Game wiring (V7); battery bar hidden until then
     this.score = null      // set by Game wiring (V9); score box hidden until then
     this.boss = null       // set by Game wiring (boss finale); bar hidden until then
+    this._waveSubText = ''   // v6 visuals (8): last wave sub-line (write gate)
+    this._threatSubText = '' // v6 visuals (8): last threat sub-line (write gate)
     this._build()
   }
 
@@ -52,13 +55,20 @@ export class HUD {
     stamina.appendChild(sLabel); stamina.appendChild(sBar)
     this._hudRoot.appendChild(stamina)
 
-    // Wave + remaining (top-center)
+    // Wave + remaining (top-center). v6 visuals (8): these same two elements
+    // gain a second line each (intermission countdown + composition preview,
+    // and cap-pressure danger) instead of a new DOM layer, so nothing new
+    // covers the center of the screen.
     const wave = d.createElement('div'); wave.className = 'hud-wave'
     this._waveValue = d.createElement('div'); this._waveValue.className = 'hud-value'; this._waveValue.textContent = 'WAVE 1'
     wave.appendChild(this._waveValue)
+    this._waveSub = d.createElement('div'); this._waveSub.className = 'hud-wave-sub'
+    wave.appendChild(this._waveSub)
     this._hudRoot.appendChild(wave)
     this._threat = d.createElement('div'); this._threat.className = 'hud-threat'; this._threat.textContent = 'left: 0'
     this._hudRoot.appendChild(this._threat)
+    this._threatSub = d.createElement('div'); this._threatSub.className = 'hud-threat-sub'
+    this._hudRoot.appendChild(this._threatSub)
 
     // Boss health bar (wave-5 finale): hidden until a boss zombie is alive.
     const boss = d.createElement('div'); boss.className = 'hud-boss hidden'
@@ -180,22 +190,31 @@ export class HUD {
       this._healthFill.style.width = (pct * 100) + '%'
       // HP bar shows the percentage of max health remaining (rounded), e.g. "82%".
       this._healthValue.textContent = Math.round(pct * 100) + '%'
-      // Damage vignette (V5P-2): hook-driven peak with a health-drop fallback;
-      // fades over 0.45 s.
+      // Damage vignette (V5P-2 + v6 visuals 7): hook-driven peak with a
+      // health-drop fallback; fades over 0.45 s. The fallback now scales with
+      // the amount dropped (0.18 + 0.006/pt, cap 0.40) instead of a flat 0.35,
+      // so severity reads as severity; the CSS rim is capped at 0.32 alpha and
+      // starts at 72% of the gradient extent, so the center stays clear.
       if (this._lastHealth !== null && player.health < this._lastHealth && !this._dmgHitPending) {
-        this._vignettePeak = 0.35
+        this._vignettePeak = Math.min(0.40, 0.18 + 0.006 * (this._lastHealth - player.health))
         this._vignetteT = 0.45
       }
       this._dmgHitPending = false
       this._lastHealth = player.health
       this._vignetteT = Math.max(0, this._vignetteT - dt)
       this._dmgEdgeT = Math.max(0, this._dmgEdgeT - dt)
-      this._vignette.style.opacity = this._vignetteT > 0
+      // Low-health frame breathes (v6 visuals 7): deterministic 0.55 Hz pulse
+      // in [0.25, 0.75] written through the opacity write that already ran
+      // every frame — no extra style write. The damage vignette is suppressed
+      // while that frame is on so the two red layers never stack.
+      this._pulseT = (this._pulseT + dt) % 1.8
+      const low = pct < 0.3
+      const pulse = 0.5 + 0.25 * Math.sin(this._pulseT * (Math.PI * 2 / 1.8))
+      this._vignette.style.opacity = (this._vignetteT > 0 && !low)
         ? String(this._vignettePeak * (this._vignetteT / 0.45)) : '0'
+      this._lowHealth.style.opacity = low ? String(pulse) : '0'
       this._dmgEdge.style.opacity = this._dmgEdgeT > 0
         ? String(0.7 * (this._dmgEdgeT / 0.5)) : '0'
-      // Low-health pulse.
-      const low = pct < 0.3
       if (low) { this._lowHealth.classList.add('on'); this._healthBox.classList.add('critical') }
       else { this._lowHealth.classList.remove('on'); this._healthBox.classList.remove('critical') }
       // Stamina.
@@ -259,8 +278,50 @@ export class HUD {
     }
 
     if (waveManager) {
+      // v6 visuals (8): wave state made legible from data the WaveManager
+      // already exposes — `intermission`, `nextWavePreview`, `cap`,
+      // `remaining`. No composition logic is duplicated here, and the two
+      // existing text writes are reused (one extra write per sub-line, only
+      // when the string actually changes).
+      const inter = typeof waveManager.intermission === 'number' ? waveManager.intermission : 0
+      const preview = waveManager.nextWavePreview || null
+      const cap = typeof waveManager.cap === 'number' ? waveManager.cap : 0
+      const remaining = waveManager.remaining !== undefined ? waveManager.remaining : 0
+      // The boss is counted in `remaining` but never counts against the spawn
+      // cap, so the pressure readout must exclude it (wave 5 otherwise reads
+      // over-cap while the brute is alive). `this.boss` is the wired boss
+      // zombie (Game reassigns it on spawn/death) — no extra getter needed.
+      const bossOn = !!(this.boss && !this.boss.isDead)
+      const fighting = remaining - (bossOn && preview === null ? 1 : 0)
       this._waveValue.textContent = 'WAVE ' + (waveManager.wave || 1)
-      this._threat.textContent = 'left: ' + (waveManager.remaining !== undefined ? waveManager.remaining : 0)
+      this._threat.textContent = 'left: ' + remaining
+      if (inter > 0 && preview) {
+        const secs = Math.max(1, Math.ceil(inter))
+        const parts = []
+        if (preview.shambler) parts.push(preview.shambler + ' shamblers')
+        if (preview.screamer) parts.push(preview.screamer + ' screamers')
+        if (preview.walker) parts.push(preview.walker + ' walkers')
+        if (preview.boss) parts.push('BOSS')
+        const sub = 'in ' + secs + 's — ' + parts.join(', ')
+        if (sub !== this._waveSubText) {
+          this._waveSubText = sub
+          this._waveSub.textContent = sub
+        }
+        this._waveSub.classList.toggle('imminent', secs <= 2)
+        this._threat.textContent = 'next: ' + preview.total
+        this._threatSub.textContent = 'cap ' + cap
+      } else {
+        if (this._waveSubText !== '') { this._waveSubText = ''; this._waveSub.textContent = '' }
+        this._waveSub.classList.remove('imminent')
+        const room = cap > 0 ? cap - fighting : 0
+        const danger = cap > 0 && fighting >= cap - 2
+        const sub = cap > 0 ? (danger ? 'CAP ' + fighting + '/' + cap : 'room ' + room + '/' + cap) : ''
+        if (sub !== this._threatSubText) {
+          this._threatSubText = sub
+          this._threatSub.textContent = sub
+        }
+        this._threat.classList.toggle('danger', danger)
+      }
     }
 
     // Boss bar: shown while the wired boss zombie is alive (Game reassigns
@@ -337,8 +398,12 @@ export class HUD {
   }
 
   dmgFeedback(amount, source) {
-    // Vignette: peak scales with damage (0.25 + 0.02/pt, cap 0.6), 0.45 s fade.
-    this._vignettePeak = Math.min(0.6, 0.25 + 0.02 * amount)
+    // Vignette: peak scales with damage (0.25 + 0.012/pt, cap 0.55), 0.45 s
+    // fade. v6 visuals (7): slope halved and cap lowered from 0.60 — at the
+    // old cap the rim alpha 0.55 reached 0.33 effective and pulled a 30 m
+    // walker to C 0.54, under the 0.90 gate. With rim 0.32 (styles.css) the
+    // worst-case rim is 0.176, and the CSS clear disc starts at 72%.
+    this._vignettePeak = Math.min(0.55, 0.25 + 0.012 * amount)
     this._vignetteT = 0.45
     this._dmgHitPending = true
     this._dmgEdgeT = 0.5
