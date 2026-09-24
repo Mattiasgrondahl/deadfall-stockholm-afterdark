@@ -148,6 +148,42 @@ test('auto-reload at empty; refills after 1.1 s', () => {
   assert.equal(p.reserve, 24, 'reserve drained by 12')
 })
 
+// v6 gameplay (5): the reload dips the view model (deterministic sin(π·p)
+// envelope over the 1.1 s timer) so a reload is visibly readable.
+test('reload dip: view dips mid-reload and returns to exact rest pose', () => {
+  const { camera, pistol: p } = makePistol()
+  camera.lookAt(0, 1.2, 6)
+  p.getZombies = () => []
+  p.inputState = { fire: false, reload: false }
+  p.update(0)
+  const restY = p.view.position.y, restZ = p.view.position.z
+  assert.equal(restY, -0.24, 'rest pose, no bob while idle')
+  for (let i = 0; i < 8; i++) { // 8 rounds fired, mag not full: 4 rounds down
+    p.inputState.fire = true
+    p.update(i === 0 ? 0 : 0.28)
+  }
+  assert.equal(p.ammo, 4)
+  p._recoil = 0 // start the reload from the clean rest pose (no live recoil)
+  assert.ok(p.reload(), 'manual reload starts from a non-full mag')
+  const dt = 1 / 60
+  let midY = Infinity, midZ = -Infinity
+  for (let i = 0; i < 33; i++) { // ~0.55 s in: near the sin peak
+    p.update(dt)
+    midY = Math.min(midY, p.view.position.y)
+    midZ = Math.max(midZ, p.view.position.z)
+  }
+  assert.ok(midY < restY - 0.03, `view dips below rest mid-reload (y=${midY.toFixed(4)})`)
+  assert.ok(midZ > restZ + 0.03, `view pulls back mid-reload (z=${midZ.toFixed(4)})`)
+  for (let i = 0; i < 33; i++) p.update(dt) // finish the 1.1 s
+  assert.equal(p.isReloading, false, 'reload complete')
+  // Review fix: the reload branch now runs BEFORE the view write, so the
+  // completion frame itself lands on exact rest (no stale-dip frame).
+  assert.equal(p.view.position.y, restY, 'exact rest y on the completion frame')
+  assert.equal(p.view.position.z, restZ, 'exact rest z on the completion frame')
+  assert.equal(p.ammo, 12, 'magazine refilled')
+  assert.equal(p.reserve, 28, 'reserve drained by 8')
+})
+
 test('blood bursts on hits with scaled damage', () => {
   const { camera, pistol: p } = makePistol()
   p.blood = fakeBlood()

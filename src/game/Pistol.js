@@ -18,6 +18,11 @@ const FLASH_TIME = 0.05, RECOIL_KICK = 0.02, RECOIL_DECAY = 0.12
 // 0.72 bloom cut. 'low' drops the light entirely (peak 0) and dims the sprite.
 const FLASH_PEAK = 300, FLASH_PEAK_LOW = 0, FLASH_OPACITY = 0.9, FLASH_OPACITY_LOW = 0.45
 const KICK = 0.012
+// v6 gameplay (5): reload "dip" — the view model drops and pulls back while
+// reloading so the action reads without a HUD cue. Envelope is sin(π·p) over
+// reload progress p: 0 at the start and the end, max at the midpoint, so the
+// pose returns to the exact rest value when the reload completes.
+const DIP_Y = -0.05, DIP_Z = 0.06
 const UP = new THREE.Vector3(0, 1, 0)
 
 export class Pistol {
@@ -124,16 +129,8 @@ export class Pistol {
     const sp = this.player ? Math.hypot(this.player.velocity.x, this.player.velocity.z) : 0
     if (sp > 0.5) this._bobPhase += sp * dt * 2.2
     this._recoil = Math.max(0, this._recoil - (dt / RECOIL_DECAY) * RECOIL_KICK)
-    const bob = Math.sin(this._bobPhase) * 0.008
-    this.view.position.set(0.2, -0.24 + bob, -0.55 + this._recoil)
-    if (this._flashT > 0) {
-      this._flashT -= dt
-      const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
-      this.flash.material.opacity = FLASH_OPACITY * f
-      this.flash.scale.setScalar(0.08 + 0.12 * f)
-      this.flashLight.intensity = this._peak * f
-      if (this._flashT <= 0) this.flash.visible = false
-    }
+    // Reload progress runs BEFORE the view write so the completion frame
+    // already has isReloading=false and the dip lands on exact rest.
     if (this.isReloading) {
       this._reloadT -= dt
       if (this._reloadT <= 0) {
@@ -142,6 +139,19 @@ export class Pistol {
         this.ammo += take
         this.reserve -= take
       }
+    }
+    const bob = Math.sin(this._bobPhase) * 0.008
+    // Reload dip (gameplay 5): deterministic sin(π·p) envelope, no RNG.
+    const p = this.isReloading ? Math.min(1, 1 - this._reloadT / RELOAD_TIME) : 0
+    const dip = Math.sin(Math.PI * p)
+    this.view.position.set(0.2, -0.24 + bob + DIP_Y * dip, -0.55 + this._recoil + DIP_Z * dip)
+    if (this._flashT > 0) {
+      this._flashT -= dt
+      const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
+      this.flash.material.opacity = FLASH_OPACITY * f
+      this.flash.scale.setScalar(0.08 + 0.12 * f)
+      this.flashLight.intensity = this._peak * f
+      if (this._flashT <= 0) this.flash.visible = false
     }
     if (this.inputState) {
       if (this.inputState.fire) { this.inputState.fire = false; this.shoot() }

@@ -1288,3 +1288,25 @@ spending a single mesh, light or point.
   a 120 s battery runs — a real light-vs-sprint tradeoff.
 - Evidence: player+flashlight green, `npm test` 303/303 (0 fail / 0
   skipped), `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.
+
+## v6 gameplay (5) — reload feedback dip (round 54)
+
+- Research finding: reload had audio-only feedback — the view model was
+  static during reload and completion had no visual cue at all (melee
+  already had phased slash feedback, intermission choices need new UI).
+- Minimum fix: deterministic reload dip on the view model —
+  DIP_Y -0.05 / DIP_Z +0.06 (Pistol.js:25, Shotgun.js:25) applied through
+  a sin(π·p) envelope (p = min(1, 1 − _reloadT/RELOAD_TIME)) on top of the
+  untouched bob+recoil rest pose (Pistol.js:133-141, Shotgun.js:129-137).
+  Review fix applied: the reload-progress branch was moved BEFORE the view
+  write so the completion frame lands on exact rest (deletes the one-frame
+  2.4 mm stale-dip deviation), and p is clamped to [0,1]. Sniper/melee
+  untouched; view.position is read by nothing in net/HUD — view-model-only.
+- Tests: test/pistol.test.mjs :153 + test/shotgun.test.mjs :120 — dip
+  >0.03 below rest (y) and >0.03 back (z) near the sin peak, exact rest on
+  the completion frame, ammo/reserve transfer pins (pistol 4/12→12/28,
+  shotgun 3/5→5/28), _recoil zeroed first for a clean rest comparison.
+- Review: ACCEPT-WITH-FIXES (no must-fix); should-fix reorder + clamp
+  applied, tests updated to assert rest on the completion frame.
+- Evidence: pistol+shotgun 25/25, `npm test` 305/305 (0 fail / 0 skipped),
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.

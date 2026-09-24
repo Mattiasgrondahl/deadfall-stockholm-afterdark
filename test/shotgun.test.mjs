@@ -115,6 +115,42 @@ test('auto-reload at empty; refills after 1.4 s', () => {
   assert.equal(s.reserve, 25, 'reserve drained by 5')
 })
 
+// v6 gameplay (5): the reload dips the view model (deterministic sin(π·p)
+// envelope over the 1.4 s timer) so a reload is visibly readable.
+test('reload dip: view dips mid-reload and returns to exact rest pose', () => {
+  const { camera, shotgun: s } = makeShotgun()
+  camera.lookAt(0, 1.2, 6)
+  s.getZombies = () => []
+  s.inputState = { fire: false, reload: false, sprint: false }
+  s.update(0)
+  const restY = s.view.position.y, restZ = s.view.position.z
+  assert.equal(restY, -0.26, 'rest pose, no bob while idle')
+  for (let i = 0; i < 2; i++) { // 2 blasts fired, mag not full: 3 rounds down
+    s.inputState.fire = true
+    s.update(i === 0 ? 0 : 0.9)
+  }
+  assert.equal(s.ammo, 3)
+  s._recoil = 0 // start the reload from the clean rest pose (no live recoil)
+  assert.ok(s.reload(), 'manual reload starts from a non-full mag')
+  const dt = 1 / 60
+  let midY = Infinity, midZ = -Infinity
+  for (let i = 0; i < 42; i++) { // ~0.7 s in: near the sin peak
+    s.update(dt)
+    midY = Math.min(midY, s.view.position.y)
+    midZ = Math.max(midZ, s.view.position.z)
+  }
+  assert.ok(midY < restY - 0.03, `view dips below rest mid-reload (y=${midY.toFixed(4)})`)
+  assert.ok(midZ > restZ + 0.03, `view pulls back mid-reload (z=${midZ.toFixed(4)})`)
+  for (let i = 0; i < 42; i++) s.update(dt) // finish the 1.4 s
+  assert.equal(s.isReloading, false, 'reload complete')
+  // Review fix: the reload branch now runs BEFORE the view write, so the
+  // completion frame itself lands on exact rest (no stale-dip frame).
+  assert.equal(s.view.position.y, restY, 'exact rest y on the completion frame')
+  assert.equal(s.view.position.z, restZ, 'exact rest z on the completion frame')
+  assert.equal(s.ammo, 5, 'magazine refilled')
+  assert.equal(s.reserve, 28, 'reserve drained by 2')
+})
+
 test('view model + dispose: 4 weapon meshes; detach from camera; double-safe', () => {
   const { camera, shotgun: s } = makeShotgun()
   const meshes = s.view.children.filter((c) => c.isMesh)
