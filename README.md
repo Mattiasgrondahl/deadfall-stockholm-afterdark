@@ -60,31 +60,45 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
 |---|---|
 | W A S D | Move |
 | Mouse | Look (pointer lock) |
-| Shift | Sprint (drains stamina) |
+| Shift | Sprint (drains stamina; the flashlight does not block it) |
+| Space | Jump |
+| C | Crouch (disables sprint) |
 | Left mouse | Fire (current weapon) |
-| R | Reload (shotgun; axe needs no reload) |
+| R | Reload (firearms; melee weapons need no reload) |
 | 1 | Switch to the axe |
 | 2 | Switch to the shotgun |
-| F | Flashlight on/off (battery drains, flickers when low) |
+| 3 | Switch to the pistol |
+| 4 | Switch to the sword |
+| 5 | Switch to the sniper |
+| F | Flashlight on/off (battery drains, flickers when low; holding it burns stamina while you are not sprinting) |
 | P / Esc | Pause / resume (Esc releases pointer lock) |
 | M | Mute / unmute |
 | N | Mute / unmute the music only (SFX stay audible) |
 
 ## Gameplay
 
-- Survive escalating waves of three zombie types: walkers, shamblers, screamers.
-  Each type has its own idle groan, falling off with distance. Waves get
-  tougher and more numerous; a cleared wave triggers a brief respite.
-- Two weapons, switched with **1 / 2**: a **shotgun** (5-round magazine, 30
-  reserve, spread blast) and a **hand axe** (melee arc, unlimited swings,
-  cooldown only). Headshots deal double damage with either weapon.
-- Killing a zombie has a ~55% chance to drop a shell box; walk over it to gain
-  **+8** reserve. Drops blink and expire after 30 s.
-- Kill scoring: walker 10, shambler 15, screamer 25, plus a wave bonus of
-  50 × wave. Your best score persists in `localStorage`.
+- Survive escalating waves of four zombie types: walkers, shamblers, screamers
+  and the brute boss (every 5th wave). Each type has its own idle groan,
+  falling off with distance. Waves get tougher and more numerous; a cleared
+  wave triggers a brief respite with a countdown and next-wave preview.
+- Five weapons, switched with **1–5**: an **axe** (melee arc, unlimited
+  swings), a **shotgun** (5-round magazine, 30 reserve, 6-pellet spread
+  blast), a **pistol** (12-round magazine, 36 reserve), a **sword** (melee)
+  and a **sniper** (5-round magazine, 20 reserve, high damage). Headshots
+  deal double damage with firearms. The run starts with the shotgun.
+- Killing a zombie has a ~55% chance to drop a shell box (**+8** shells) and
+  an ~18% chance to drop a battery (**+35%** flashlight charge). Drops blink
+  and expire after 30 s.
+- Kill scoring: walker 10, shambler 15, screamer 25, brute 150, plus a wave
+  bonus of 50 × wave. Your best score persists in `localStorage`.
 - The flashlight follows your view; its battery lasts ~2 minutes of continuous
-  use and flickers as it runs low.
+  use and flickers as it runs low. A dead battery cannot be switched back on —
+  grab a battery pickup.
+- Sprint burns stamina fast and refills when you stop; standing still with the
+  flashlight on drains it slowly, so light and endurance trade off.
 - Blood sprays from every hit.
+- The title screen offers a **FRENZY** difficulty toggle: zombies run 2×
+  faster and bodies take two pistol shots unless you land a headshot.
 - When your health hits zero, the run ends — your score and wave are shown on
   the game-over screen — restart and go again.
 
