@@ -1230,3 +1230,33 @@ spending a single mesh, light or point.
 - Evidence: ammodrop 9/9, difficulty 7/7, match 9/9; `npm test` 302/302
   (0 fail / 0 skipped); `node tools/verify-game.mjs` 81 ok / 0 fail /
   0 skipped; `npm run build` green.
+
+## v6 gameplay (3) — per-type stagger resistance (round 52)
+
+- Research finding: screamer had no special behavior beyond stats
+  (src/game/Zombie.js:78) and knockback had no per-type scaling, so fast
+  types were trivially kited and the brute could be staggered out of its
+  own charge.
+- Minimum fix: `staggerResist` added to TABLE (Zombie.js:76-79 — walker 1,
+  shambler 1, screamer 1.35, brute 0.35), exposed as `this.staggerResist`
+  (:581), and `knockback()` multiplies `_kbX/_kbZ` by it (:1295-1296).
+  Higher resist = less stagger displacement: screamer resists kiting
+  (0.675 m vs 0.5), brute is barely moved (0.175 m) and cannot be shoved
+  out of an in-flight lunge (the stagger block returns before the charge
+  block, :983 vs :1016, so _chargeT survives the stagger). KB_TIME 0.35 /
+  KB_STRENGTH 3 unchanged; shotgun STAGGER_BASE compounds with resist
+  (brute point-blank push 1.44 → 0.504 m/s) — intended crowd-control
+  weakening.
+- Tests: test/zombie.test.mjs new 'knockback: per-type stagger resistance'
+  (exact 1e-9 pins 0.5/0.675/0.175 m at 21×1/60 steps, ordering
+  brute<walker<screamer, chase resumes per type); test/boss.test.mjs
+  brute-knockback re-pinned z=-2.175 + chase-resume assertion. TABLE
+  deepEqual pins updated for all four types.
+- Review: ACCEPT-WITH-FIXES (no must-fix). Applied: KB_STRENGTH comment
+  now states "× staggerResist" (Zombie.js:522-524); TASKS.md round-46-era
+  "≈ 0.53 m" note corrected. Noted for later: RemoteZombie.js:210 proxy
+  knockback is a no-op stub — mirror staggerResist there if remote
+  stagger is ever implemented.
+- Evidence: zombie+boss 53/53, `npm test` 303/303 (0 fail / 0 skipped),
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped,
+  `npm run build` green.

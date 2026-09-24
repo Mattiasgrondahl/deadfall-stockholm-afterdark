@@ -26,9 +26,9 @@ function makeZombie(type, x, z, wave = 1) {
 }
 
 test('stats: TABLE values exact, wave scaling rounds base * 1.12', () => {
-  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 50, melee: 8, cooldown: 0.9 , shotgunArmor: 1 })
-  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 , shotgunArmor: 1 })
-  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 , shotgunArmor: 1 })
+  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 50, melee: 8, cooldown: 0.9 , shotgunArmor: 1, staggerResist: 1 })
+  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 , shotgunArmor: 1, staggerResist: 1 })
+  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 , shotgunArmor: 1, staggerResist: 1.35 })
   const { zombie } = makeZombie('walker', 0, 0, 1)
   assert.equal(zombie.maxHealth, 50)
   const { zombie: w2 } = makeZombie('walker', 0, 0, 2)
@@ -413,6 +413,30 @@ test('knockback: a melee hit staggers the zombie backward, then chase resumes', 
   zombie.knockback(1, 0, 5)
   assert.equal(zombie._kbT, 0)
   assert.equal(zombie.position.x, deadX)
+})
+
+test('knockback: per-type stagger resistance — screamer resists kiting, brute barely moves', () => {
+  // Same setup as the walker knockback pin above: spawn at (0,-2), push (0,-1,3),
+  // step 21 frames at 1/60 (the full KB_TIME window). Displacement is the
+  // discrete sum of the linear decay (0.5 m at resist 1) times staggerResist.
+  const expect = { walker: 0.5, screamer: 0.5 * 1.35, brute: 0.5 * 0.35 }
+  const dist = {}
+  for (const type of ['walker', 'screamer', 'brute']) {
+    const { collision, zombie } = makeZombie(type, 0, -2, 1)
+    const player = fakePlayer(0, 0)
+    zombie.knockback(0, -1, 3)
+    assert.equal(zombie.staggerResist, TABLE[type].staggerResist)
+    for (let i = 0; i < 21; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+    dist[type] = Math.abs(zombie.position.z + 2)
+    assert.ok(Math.abs(dist[type] - expect[type]) < 1e-9, `${type} z=${zombie.position.z}`)
+    // Chase resumes after the stagger for every type.
+    const zAfter = zombie.position.z
+    for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+    assert.ok(zombie.position.z > zAfter, `${type}: chase resumes after stagger`)
+  }
+  // Ordering: brute < walker < screamer.
+  assert.ok(dist.brute < dist.walker && dist.walker < dist.screamer,
+    `ordering broken: brute=${dist.brute} walker=${dist.walker} screamer=${dist.screamer}`)
 })
 
 test('melee skips a player jumping above arm reach; hits once grounded', () => {

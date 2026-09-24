@@ -96,7 +96,7 @@ function makeWave() {
 // ---- stats ---------------------------------------------------------------
 
 test('brute stats: tanky boss hp, shotgun armor, slow shamble, heavy melee, long cooldown', () => {
-  assert.deepEqual(TABLE.brute, { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4 })
+  assert.deepEqual(TABLE.brute, { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 })
   const { zombie } = makeZombie('brute', 0, 0, 1)
   assert.equal(zombie.maxHealth, 520)
   assert.equal(zombie.speed, 0.7)
@@ -179,13 +179,22 @@ test('charge does not trigger outside 7 m or inside melee range', () => {
   assert.equal(b2._chargeT, 0, 'no charge inside melee range')
 })
 
-test('brute knockback staggers like any zombie, then chase resumes', () => {
+test('brute knockback staggers barely (resist 0.35), then chase resumes', () => {
   const { collision, zombie } = makeZombie('brute', 0, -2, 5)
   const player = fakePlayer(0, 0)
   zombie.knockback(0, -1, 3)
   assert.equal(zombie._kbT, 0.35)
   for (let i = 0; i < 21; i++) zombie.update(1 / 60, player, [zombie], collision, null)
-  assert.ok(Math.abs(zombie.position.z + 2.5) < 1e-9)
+  // Discrete sum of the linear decay scaled by staggerResist 0.35:
+  // 0.5 * 0.35 = 0.175 m back from -2 (was 0.5 m pre-resistance).
+  assert.ok(Math.abs(zombie.position.z + 2.175) < 1e-9, `z=${zombie.position.z}`)
+  // After the stagger the brute resumes chasing (charge-capable as before).
+  const zAfter = zombie.position.z
+  for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  assert.ok(zombie.position.z > zAfter, 'chase resumes after stagger')
+  // Charge-friendly counterplay: the stagger push must stay under 0.25 m so a
+  // hit can never knock the brute out of its charge window.
+  assert.ok(Math.abs(zombie.position.z + 2) <= 0.25, `pushed ${Math.abs(zombie.position.z + 2)} m`)
 })
 
 test('brute death: sinks, parts go DEADMAT, corpse inert', () => {

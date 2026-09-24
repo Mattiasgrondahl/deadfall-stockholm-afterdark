@@ -73,10 +73,10 @@ const HAIR_MATS = [
  *  buckshot (×0.4), so it takes ≥10 full blasts (9×6×22×0.4=475 < 520, 10×=528
  *  ≥ 520) while the pistol (26/shot, no armor) needs exactly 20 body shots. */
 const TABLE = {
-  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1 },
-  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1 },
-  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1 },
-  brute: { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4 }
+  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
+  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
+  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
+  brute: { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
 /** Boss charge window: within this horizontal range the brute lunges instead
@@ -519,7 +519,9 @@ const COLLIDER_RADIUS = 0.5
 const NO_PROG_FLIP = 0.6 // s of zero progress while sliding before flipping direction
 const CLEAR_DIST = 0.75  // m to keep sliding in free space before resuming chase
 const KB_TIME = 0.35     // s of stagger after a melee hit
-const KB_STRENGTH = 3    // initial m/s; total push = STRENGTH*TIME/2 ≈ 0.53 m
+const KB_STRENGTH = 3    // initial m/s; total push = STRENGTH*TIME/2 * staggerResist
+                         // (discrete 1/60 sum = 0.5 m at resist 1; per-type
+                         //  scaling via TABLE[type].staggerResist below)
 
 /**
  * True contact normal for a circle against the AABBs, choosing the contact
@@ -574,6 +576,11 @@ export class Zombie {
     // so it needs ≥10 full blasts; every other type is unarmored (×1). The
     // pistol/axe/sword ignore this and apply full damage.
     this.shotgunArmor = TABLE[type].shotgunArmor
+    // Stagger resistance: knockback velocity is multiplied by this, so a
+    // screamer (×1.35) resists being kited and staggers less, while the brute
+    // (×0.35) is barely moved — it cannot be staggered out of its charge.
+    // 1 = normal stagger (walker/shambler).
+    this.staggerResist = TABLE[type].staggerResist
     this._hitboxScale = this.isBoss ? 1.4 : 1
     // Charge (boss only): when the player is within CHARGE_RANGE the brute
     // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
@@ -1282,11 +1289,13 @@ export class Zombie {
   }
 
   /** Hit reaction: stagger backward along (dx, dz) at `strength` m/s,
-   *  decaying over KB_TIME. No-op on a dead zombie (its corpse is inert). */
+   *  decaying over KB_TIME. No-op on a dead zombie (its corpse is inert).
+   *  The velocity is scaled by this.staggerResist (per type): fast types
+   *  resist kiting, the brute resists being staggered out of its charge. */
   knockback(dx, dz, strength = KB_STRENGTH) {
     if (this.isDead) return
-    this._kbX = dx * strength
-    this._kbZ = dz * strength
+    this._kbX = dx * strength * this.staggerResist
+    this._kbZ = dz * strength * this.staggerResist
     this._kbT = KB_TIME
   }
 
