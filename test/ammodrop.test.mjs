@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
-import { AmmoDrops, DROP_CHANCE, SHELLS_PER_DROP, BULLETS_PER_DROP, BULLET_CHANCE, PICKUP_RADIUS, LIFETIME, BLINK_AFTER, MAX_DROPS } from '../src/game/AmmoDrops.js'
+import { AmmoDrops, DROP_CHANCE, SHELLS_PER_DROP, BULLETS_PER_DROP, BULLET_CHANCE, BATTERY_CHANCE, PICKUP_RADIUS, LIFETIME, BLINK_AFTER, MAX_DROPS } from '../src/game/AmmoDrops.js'
 
 const fakeAudio = () => ({ pickup: () => {} })
 const fakePlayer = (x, z, isDead = false) => ({ position: new THREE.Vector3(x, 1.7, z), isDead })
@@ -15,12 +15,37 @@ function makeManager() {
 test('constants match the contract', () => {
   assert.equal(DROP_CHANCE, 0.55)
   assert.equal(SHELLS_PER_DROP, 8)
-  assert.equal(BULLETS_PER_DROP, 12)
+  assert.equal(BULLETS_PER_DROP, 18)
   assert.equal(BULLET_CHANCE, 0.5)
   assert.equal(PICKUP_RADIUS, 1.2)
   assert.equal(LIFETIME, 30)
   assert.equal(BLINK_AFTER, 25)
   assert.equal(MAX_DROPS, 20)
+})
+
+test('10-wave ammo economy: pistol survives to the wave-10 boss', () => {
+  // Deterministic expected-value check (no LCG needed). A 10-wave run is 217
+  // kills needing ~1015 pistol body shots. Expected bullet income per kill =
+  // DROP_CHANCE (drop spawns) x (1 - BATTERY_CHANCE) (not a battery) x
+  // BULLET_CHANCE (bullets, not shells) x BULLETS_PER_DROP.
+  const KILLS = 217
+  // 1015 pistol body shots: per-zombie ceil(hp*1.12^(w-1)/26) over waves 1-10
+  // (all-body bound 1115, pooled-HP bound ~1007) — 1015 models a ~10% headshot
+  // mix, between the two bounds. The wave-10 boss + a ~92-shot shortfall at
+  // the finale are covered by shotgun/axe/sword damage, not the pistol alone.
+  const PISTOL_NEED = 1015
+  const PISTOL_START = 36
+  const SHELL_NEED = 350
+  const SHELL_START = 30
+  const bulletIncome = PISTOL_START + KILLS * DROP_CHANCE * (1 - BATTERY_CHANCE) * BULLET_CHANCE * BULLETS_PER_DROP
+  const shellIncome = SHELL_START + KILLS * DROP_CHANCE * (1 - BATTERY_CHANCE) * (1 - BULLET_CHANCE) * SHELLS_PER_DROP
+  // ~917 bullets vs 1015 needed: scarce (~90%) but the pistol survives to the
+  // wave-10 boss instead of running dry around wave 7-8 (old 12/drop = ~623).
+  // 0.9 pins the shipped 18/drop: 17 would give 868 (85.5%) and fail here.
+  assert.ok(bulletIncome >= 0.9 * PISTOL_NEED, `pistol income ${bulletIncome.toFixed(0)} >= 90% of ${PISTOL_NEED}`)
+  assert.ok(bulletIncome < PISTOL_NEED, 'pistol income stays scarce (below full need)')
+  // Shotgun was already fine at 8 shells/drop and is untouched: ~421 vs 350.
+  assert.ok(shellIncome >= SHELL_NEED, `shotgun income ${shellIncome.toFixed(0)} >= ${SHELL_NEED}`)
 })
 
 test('drop roll is a seeded LCG: identical sequences across instances', () => {

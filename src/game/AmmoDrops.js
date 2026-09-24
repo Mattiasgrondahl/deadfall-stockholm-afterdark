@@ -2,15 +2,22 @@ import * as THREE from 'three'
 
 // AmmoDrops — manages ammo drops left by killed zombies. A seeded-LCG roll
 // (~55%) spawns a drop at the corpse on each kill; the drop is either shotgun
-// SHELLS or handgun BULLETS (a second LCG roll picks the kind). The player picks
-// one up within 1.2 m to restock the matching weapon's reserve. Drops blink in
-// their last 5 s, expire at 30 s, and are capped at 20 concurrent. All RNG is a
-// seeded LCG (no Math.random); headless-safe (no DOM, audio optional).
+// SHELLS or handgun BULLETS (18/drop) (a second LCG roll picks the kind). The
+// player picks one up within 1.2 m to restock the matching weapon's reserve.
+// Drops blink in their last 5 s, expire at 30 s, and are capped at 20
+// concurrent. All RNG is a seeded LCG (no Math.random); headless-safe (no DOM,
+// audio optional).
+//
+// 10-wave ammo economy: a full run is ~217 kills needing ~1015 pistol body
+// shots. Expected income is 36 start + ~881 from drops = ~917 (~90% of need),
+// so the pistol stays the scarce weapon but survives to the wave-10 boss.
+// (At the old 12/drop the income was ~623 and the pistol ran dry around
+// wave 7-8.) Shotgun is untouched: 30 start + ~391 drops vs ~350 needed.
 
 const SEED = 1337
 export const DROP_CHANCE = 0.55
 export const SHELLS_PER_DROP = 8
-export const BULLETS_PER_DROP = 12
+export const BULLETS_PER_DROP = 18
 export const BULLET_CHANCE = 0.5 // of drops, share that are handgun bullets (else shells)
 export const PICKUP_RADIUS = 1.2
 export const LIFETIME = 30

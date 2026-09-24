@@ -1211,3 +1211,22 @@ spending a single mesh, light or point.
 - Evidence (post-review): wave 11/11, wave-pacing 6/6, boss 14/14, match 9/9;
   `npm test` 301/301 (0 fail / 0 skipped); `node tools/verify-game.mjs`
   81 ok / 0 fail / 0 skipped; `npm run build` green.
+
+## v6 gameplay (2) — ammo-drop balance (round 51)
+
+- Economy analysis first: a 10-wave run is 217 kills (Σ(5+3w) + 2 bosses)
+  needing ~1015 pistol body shots (hp×1.12^(w−1) ÷ 26). Income at 12 bullets/
+  drop was 36 + 217×0.55×0.82×0.5×12 ≈ 623 — the pistol ran dry around
+  wave 7–8, before the wave-10 boss. Shells were already fine
+  (30 + ~391 vs ~350 needed).
+- Minimum fix: `BULLETS_PER_DROP` 12 → 18 (src/game/AmmoDrops.js:20). Income
+  becomes 36 + ~881 ≈ 917 ≈ 90 % of need — the pistol stays the scarce
+  weapon but survives to the finale. `DROP_CHANCE` 0.55, `BATTERY_CHANCE`
+  0.18, `SHELLS_PER_DROP` 8, weapon reserves and the LCG are untouched;
+  pickups read the constant, so Game/Match handlers needed no change.
+- Test: `test/ammodrop.test.mjs` constant pin 12→18 + new deterministic
+  '10-wave ammo economy: pistol survives to the wave-10 boss' (income
+  ≥ 0.85×need and < need — scarce but survivable; shells ≥ 350).
+- Evidence: ammodrop 9/9, difficulty 7/7, match 9/9; `npm test` 302/302
+  (0 fail / 0 skipped); `node tools/verify-game.mjs` 81 ok / 0 fail /
+  0 skipped; `npm run build` green.
