@@ -192,9 +192,9 @@ test('brute knockback staggers barely (resist 0.35), then chase resumes', () => 
   const zAfter = zombie.position.z
   for (let i = 0; i < 30; i++) zombie.update(1 / 60, player, [zombie], collision, null)
   assert.ok(zombie.position.z > zAfter, 'chase resumes after stagger')
-  // Charge-friendly counterplay: the stagger push must stay under 0.25 m so a
-  // hit can never knock the brute out of its charge window.
-  assert.ok(Math.abs(zombie.position.z + 2) <= 0.25, `pushed ${Math.abs(zombie.position.z + 2)} m`)
+  // Charge-friendly counterplay: the stagger push itself (measured right after
+  // the KB window, before chase resumes) must stay under 0.25 m.
+  assert.ok(Math.abs(zAfter + 2) <= 0.25, `staggered ${Math.abs(zAfter + 2)} m`)
 })
 
 test('brute death: sinks, parts go DEADMAT, corpse inert', () => {
