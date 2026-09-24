@@ -369,6 +369,8 @@ export class Game {
     this.drops = new AmmoDrops(this.scene, this.audio)
     // WIRING:FLASH (V7)
     this.flashlight = new Flashlight(this.camera, this.audio)
+    // The flashlight burns breath: the player drains stamina while it is on.
+    if (this.player) this.player.flashlight = this.flashlight
     // WIRING:WAVES
     this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {

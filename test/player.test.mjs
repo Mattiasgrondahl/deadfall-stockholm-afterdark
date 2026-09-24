@@ -4,6 +4,7 @@ import assert from 'node:assert'
 import * as THREE from 'three'
 import { Player } from '../src/game/Player.js'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
+import { Flashlight } from '../src/game/Flashlight.js'
 
 const DT = 1 / 60
 
@@ -223,6 +224,65 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   st.crouch = false
   step(player, 60)
   assert.ok(camera.position.y > 1.5, `standing restores the eye (${camera.position.y.toFixed(3)})`)
+}
+
+{ // gameplay (4): the light burns breath — flashlight on drains stamina at 4/s
+  const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 1000)
+  const st = {
+    forward: false, back: false, left: false, right: false, sprint: false,
+    turnX: 0, turnY: 0, fire: false, reload: false, pause: false, flashlight: false
+  }
+  const fl = new Flashlight(camera, null)
+  const player = new Player(camera, st, new CollisionWorld(180, 180), null, fl)
+  assert.strictEqual(player.maxStamina, 100, 'HUD reads player.maxStamina')
+  fl.on = true
+  const s0 = player.stamina
+  step(player, 60) // 1 s standing still with the light on
+  const drained = s0 - player.stamina
+  assert.ok(drained > 3.5 && drained < 4.5, `light drains ~4/s (${drained.toFixed(2)})`)
+  assert.ok(player.stamina < s0, 'no regen while the light is on')
+  // Sprint still works while stamina > 5 (sprint drain semantics unchanged).
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  assert.ok(player.stamina < s0 - 4, `sprint drains on top (${player.stamina.toFixed(1)})`)
+  // Sprint precedence: sprint+light drains exactly 26/s, never 30/s (the
+  // light branch is unreachable while canSprint). Pinned from a full bar.
+  player.stamina = 100
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  const sprintDrain = 100 - player.stamina
+  assert.ok(sprintDrain > 25.5 && sprintDrain < 26.5,
+    `sprint+light drains 26/s not 30/s (${sprintDrain.toFixed(2)})`)
+  // SPRINT_MIN_STAMINA boundary: at stamina <= 5 sprint is disabled, so the
+  // light drain takes over again (4/s, not 26/s).
+  player.stamina = 4
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  const lowDrain = 4 - player.stamina
+  assert.ok(lowDrain > 3.5 && lowDrain < 4.5,
+    `stamina<=5 disables sprint, light drains 4/s (${lowDrain.toFixed(2)})`)
+  assert.strictEqual(player.stamina, 0, 'light soak from 4 clamps at 0')
+  // Light off -> normal regen at 18/s.
+  fl.on = false
+  const s1 = player.stamina
+  step(player, 60)
+  assert.ok(player.stamina > s1 + 17 && player.stamina <= 100,
+    `regen resumes when the light is off (${s1.toFixed(1)} -> ${player.stamina.toFixed(1)})`)
+  // Clamps at 0: long light-on soak never goes negative.
+  player.stamina = 2
+  fl.on = true
+  step(player, 60 * 10)
+  assert.strictEqual(player.stamina, 0, 'stamina clamps at 0')
+  fl.dispose()
+}
+
+{ // back-compat: a Player without a flashlight regenerates normally
+  const { player, st } = makePlayer()
+  assert.strictEqual(player.flashlight, null)
+  player.stamina = 50
+  step(player, 60)
+  assert.ok(player.stamina > 67 && player.stamina <= 69,
+    `regen 18/s with no flashlight (${player.stamina.toFixed(1)})`)
 }
 
 console.log('player OK')

@@ -1260,3 +1260,31 @@ spending a single mesh, light or point.
 - Evidence: zombie+boss 53/53, `npm test` 303/303 (0 fail / 0 skipped),
   `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped,
   `npm run build` green.
+
+## v6 gameplay (4) — stamina/flashlight tradeoff (round 53)
+
+- Research finding: stamina and the flashlight were fully decoupled — the
+  light neither drained nor blocked stamina regen, and HUD.js:221 read a
+  nonexistent `player.maxStamina`.
+- Minimum fix: `LIGHT_DRAIN = 4` stamina/s while the flashlight is on and
+  sprint is NOT active (Player.js:22, branch :130-137 — strict
+  if/else-if/else: sprint 26/s keeps precedence, never 30/s; light-on
+  blocks regen entirely; clamped at 0). `this.maxStamina = 100` added
+  (:59), fixing the HUD bar read. Constructor gains optional 5th arg
+  `flashlight = null` (:42); Game.js:371-373 wires
+  `player.flashlight = this.flashlight` after Flashlight creation (Player
+  is constructed earlier, so post-creation assignment; the link survives
+  reset/respawn, and flashlight.reset() means a new run starts on regen).
+  Match.js:124's 4-arg Player keeps flashlight null — server-side stamina
+  semantics unchanged.
+- Tests: test/player.test.mjs two blocks — light-on drain ~4/s standing
+  (3.5–4.5 band), light-off regen 18/s, exact clamp at 0, maxStamina===100,
+  back-compat no-flashlight regen; review fixes added sprint+light
+  precedence pin (25.5–26.5/s, proves 26 not 30) and the
+  SPRINT_MIN_STAMINA boundary case (stamina 4 ≤ 5 disables sprint → light
+  drain 4/s takes over, clamps at 0).
+- Review: ACCEPT-WITH-FIXES (no must-fix); both should-fix test pins
+  applied. Balance note: 25 s of continuous light empties a full bar while
+  a 120 s battery runs — a real light-vs-sprint tradeoff.
+- Evidence: player+flashlight green, `npm test` 303/303 (0 fail / 0
+  skipped), `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.

@@ -16,6 +16,10 @@ const ACCEL = 10            // velocity lerp factor, per second
 const STAMINA_DRAIN = 26    // per second while sprinting
 const STAMINA_REGEN = 18    // per second otherwise
 const SPRINT_MIN_STAMINA = 5
+// "The light burns breath": holding the flashlight steady costs stamina even
+// at rest, trading light for sprint endurance. Only applies when sprint is not
+// already draining (sprint semantics unchanged); light off -> normal regen.
+const LIGHT_DRAIN = 4       // per second while the flashlight is on
 const RADIUS = 0.35
 const SPAWN_X = 0, SPAWN_Y = 1.7, SPAWN_Z = 12
 // Crouch lowers the eye height from STAND_EYE to CROUCH_EYE over CROUCH_LERP
@@ -35,11 +39,12 @@ const REGEN_RATE = 1     // hp per second
 const REGEN_DELAY = 4    // s since last damage before regen resumes
 
 export class Player {
-  constructor(camera, inputState, collision, audio = null) {
+  constructor(camera, inputState, collision, audio = null, flashlight = null) {
     this.camera = camera
     this.inputState = inputState
     this.collision = collision
     this.audio = audio
+    this.flashlight = flashlight
     this.position = new THREE.Vector3(SPAWN_X, SPAWN_Y, SPAWN_Z)
     this.velocity = new THREE.Vector3()
     this.yaw = 0           // 0 = facing -Z (city center)
@@ -51,6 +56,7 @@ export class Player {
     this.health = 100
     this.maxHealth = 100
     this.stamina = 100
+    this.maxStamina = 100
     this.isDead = false
     this._bobPhase = 0
     this._bobAmp = 0
@@ -121,9 +127,13 @@ export class Player {
       this.velocity.y = 0
     }
 
-    // Stamina: drains while sprinting, regenerates otherwise.
+    // Stamina: drains while sprinting, regenerates otherwise. The flashlight
+    // burns breath too: while it is on and sprint is not active, stamina drains
+    // at LIGHT_DRAIN/s instead of regenerating (clamped at 0). Sprint drain is
+    // unchanged and takes precedence.
     const speedNow = Math.hypot(this.velocity.x, this.velocity.z)
     if (canSprint) this.stamina = Math.max(0, this.stamina - STAMINA_DRAIN * dt)
+    else if (this.flashlight && this.flashlight.on) this.stamina = Math.max(0, this.stamina - LIGHT_DRAIN * dt)
     else this.stamina = Math.min(100, this.stamina + STAMINA_REGEN * dt)
 
     // Passive health regen: after REGEN_DELAY seconds without damage, health
