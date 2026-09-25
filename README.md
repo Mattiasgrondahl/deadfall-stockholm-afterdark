@@ -48,6 +48,19 @@ node tools/e2e-browser.mjs   # real-browser E2E via Playwright Chromium (run wit
 node tools/e2e-faces.mjs     # E2E probe: face textures loaded in-browser (run with `npm run dev`)
 node tools/e2e-walk.mjs      # E2E probe: two-frame walk-cycle check (run with `npm run dev`)
 node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanGP app running on :7860)
+
+# Headless Wan2GP asset generation (no Gradio UI needed; runs the in-process
+# Wan2GP API directly, so it can use a different GPU than the live server):
+/home/mgr/Wan2GP/env_uv/bin/python tools/wangp_assets.py spec.json \
+    --visible 2 --profile 2 --out public/assets/posters
+#   spec.json = {"kind":"image"|"audio","name":...,"prompt":...,"seed":...,
+#                "resolution":...,"steps":...,"cfg":...,"duration_seconds":...,
+#                "loras":[...],"refs":[...],"mask":...,"guide":...,
+#                "custom_settings":{...},"settings":{...}}  (see tools/wangp_assets.py)
+#   --dry-run validates each task via WanGP validate_task and exits
+#   --json    machine-readable result lines
+#   kind=image -> qwen_image_21_7B (edits/inpaint) or z_image (t2i + LoRA)
+#   kind=audio -> yue2 (lyrics + style; custom_settings.save_score=1 exports .abc/.mid)
 ```
 
 > To redeploy the online version: run `npm run pages`, replace the contents of
@@ -229,10 +242,15 @@ Up to 8 players share one room over WebSockets (see `MULTIPLAYER_PLAN.md`).
 The server owns the simulation (20 Hz tick) and broadcasts 10 Hz snapshots;
 clients predict their own movement and interpolate everyone else.
 
-- **Run the server:** `npm run server` (defaults to `PORT=8080`). It serves the
-  built `dist/` over HTTP **and** the WebSocket on the same origin at `/ws`
-  (single-origin hosting). Build first with `npm run build`, or point it at a
-  dev build.
+- **Run the server:** `npm run server` (defaults to `PORT=8080`, bound to
+  `0.0.0.0`). It serves the built `dist/` over HTTP **and** the WebSocket on
+  the same origin at `/ws` (single-origin hosting). Build first with
+  `npm run build`, or point it at a dev build.
+- **Play co-op in the browser:** open the game, type a room code + name on the
+  title screen and press **JOIN CO-OP** — every client in that room shares one
+  server-run wave. Works on :8080 (built bundle, same-origin) and on the Vite
+  dev server (:5173, which proxies `/ws` to the game server; set `MP_SERVER`
+  to point the proxy at another host).
 - **Join a room:** a client opens a `WebSocket` to `ws://<host>:8080/ws`, sends
   a `hello` frame, receives a `welcome` with its assigned `pid`, then streams
   `input` frames and consumes `snap` frames. `src/net/NetClient.js` implements
