@@ -644,6 +644,29 @@ function bankWithFakeCtx() {
   assert.equal(bank2._musicEl.src, 'x2.mp3', 'no advance once the music is stopped')
   bank2.playPlaylist([], 90) // empty playlist is a no-op, keeps the last src
   assert.equal(bank2._musicEl.src, 'x2.mp3', 'empty playlist does not clear the src')
+  // v6 audio (8): per-track lengths. An array gives each song its own known
+  // end: the first song's length drives the initial watchdog, and every
+  // advance follows the new song's length so the rotation never rewinds a
+  // track at the wrong time. Scalar seconds still replicate across the list.
+  bank2.playPlaylist(['p1.mp3', 'p2.mp3', 'p3.mp3'], [100, 75, 150])
+  assert.equal(bank2._musicEl.src, 'p1.mp3', 'per-length playlist starts with the first song')
+  assert.equal(bank2._musicLen, 100, 'first song uses its own known length')
+  assert.equal(endedHandlers.length, 2, 'per-length playlist adds one ended advance handler')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'p2.mp3', 'advance to the second song')
+  assert.equal(bank2._musicLen, 75, 'watchdog follows the second song length')
+  assert.equal(bank2._musicEl.currentTime, 0, 'advance restarts from the top')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'p3.mp3', 'advance to the third song')
+  assert.equal(bank2._musicLen, 150, 'watchdog follows the third song length')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'p1.mp3', 'per-length playlist wraps to the first song')
+  assert.equal(bank2._musicLen, 100, 'wrap restores the first song length')
+  bank2.playPlaylist(['q1.mp3', 'q2.mp3'], 60) // scalar still works (legacy call)
+  assert.equal(bank2._musicLen, 60, 'scalar length applies to the first song')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'q2.mp3', 'scalar playlist advances')
+  assert.equal(bank2._musicLen, 60, 'scalar length replicates across the list')
   bank2.stopMusic()
   assert.equal(bank2._musicOn, false)
   bank2.dispose()

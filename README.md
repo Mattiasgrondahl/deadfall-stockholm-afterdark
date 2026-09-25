@@ -136,12 +136,15 @@ everything.
 
 **Power-metal playlist (mp3).** On top of the procedural layer, START also
 starts a deterministic mp3 playlist (`AudioBank.playPlaylist`): three
-power-metal songs generated locally with the Wan2GP/YuE2 workflow
-(`tools/audio-specs/df_*.json` → `public/assets/audio/song_*.mp3`) —
-**exploration**, **combat**, **crisis** — that cycle in order and repeat
-over and over. The rotation is driven by each song's known length (the same
-watchdog that fixes misreported mp3 durations), never by timers or random.
-The playlist obeys the music-mute bus (N) and the global mute (M).
+anthemic power-metal songs inspired by the Attack on Titan opening
+("Shinzou wo Sasageyo"), generated locally with the Wan2GP/YuE2 workflow
+(`tools/audio-specs/df_{javelin_sv,hord_en,matsubou_ja}.json` →
+`public/assets/audio/song_*.mp3`) — **Kasta spjutet mot natten** (Swedish),
+**Dedicate Your Hearts** (English), **心臓を捧げよ** (Japanese) — played one
+after another and looping back to the first forever. Each song's rotation is
+driven by its own known length (the same watchdog that fixes misreported mp3
+durations), never by timers or random. The playlist obeys the music-mute bus
+(N) and the global mute (M).
 
 **Autoplay.** Browsers start a fresh `AudioContext` in the *suspended* state
 until a user gesture happens; the game relies on that rule instead of fighting

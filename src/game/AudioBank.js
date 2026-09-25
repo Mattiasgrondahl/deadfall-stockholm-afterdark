@@ -1103,15 +1103,23 @@ export class AudioBank {
   /** Deterministic mp3 playlist: cycle through `urls` forever, switching to
    *  the next song when the current one reaches its known end. `urls` is a
    *  caller-resolved list (already prefixed with the asset base); `seconds`
-   *  is the known length of EACH track (same length per song). The rotation
-   *  rides the existing timeupdate watchdog: when the known-end rewind fires,
-   *  the src advances to the next song (mod length), so the 3-song set
-   *  repeats over and over. No Math.random, no timers. No-op headless. */
+   *  is either one number (the known length of EACH track, same length per
+   *  song) or a per-track array of known lengths aligned with `urls` — the
+   *  watchdog then rewinds each song at its own end. The rotation rides the
+   *  existing timeupdate watchdog: when the known-end rewind fires, the src
+   *  advances to the next song (mod length) and the watchdog length follows
+   *  it, so the set repeats over and over. No Math.random, no timers.
+   *  No-op headless. */
   playPlaylist(urls, seconds) {
     if (!Array.isArray(urls) || urls.length === 0) return
     this._plUrls = urls.slice()
+    // Per-track lengths (v6 audio 8): an array gives each song its own known
+    // end; a scalar is replicated across the list (legacy same-length call).
+    this._plLens = Array.isArray(seconds)
+      ? urls.map((_, i) => { const v = Number(seconds[i]); return Number.isFinite(v) && v > 0 ? v : 0 })
+      : urls.map(() => { const v = Number(seconds); return Number.isFinite(v) && v > 0 ? v : 0 })
     this._plIndex = 0
-    this.playMusic(urls[0], seconds)
+    this.playMusic(urls[0], this._plLens[0])
     if (this._musicEl && this._plUrls.length > 1) {
       // One shared advance handler; replace any previous one to avoid stacking.
       if (this._onPlaylistAdvance) {
@@ -1121,6 +1129,10 @@ export class AudioBank {
         if (!this._musicOn || !this._plUrls || this._plUrls.length < 2) return
         this._plIndex = (((this._plIndex || 0) + 1) % this._plUrls.length)
         const url = this._plUrls[this._plIndex]
+        // The watchdog length follows the new song so its own known end drives
+        // the next advance.
+        const len = this._plLens ? this._plLens[this._plIndex] : 0
+        if (Number.isFinite(len) && len > 0) this._musicLen = len
         if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
         try { this._musicEl.currentTime = 0 } catch (err) {}
         this._musicEl.play().catch(() => {})
@@ -1177,6 +1189,7 @@ export class AudioBank {
     this._onMusicEnded = null
     this._onPlaylistAdvance = null
     this._plUrls = null
+    this._plLens = null
     this._plIndex = 0
     this._onMusicTimeUpdate = null
     this._musicLen = 0

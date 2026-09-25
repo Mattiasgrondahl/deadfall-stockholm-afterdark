@@ -1331,3 +1331,32 @@ spending a single mesh, light or point.
 - No restart bugs found — startGame already clears every field.
 - Evidence: restart-state 3/3, `npm test` 308/308 (0 fail / 0 skipped),
   `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped.
+
+## v6 audio (8) — anime-inspired trilingual power-metal playlist (round 57)
+
+- Request: three NEW power-metal songs about killing zombies, inspired by the
+  Attack on Titan opening ("Shinzou wo Sasageyo"), one in Swedish, one in
+  English, one in Japanese — played in-game as one looping playlist
+  (song 1 → 2 → 3 → restart).
+- Generation: three YuE2 specs tools/audio-specs/df_{javelin_sv,hord_en,
+  matsubou_ja}.json (seeds 1010-1012, anime-opening style prompts, game-lyric
+  prompts: Swedish "Kasta spjutet mot natten / död eller frihet", English
+  "Dedicate your hearts / the dead are marching", Japanese "心臓を捧げよ").
+  Generated on GPU 2 via tools/wangp_assets.py (env_uv python). The Swedish
+  job needed a retry (first run hit the 3600 s score-stage timeout at 150 s
+  duration; the 180 s target completed on the second run).
+- Landing: wav → mp3 via ffmpeg (libmp3lame -q:a 2) to
+  public/assets/audio/song_{javelin_sv,hord_en,matsubou_ja}.mp3. Measured
+  durations: 180.0 / 70.9 / 86.1 s.
+- Code: AudioBank.playPlaylist now accepts per-track lengths — `seconds` may
+  be a scalar (legacy, replicated) or an array aligned with `urls`; the
+  watchdog length follows each advance (_plLens, AudioBank.js:1116-1138),
+  dispose nulls it. Game.js SONG_PLAYLIST points at the three new mp3s with
+  SONG_PLAYLIST_SECONDS = [180, 71, 86]; startGame still calls playPlaylist
+  on the START gesture. README audio section rewritten (song titles,
+  languages, AoT inspiration, per-song rotation).
+- Tests: test/audio.test.mjs playlist block extended — per-length playlist
+  pins first-song length, watchdog follows each advance (75, 150), wrap
+  restores the first length, scalar call still replicates across the list.
+- Evidence: audio suite green, `npm test` 308/308 (0 fail / 0 skipped),
+  `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped, build green.

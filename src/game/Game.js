@@ -36,16 +36,18 @@ export const LEVEL_TRACKS = [
   ASSET_BASE + 'assets/audio/soundtrack.mp3',
   ASSET_BASE + 'assets/audio/soundtrack2.mp3'
 ]
-// v6 audio (7): the shipped mp3 layer — three Wan2GP/YuE2 power-metal songs
-// generated locally (tools/audio-specs/df_*.json) and looped as one
-// deterministic playlist via AudioBank.playPlaylist. Same known length per
-// song drives the rotation; the set repeats over and over.
+// v6 audio (8): the shipped mp3 layer — three Wan2GP/YuE2 power-metal songs
+// generated locally (tools/audio-specs/df_{javelin_sv,hord_en,matsubou_ja}.json),
+// anime-opening inspired (Attack on Titan "Shinzou wo Sasageyo"): one Swedish,
+// one English, one Japanese. Played as one deterministic playlist via
+// AudioBank.playPlaylist: song 1 -> song 2 -> song 3 -> back to song 1, forever.
+// Per-track known lengths drive the rotation (each song rewinds at its own end).
 export const SONG_PLAYLIST = [
-  ASSET_BASE + 'assets/audio/song_exploration.mp3',
-  ASSET_BASE + 'assets/audio/song_combat.mp3',
-  ASSET_BASE + 'assets/audio/song_crisis.mp3'
+  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3',
+  ASSET_BASE + 'assets/audio/song_hord_en.mp3',
+  ASSET_BASE + 'assets/audio/song_matsubou_ja.mp3'
 ]
-export const SONG_PLAYLIST_SECONDS = 150
+export const SONG_PLAYLIST_SECONDS = [180, 71, 86]
 // Known true length of each track (seconds). Some browsers misreport an mp3's
 // `duration` and fire `ended` early, so the loop is driven off this explicit
 // length instead of the element's unreliable `duration`.
@@ -600,7 +602,7 @@ export class Game {
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
     if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
-    // v6 audio (7): the mp3 power-metal playlist rides the same user gesture
+    // v6 audio (8): the mp3 power-metal playlist rides the same user gesture
     // that starts the run (autoplay policy). Only when the mp3 layer is not
     // muted; headless playPlaylist is a no-op. The procedural MusicEngine
     // tracks keep playing underneath through the director.
