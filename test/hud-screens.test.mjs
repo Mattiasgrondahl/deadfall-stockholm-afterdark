@@ -41,6 +41,13 @@ function makeElement(ownerDoc, tag = 'div') {
       el.children.push(child)
       return child
     },
+    insertBefore(child, ref) {
+      if (child.parentNode) child.parentNode.children.splice(child.parentNode.children.indexOf(child), 1)
+      const i = ref ? el.children.indexOf(ref) : -1
+      child.parentNode = el
+      if (i < 0) el.children.push(child); else el.children.splice(i, 0, child)
+      return child
+    },
     removeChild(child) {
       const i = el.children.indexOf(child)
       if (i >= 0) el.children.splice(i, 1)

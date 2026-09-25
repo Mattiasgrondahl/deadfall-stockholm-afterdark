@@ -1004,6 +1004,29 @@ export class AudioBank {
 
   toggleMuted() { this.setMuted(!this.muted) }
 
+  /** One-shot spawn stinger (browser-only): plays a pre-rendered wav file
+   *  (Wan2GP-generated horror hit) through a MediaElementSource into the SFX
+   *  bus so it obeys master volume + mute. Headless-safe: no-op without a
+   *  live AudioContext. Throttled so a wave burst cannot stack voices. */
+  playSpawnStinger(url) {
+    if (!this.ctx || this.muted || typeof Audio === 'undefined') return
+    const now = (this.ctx && this.ctx.currentTime) || 0
+    if (now - (this._stingerAt || -Infinity) < 1.2) return
+    this._stingerAt = now
+    this._resume()
+    try {
+      const el = new Audio(url)
+      el.preload = 'auto'
+      const src = this.ctx.createMediaElementSource(el)
+      const g = this.ctx.createGain()
+      g.gain.value = 0.5
+      src.connect(g)
+      g.connect(this._masterIn || this.master)
+      el.play().catch(() => {})
+      el.addEventListener('ended', () => { try { src.disconnect(); g.disconnect() } catch (err) {} })
+    } catch (err) { /* unsupported: silent no-op */ }
+  }
+
   /** Load + loop the soundtrack (browser-only). `url` is the mp3 path; `seconds`
    *  is the KNOWN true track length (defaults to the element's duration). The
    *  element is routed through a MediaElementSource into a dedicated musicGain
@@ -1077,6 +1100,37 @@ export class AudioBank {
     if (this._musicEl) { try { this._musicEl.pause() } catch (err) {} }
   }
 
+  /** Deterministic mp3 playlist: cycle through `urls` forever, switching to
+   *  the next song when the current one reaches its known end. `urls` is a
+   *  caller-resolved list (already prefixed with the asset base); `seconds`
+   *  is the known length of EACH track (same length per song). The rotation
+   *  rides the existing timeupdate watchdog: when the known-end rewind fires,
+   *  the src advances to the next song (mod length), so the 3-song set
+   *  repeats over and over. No Math.random, no timers. No-op headless. */
+  playPlaylist(urls, seconds) {
+    if (!Array.isArray(urls) || urls.length === 0) return
+    this._plUrls = urls.slice()
+    this._plIndex = 0
+    this.playMusic(urls[0], seconds)
+    if (this._musicEl && this._plUrls.length > 1) {
+      // One shared advance handler; replace any previous one to avoid stacking.
+      if (this._onPlaylistAdvance) {
+        try { this._musicEl.removeEventListener('ended', this._onPlaylistAdvance) } catch (err) {}
+      }
+      this._onPlaylistAdvance = () => {
+        if (!this._musicOn || !this._plUrls || this._plUrls.length < 2) return
+        this._plIndex = (((this._plIndex || 0) + 1) % this._plUrls.length)
+        const url = this._plUrls[this._plIndex]
+        if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
+        try { this._musicEl.currentTime = 0 } catch (err) {}
+        this._musicEl.play().catch(() => {})
+      }
+      if (typeof this._musicEl.addEventListener === 'function') {
+        this._musicEl.addEventListener('ended', this._onPlaylistAdvance)
+      }
+    }
+  }
+
   /** Per-level music: pick a track for a boss-cycle (a "level" = every 5 waves)
    *  and switch to it. `urls` is a caller-resolved list of track URLs (already
    *  prefixed with the asset base); `cycle` is the 0-based boss-cycle index.
@@ -1112,6 +1166,7 @@ export class AudioBank {
     this.stopMusic()
     if (this._musicEl) {
       if (this._onMusicEnded) { try { this._musicEl.removeEventListener('ended', this._onMusicEnded) } catch (err) {} }
+      if (this._onPlaylistAdvance) { try { this._musicEl.removeEventListener('ended', this._onPlaylistAdvance) } catch (err) {} }
       if (this._onMusicTimeUpdate) { try { this._musicEl.removeEventListener('timeupdate', this._onMusicTimeUpdate) } catch (err) {} }
       try { this._musicEl.src = '' } catch (err) {}
     }
@@ -1120,6 +1175,9 @@ export class AudioBank {
     this._musicGain = null
     this._musicUrl = null
     this._onMusicEnded = null
+    this._onPlaylistAdvance = null
+    this._plUrls = null
+    this._plIndex = 0
     this._onMusicTimeUpdate = null
     this._musicLen = 0
     this._musicMuted = false

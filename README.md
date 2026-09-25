@@ -134,6 +134,15 @@ audio subsystem — never in `Game.js`. `musicState()` exposes the current
 track and playlist for tests. **N** mutes only the music; **M** mutes
 everything.
 
+**Power-metal playlist (mp3).** On top of the procedural layer, START also
+starts a deterministic mp3 playlist (`AudioBank.playPlaylist`): three
+power-metal songs generated locally with the Wan2GP/YuE2 workflow
+(`tools/audio-specs/df_*.json` → `public/assets/audio/song_*.mp3`) —
+**exploration**, **combat**, **crisis** — that cycle in order and repeat
+over and over. The rotation is driven by each song's known length (the same
+watchdog that fixes misreported mp3 durations), never by timers or random.
+The playlist obeys the music-mute bus (N) and the global mute (M).
+
 **Autoplay.** Browsers start a fresh `AudioContext` in the *suspended* state
 until a user gesture happens; the game relies on that rule instead of fighting
 it. The context is resumed lazily on the first sound call, and the first

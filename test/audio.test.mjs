@@ -621,6 +621,29 @@ function bankWithFakeCtx() {
   assert.equal(bank2._musicLen, 120, 'level track length drives the loop')
   bank2.playLevelMusic([], 0, 120) // empty list is a no-op, keeps the last src
   assert.equal(bank2._musicEl.src, 'a.mp3', 'empty track list does not clear the src')
+  // Deterministic playlist: playPlaylist starts the first song and registers
+  // one extra `ended` advance handler; firing `ended` walks the list in order
+  // and wraps (mod length) so the set repeats forever. stopMusic must gate it.
+  bank2.playPlaylist(['x1.mp3', 'x2.mp3', 'x3.mp3'], 90)
+  assert.equal(bank2._musicEl.src, 'x1.mp3', 'playlist starts with the first song')
+  assert.equal(bank2._musicLen, 90, 'playlist length drives the loop watchdog')
+  assert.equal(endedHandlers.length, 2, 'playlist adds one ended advance handler')
+  bank2._musicEl.currentTime = 89.9
+  timeHandlers[0]() // known-end rewind -> ended fires
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'x2.mp3', 'ended advances to the second song')
+  assert.equal(bank2._musicEl.currentTime, 0, 'advance restarts from the top')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'x3.mp3', 'ended advances to the third song')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'x1.mp3', 'playlist wraps back to the first song')
+  endedHandlers[1]()
+  assert.equal(bank2._musicEl.src, 'x2.mp3', 'the set repeats over and over')
+  bank2.stopMusic()
+  endedHandlers[1]() // stopped: the advance handler must be inert
+  assert.equal(bank2._musicEl.src, 'x2.mp3', 'no advance once the music is stopped')
+  bank2.playPlaylist([], 90) // empty playlist is a no-op, keeps the last src
+  assert.equal(bank2._musicEl.src, 'x2.mp3', 'empty playlist does not clear the src')
   bank2.stopMusic()
   assert.equal(bank2._musicOn, false)
   bank2.dispose()

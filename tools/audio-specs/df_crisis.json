@@ -1,0 +1,9 @@
+{
+ "kind": "audio",
+ "model_type": "yue2",
+ "duration_seconds": 180,
+ "name": "df_crisis",
+ "seed": 1002,
+ "prompt": "The last light is fading, no ammo left, scream into the storm, we die standing",
+ "style": "epic speed power metal, urgent gallop, high dramatic vocals, choir hits, triumphant desperate anthem"
+}

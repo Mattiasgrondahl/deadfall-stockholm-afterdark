@@ -82,6 +82,15 @@ export class Screens {
     joinBtn.addEventListener('click', () => this._joinCoop())
     mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(this._nameInput); mpRow.appendChild(joinBtn)
     panelT.appendChild(mpRow)
+    // Title-screen backdrop: the Wan2GP-generated alley plate sits behind the
+    // panel inside the title overlay (dimmed by the overlay's own rgba wash).
+    // Missing image is harmless — the browser just renders no background.
+    const bgUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
+      ? import.meta.env.BASE_URL.replace(/\/$/, '') + '/' : ''
+    const bg = d.createElement('div')
+    bg.className = 'title-bg'
+    bg.style.backgroundImage = `url('${bgUrl}assets/posters/menu_bg.jpg')`
+    this._title.appendChild(bg)
     this._title.appendChild(panelT)
     this._root.appendChild(this._title)
 

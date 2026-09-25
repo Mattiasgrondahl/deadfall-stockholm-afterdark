@@ -36,6 +36,16 @@ export const LEVEL_TRACKS = [
   ASSET_BASE + 'assets/audio/soundtrack.mp3',
   ASSET_BASE + 'assets/audio/soundtrack2.mp3'
 ]
+// v6 audio (7): the shipped mp3 layer — three Wan2GP/YuE2 power-metal songs
+// generated locally (tools/audio-specs/df_*.json) and looped as one
+// deterministic playlist via AudioBank.playPlaylist. Same known length per
+// song drives the rotation; the set repeats over and over.
+export const SONG_PLAYLIST = [
+  ASSET_BASE + 'assets/audio/song_exploration.mp3',
+  ASSET_BASE + 'assets/audio/song_combat.mp3',
+  ASSET_BASE + 'assets/audio/song_crisis.mp3'
+]
+export const SONG_PLAYLIST_SECONDS = 150
 // Known true length of each track (seconds). Some browsers misreport an mp3's
 // `duration` and fire `ended` early, so the loop is driven off this explicit
 // length instead of the element's unreliable `duration`.
@@ -590,6 +600,11 @@ export class Game {
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
     if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
+    // v6 audio (7): the mp3 power-metal playlist rides the same user gesture
+    // that starts the run (autoplay policy). Only when the mp3 layer is not
+    // muted; headless playPlaylist is a no-op. The procedural MusicEngine
+    // tracks keep playing underneath through the director.
+    if (this.audio && !this.audio._musicMuted) this.audio.playPlaylist(SONG_PLAYLIST, SONG_PLAYLIST_SECONDS)
     // Fresh run: the director resets and starts the opening ambient track.
     if (this.musicDirector) this.musicDirector.reset()
     if (this.screens) this.screens.showGameplay()
@@ -793,7 +808,29 @@ export class Game {
     this.zombies.push(zombie)
     // The wave-5 boss owns the HUD boss bar for as long as it is alive.
     if (zombie.isBoss) this._boss = zombie
+    // Wan2GP spawn stinger: one horror hit per 1.2 s window (AudioBank
+    // throttles too), so a wave burst fires it once, not per zombie. Boss
+    // spawns always get their own hit. Headless/muted: silent no-op.
+    if (this.audio && (zombie.isBoss || !this._stingerRecent())) {
+      this._stingerAt = this._now()
+      this.audio.playSpawnStinger(ASSET_BASE + 'assets/audio/spawn_stinger.wav')
+    }
     return zombie
+  }
+
+  /** True when the last spawn stinger is still inside its 1.2 s throttle
+   *  window (mirrors AudioBank.playSpawnStinger's own guard). */
+  _stingerRecent() {
+    return this._stingerAt !== undefined && (this._now() - this._stingerAt) < 1.2
+  }
+
+  /** Seconds clock for the stinger throttle: AudioContext time when live,
+   *  performance.now fallback, 0 headless (stinger is a no-op there anyway). */
+  _now() {
+    const ctx = this.audio && this.audio.ctx
+    if (ctx && Number.isFinite(ctx.currentTime)) return ctx.currentTime
+    if (typeof performance !== 'undefined') return performance.now() / 1000
+    return 0
   }
 
   /**

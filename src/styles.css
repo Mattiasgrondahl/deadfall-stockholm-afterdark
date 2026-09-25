@@ -454,9 +454,23 @@ html, body {
   pointer-events: auto;
 }
 .screen.visible { display: flex; animation: screen-in 0.25s ease-out; }
+/* Title-screen alley backdrop (Wan2GP plate): absolute so it never joins the
+   flex layout, darkly washed by the overlay's own rgba background above. */
+.title-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+}
 @keyframes screen-in { from { opacity: 0; } to { opacity: 1; } }
 
 .panel {
+  position: relative;
+  z-index: 1;
   background: var(--panel);
   border: 1px solid var(--panel-edge);
   padding: 42px 56px;
