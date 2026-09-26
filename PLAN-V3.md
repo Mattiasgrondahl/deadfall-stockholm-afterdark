@@ -14,15 +14,16 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
 - [ ] **T1 Zombie dismemberment chain** (Zombie.js + test/dismember.test.mjs)
   Body shot 1 → left arm lost; shot 2 → right arm; shot 3 → one leg lost +
   speed × 0.5; shot 4 → dies, drops dead on the ground. Headshot kills
-  instantly at any stage. Per-zombie body-shot counter; limbs are detached
-  clones that tumble (LCG) and settle on the ground; reuse shared geometry;
-  respect S8 mesh gate (≤ 640); coordinate with decap-head pool (fatal body
-  shots must not double-kill).
+  instantly at any stage. User decision: applies in **all difficulties,
+  counted by hits (not damage)** — in FRENZY/Nightmare the flat-50-HP kill
+  (2 body shots) simply ends the chain early after the first arm. Per-zombie
+  body-shot counter; limbs are detached clones that tumble (LCG) and settle
+  on the ground; reuse shared geometry; respect S8 mesh gate (≤ 640);
+  coordinate with decap-head pool (fatal body shots must not double-kill).
 
-- [ ] **T2 Pistol semi-auto + 12-round mag** (Weapon.js, test/pistol.test.mjs)
-  Magazine 12 before reload (README claims 12/36 — match code to it);
-  semi-auto: shots fire in quick succession with no inter-shot delay
-  (pistol-only removal of the burst gate).
+- [ ] **T2 Pistol semi-auto + 12-round mag** (Pistol.js, test/pistol.test.mjs)
+  MAG=12 already ships; task = kill the FIRE_INTERVAL 0.28 s gate (or cut to
+  ≤ 0.1 s) so quick clicks fire in true succession; keep reload + reserve 36.
 
 - [ ] **T3 Melee faster + longer reach + overhead diagonal swing**
   (Axe.js, Sword.js + their tests): shorter swing recovery, longer reach,
@@ -31,14 +32,21 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
 - [ ] **T4 Crouch keybind → Left Ctrl** (Input.js; keep KeyC alias; README
   controls table update).
 
-- [ ] **T5 Difficulty modes: FRENZY default + NIGHTMARE** (Screens.js title
-  toggle, Game.js WIRING region, WaveManager, test/difficulty.test.mjs):
-  Nightmare = zombie speed × 1.5 and the run starts at wave 3.
+- [ ] **T5 Difficulty: FRENZY default + NIGHTMARE add-on** (Screens.js title
+  toggles, Game.js WIRING region, Zombie.js DIFFICULTY table, WaveManager,
+  test/difficulty.test.mjs). User decision: Nightmare **stacks on FRENZY** —
+  FRENZY stays the default mode; Nightmare is an extra toggle on top:
+  zombie speed × 1.5 on top of FRENZY's 2× (3× total), run starts at wave 3,
+  and it keeps FRENZY's flat-50-HP rule. Nightmare requires FRENZY (enabling
+  it turns FRENZY on; turning FRENZY off turns Nightmare off).
 
 - [ ] **T6 Player name for standard games + named high score, XSS-safe**
   (Screens.js input, Score.js, server /api/highscore payload {best, name}):
   sanitize (strip control chars, clamp ~24 chars, HTML-escape), render via
-  textContent only. Title HIGH SCORE line shows `NAME — SCORE`. Test with an
+  textContent only. Title HIGH SCORE line shows `NAME — SCORE`. User
+  decision: the name IS hosted — server stores {best, name} so every visitor
+  sees the record holder's name; server-side re-validation (clamp + strip)
+  keeps a hostile POST from poisoning the shared record. Test with an
   `<img src=x onerror=...>` payload producing zero markup nodes.
   - **T6b Co-op lobby field descriptions** (Screens.js title CO-OP row):
     the room-code field (currently placeholder "room code", default value
@@ -57,9 +65,9 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   confirm playPlaylist rotates javelin→hord→matsubou in browser; remove any
   leftover single-track loop path; README wording.
 
-- [ ] **T9 Co-op zombie swarm targeting** (steering reads nearest live
-  player from Match/WorldCore; single-player path unchanged; headless 2-
-  player test).
+- [ ] **T9 Co-op zombie swarm targeting** (steering reads nearest **living**
+  player from Match/WorldCore — dead/respawning players are ignored until
+  respawn; single-player path unchanged; headless 2-player test).
 
 - [ ] **T10 Co-op zombie visual parity** — same skinned GLB + faces as
   single-player (fix any fallback path in the co-op spawn); grounded feet,
@@ -71,9 +79,10 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
 
 - [ ] **T12 Achievements** (new src/game/Achievements.js < 350 lines +
   test/achievements.test.mjs): kills 10/20/50/100; lamps shot 10/20/30/40/50;
-  headshots 25/50/75/100; waves survived 5/10/15/20/25/30; bosses killed
+  headshots 25/50/75/100; waves survived 5/10/15/20/25/30 (**per-run waves
+  cleared** — restart resets progress, per user decision); bosses killed
   1/5/10/15/20/25/30. Event hooks + Screens banner toast + localStorage
-  persistence.
+  persistence (unlocked set survives restarts; per-run counters do not).
 
 - [ ] **T13 Snow ground + footprints** (ground texture swap or snow blend;
   footprint decal pool for player + zombies, fading, budget-checked).
