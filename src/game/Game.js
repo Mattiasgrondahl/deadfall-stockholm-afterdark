@@ -111,7 +111,11 @@ export class Game {
     // Difficulty preset (see DIFFICULTY in Zombie.js): 'normal' is the
     // shipped baseline; 'frenzy' = 2x zombie speed + flat 50 HP (2-shot kill
     // unless headshot). Screens can reassign it on the title screen.
-    this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal'
+    // v3 difficulty (1): FRENZY is the DEFAULT mode (user request), and
+    // 'nightmare' stacks on top of it (3x speed, same flat HP, run starts at
+    // wave 3). Tests/tools that construct Game without opts.difficulty now
+    // get frenzy — pass { difficulty: 'normal' } for the old baseline.
+    this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'frenzy'
     this._lastTime = -1
 
     this.renderer = this.headless ? new StubRenderer() : null
@@ -412,7 +416,7 @@ export class Game {
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
       onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
       onBossSpawn: () => { if (this.screens) this.screens.showBanner('THE BRUTE') }
-    })
+    }, { startWave: DIFFICULTY[this.difficulty]?.startWave ?? 1 })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
     // Hosted high score: seed the stored best from the backend so a fresh
@@ -615,7 +619,11 @@ export class Game {
     // Fresh run: the director resets and starts the opening ambient track.
     if (this.musicDirector) this.musicDirector.reset()
     if (this.screens) this.screens.showGameplay()
-    if (this.difficulty !== 'normal' && this.screens) {
+    // v3 difficulty (1): the banner follows the selected preset — frenzy is
+    // the default, nightmare adds its own start-wave line.
+    if (this.difficulty === 'nightmare' && this.screens) {
+      this.screens.showBanner('NIGHTMARE — 3× speed, flat 50 HP; the run starts at wave 3')
+    } else if (this.difficulty === 'frenzy' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')
     }
   }

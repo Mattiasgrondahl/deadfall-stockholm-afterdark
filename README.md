@@ -115,8 +115,10 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
 - Sprint burns stamina fast and refills when you stop; standing still with the
   flashlight on drains it slowly, so light and endurance trade off.
 - Blood sprays from every hit.
-- The title screen offers a **FRENZY** difficulty toggle: zombies run 2×
-  faster and bodies take two pistol shots unless you land a headshot.
+- The title screen offers a difficulty row: **FRENZY** is the default
+  (zombies run 2× faster and bodies take two pistol shots unless you land a
+  headshot), **NIGHT** is the old baseline, and **NIGHTMARE** stacks on top
+  of frenzy — 3× speed, same flat-50-HP bodies, and the run starts at wave 3.
 - When your health hits zero, the run ends — your score and wave are shown on
   the game-over screen — restart and go again.
 

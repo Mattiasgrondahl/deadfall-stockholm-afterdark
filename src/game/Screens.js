@@ -56,17 +56,21 @@ export class Screens {
     const settingsBtn = d.createElement('button'); settingsBtn.className = 'btn'; settingsBtn.textContent = 'SETTINGS'
     settingsBtn.addEventListener('click', () => this.showSettings())
     panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs)
-    // Difficulty picker (radio-style toggles): NIGHT is the baseline;
-    // FRENZY = 2× zombie speed + flat 50 HP (2 body shots or 1 headshot).
-    // The choice is stored on the game and applied to every spawned zombie.
+    // v3 difficulty (1): FRENZY is the DEFAULT mode (2× speed + flat 50 HP);
+    // NIGHT is the old baseline; NIGHTMARE stacks on frenzy (3× speed, same
+    // flat HP, run starts at wave 3) — enabling it turns frenzy on, and
+    // turning frenzy off drops nightmare back to normal. The choice is
+    // stored on the game and applied to every spawned zombie.
     const diffRow = d.createElement('div'); diffRow.className = 'difficulty-row'
     const diffLabel = d.createElement('div'); diffLabel.className = 'difficulty-label'; diffLabel.textContent = 'DIFFICULTY'
-    this._nightBtn = d.createElement('button'); this._nightBtn.className = 'toggle on'; this._nightBtn.textContent = 'NIGHT'
-    this._frenzyBtn = d.createElement('button'); this._frenzyBtn.className = 'toggle'; this._frenzyBtn.textContent = 'FRENZY'
-    const frenzyHint = d.createElement('div'); frenzyHint.className = 'tagline dim'; frenzyHint.textContent = 'FRENZY: they run 2× faster — 2 shots to kill unless you headshot'
+    this._nightBtn = d.createElement('button'); this._nightBtn.className = 'toggle'; this._nightBtn.textContent = 'NIGHT'
+    this._frenzyBtn = d.createElement('button'); this._frenzyBtn.className = 'toggle on'; this._frenzyBtn.textContent = 'FRENZY'
+    this._nightmareBtn = d.createElement('button'); this._nightmareBtn.className = 'toggle'; this._nightmareBtn.textContent = 'NIGHTMARE'
+    const frenzyHint = d.createElement('div'); frenzyHint.className = 'tagline dim'; frenzyHint.textContent = 'FRENZY (default): 2× faster — 2 shots to kill unless you headshot. NIGHTMARE: 3× faster + starts at wave 3'
     this._nightBtn.addEventListener('click', () => this._setDifficulty('normal'))
     this._frenzyBtn.addEventListener('click', () => this._setDifficulty('frenzy'))
-    diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn)
+    this._nightmareBtn.addEventListener('click', () => this._setDifficulty('nightmare'))
+    diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
     panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn); panelT.appendChild(startBtn)
     // CO-OP: a room code + display name join the server-authoritative room.
@@ -328,12 +332,17 @@ export class Screens {
   }
 
   // Title-screen difficulty selection: sets the game preset and the active
-  // toggle. START/Enter then begin with the selected difficulty, and a
+  // toggles. START/Enter then begin with the selected difficulty, and a
   // game-over restart keeps it (startGame re-rolls the same difficulty).
+  // v3 difficulty (1): NIGHTMARE stacks on FRENZY — the DIFFICULTY preset
+  // itself carries the 3× speed + wave-3 start, so "nightmare on" is just
+  // difficulty === 'nightmare'; the frenzy toggle lights up alongside it.
+  // Clicking FRENZY downgrades nightmare to plain frenzy; NIGHT resets.
   _setDifficulty(name) {
     this._game.difficulty = name
     this._nightBtn.classList.toggle('on', name === 'normal')
-    this._frenzyBtn.classList.toggle('on', name === 'frenzy')
+    this._frenzyBtn.classList.toggle('on', name === 'frenzy' || name === 'nightmare')
+    this._nightmareBtn.classList.toggle('on', name === 'nightmare')
   }
 
   /** JOIN CO-OP: read the room code + name from the title inputs and start a

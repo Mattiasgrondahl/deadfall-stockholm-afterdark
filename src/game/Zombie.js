@@ -91,9 +91,13 @@ const CHARGE_TIME = 0.55
 // that at wave 1 exactly 2 body shots (pistol 26+26, axe 25+25) or 1 headshot
 // (pistol 52, axe 50, sword 90) kill it. The usual 1.12×/wave HP scaling
 // still applies on top.
+// v3 difficulty (1): 'nightmare' STACKS on frenzy (user decision) — 2× × 1.5
+// = 3× zombie speed, same flat-50-HP rule, and the run starts at wave 3
+// (startWave). It requires frenzy; the title toggle enforces that pairing.
 export const DIFFICULTY = {
-  normal: { speedMult: 1, hpBase: null },
-  frenzy: { speedMult: 2, hpBase: 50 }
+  normal: { speedMult: 1, hpBase: null, startWave: 1 },
+  frenzy: { speedMult: 2, hpBase: 50, startWave: 1 },
+  nightmare: { speedMult: 3, hpBase: 50, startWave: 3 }
 }
 
 const ORDER = ['walker', 'shambler', 'screamer', 'brute']

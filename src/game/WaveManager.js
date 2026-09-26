@@ -100,12 +100,15 @@ export class WaveManager {
    * @param audio       audio bank or null (headless); calls null-guarded
    * @param callbacks   { onWaveStart(w), onWaveCleared(w), spawnZombie(type, x, z),
    *                      onBossIncoming(w), onBossSpawn(w) } (last two optional)
+   * @param opts        { startWave } — the wave reset() restarts from
+   *                      (v3 difficulty: nightmare starts at wave 3; default 1)
    */
-  constructor(scene, spawnPoints, collision, audio, callbacks = {}) {
+  constructor(scene, spawnPoints, collision, audio, callbacks = {}, opts = {}) {
     this.scene = scene
     this.spawnPoints = spawnPoints
     this.audio = audio
     this.cb = callbacks
+    this.startWave = Number.isFinite(opts.startWave) && opts.startWave >= 1 ? Math.floor(opts.startWave) : 1
     this.wave = 0
     this.spawned = 0
     this.killed = 0
@@ -145,9 +148,9 @@ export class WaveManager {
     return this.total - this.killed + (this._bossPending || this._bossSpawned ? 1 : 0)
   }
 
-  /** Start (or restart) wave 1. */
+  /** Start (or restart) at the configured start wave (v3: nightmare = 3). */
   reset() {
-    this.wave = 1
+    this.wave = this.startWave
     this.spawned = 0
     this.killed = 0
     this.timer = 0
@@ -157,13 +160,14 @@ export class WaveManager {
     this._bossPending = false
     this._bossTimer = 0
     this._bossSpawned = false
-    this.queue = this.buildQueue(1)
-    // v6 gameplay (1): wave 1 keeps the pinned opening — timer 0 means the
-    // first zombie lands on the 0.05 s frame (match.test pins 0.05/0.75/1.45/
-    // 2.15/2.85), and every later spawn follows the wave-1 0.7 s cadence.
+    this.queue = this.buildQueue(this.startWave)
+    // v6 gameplay (1): the opening wave keeps the pinned cadence — timer 0
+    // means the first zombie lands on the 0.05 s frame (match.test pins
+    // 0.05/0.75/1.45/2.15/2.85), and every later spawn follows the wave's
+    // own cadence.
     this.timer = 0
-    this.cb.onWaveStart?.(1)
-    this.audio?.playWave?.(1)
+    this.cb.onWaveStart?.(this.startWave)
+    this.audio?.playWave?.(this.startWave)
   }
 
   /**

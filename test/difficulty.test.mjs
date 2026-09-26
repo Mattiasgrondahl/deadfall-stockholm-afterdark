@@ -30,8 +30,11 @@ function makeZombie(type, x, z, wave = 1, difficulty = 'normal') {
 }
 
 test('DIFFICULTY presets: normal is identity, frenzy doubles speed and flattens HP to 50', () => {
-  assert.deepEqual(DIFFICULTY.normal, { speedMult: 1, hpBase: null })
-  assert.deepEqual(DIFFICULTY.frenzy, { speedMult: 2, hpBase: 50 })
+  assert.deepEqual(DIFFICULTY.normal, { speedMult: 1, hpBase: null, startWave: 1 })
+  assert.deepEqual(DIFFICULTY.frenzy, { speedMult: 2, hpBase: 50, startWave: 1 })
+  // v3 difficulty (1): nightmare stacks on frenzy — 3x speed, same flat HP,
+  // and the run opens at wave 3.
+  assert.deepEqual(DIFFICULTY.nightmare, { speedMult: 3, hpBase: 50, startWave: 3 })
 })
 
 test('normal zombies are unchanged: speed and HP come straight from TABLE', () => {
@@ -121,15 +124,36 @@ test('headless Game spawns frenzy zombies when started with difficulty frenzy', 
     assert.equal(z.maxHealth, Math.round(50 * Math.pow(1.12, wave - 1)), `${z.type} flat hp at wave ${wave}`)
   }
 
-  // Control: a default Game spawns baseline stats.
-  const g2 = new Game({ headless: true })
+  // Control: an explicit normal Game spawns baseline stats (v3: the DEFAULT
+  // is frenzy now — see the next test).
+  const g2 = new Game({ headless: true, difficulty: 'normal' })
   g2.start()
   g2.startGame()
   for (let i = 0; i < 1800 && g2.debug.zombiesAlive() === 0; i++) g2.step(1 / 60)
   assert.ok(g2.debug.zombiesAlive() > 0, 'control game spawned zombies')
   const wave2 = g2.waveManager.wave
+  assert.equal(wave2, 1, 'normal opens at wave 1')
   for (const z of g2.zombies) {
     assert.equal(z.speed, TABLE[z.type].speed, `${z.type} baseline speed in game`)
     assert.equal(z.maxHealth, Math.round(TABLE[z.type].hp * Math.pow(1.12, wave2 - 1)), `${z.type} baseline hp at wave ${wave2}`)
+  }
+})
+
+test('v3: a default Game is FRENZY, and nightmare opens the run at wave 3', () => {
+  const g = new Game({ headless: true })
+  assert.equal(g.difficulty, 'frenzy', 'frenzy is the shipped default now')
+  g.start()
+  g.startGame()
+  assert.equal(g.waveManager.wave, 1, 'frenzy still opens at wave 1')
+
+  const n = new Game({ headless: true, difficulty: 'nightmare' })
+  n.start()
+  n.startGame()
+  assert.equal(n.waveManager.wave, 3, 'nightmare opens at wave 3')
+  for (let i = 0; i < 1800 && n.debug.zombiesAlive() === 0; i++) n.step(1 / 60)
+  assert.ok(n.debug.zombiesAlive() > 0, 'nightmare spawned zombies')
+  for (const z of n.zombies) {
+    assert.equal(z.speed, 3 * TABLE[z.type].speed, `${z.type} nightmare speed`)
+    assert.equal(z.maxHealth, Math.round(50 * Math.pow(1.12, 3 - 1)), `${z.type} flat hp at wave 3`)
   }
 })
