@@ -1,0 +1,14 @@
+{
+  "kind": "image",
+  "name": "screamer-face-v2",
+  "prompt": "Photoreal close-up portrait of a undead Swedish street screamer: grey-green necrotic skin, mouth locked wide in a silent scream, blackened gums, milky white eyes, dark wet hair, faint blood on the chin, expression of pure rage. Front-facing head-and-shoulders portrait, even soft frontal lighting, dark neutral background, no text, no watermark.",
+  "alt_prompt": "zombie horror portrait, necrotic skin detail, wet eyes, cinematic realism, no text",
+  "seed": 20260927,
+  "resolution": "960x960",
+  "steps": 40,
+  "cfg": 4.0,
+  "loras": [
+    "/home/mgr/Wan2GP/loras/z_image/mattias_1024_z_2.safetensors"
+  ],
+  "model_type": "z_image"
+}
