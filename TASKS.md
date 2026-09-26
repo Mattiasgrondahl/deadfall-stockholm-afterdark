@@ -45,6 +45,15 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
+- **Current (Sep 26, branch `v2` @ `bd37587`)**: v6 audio (8) trilingual playlist
+  and v6 tooling (1) agent-capability upgrade are committed; **v6 tooling (2)
+  agent-guidance + RAG correctness pass** landed (see the tooling section at the
+  end of this file). Baseline re-verified this round: **npm test 308/308,
+  verify-game 81 ok / 0 fail / 0 skipped, build green, check-assets 34/0,
+  secrets-scan clean, RAG index 144 files / 411 chunks.**
+  Awaiting user: gh-pages redeploy of `e915b19`+ (live bundle still predates the
+  new playlist), `.research/assets-candidates/` review (poster_v2 / menu_bg /
+  stinger), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
 
 ## v3 tasks
 1. **Per-type face textures + procedural walk cycle** — DONE (commit `079572b`).
@@ -1683,3 +1692,64 @@ the original; state below is recovered from git history + probe evidence.
     agent-nav section now lists all three indexes.
   Evidence: npm test 308/308, verify 81 ok/0/0, build green, check-assets
   34/0, secrets-scan clean, rag hits verified.
+
+- **v6 tooling (2) — agent-guidance + RAG correctness pass DONE (user request)**:
+  Audited AGENTS.md / docs/ARCHITECTURE.md / README.md against the code and
+  fixed the drift, then fixed two real bugs in the RAG index.
+  - **RAG is implemented and now actually works incrementally.**
+    `tools/rag-index.mjs` crashed on every second run (`TypeError` at the
+    reuse path: `prev.chunks` is a FLAT array, so `chunksByFile.get(rel)`
+    returned one chunk object instead of a list) — the index had only ever
+    been built with `--force`. Fixed by grouping prev.chunks by file before
+    the reuse lookup; rebuild is now incremental + idempotent (144 files /
+    411 chunks; second run reuses 144, rebuilds 0).
+  - Coverage widened: `LOOSE_FILES` now includes `AGENTS.md`, `index.html`,
+    `vite.config.js` (previously unsearchable). Long markdown sections are
+    force-split every 270 lines so TASKS.md/CHANGELOG chunks stop being
+    unscoreable 650-line blobs.
+  - `docs/ARCHITECTURE.md`: budgets restated against the S8 truth
+    (meshes ≤ 640 / lights ≤ 40 / points ≤ 2500 / zombies ≤ 24 — the old
+    "≤ 12 lights, ~500 meshes" predated the co-op avatars, lamps and blood);
+    `test/verify-game.mjs` → `tools/verify-game.mjs` (4 stale paths); the
+    "no working browser" rule replaced with the real constraint (browser
+    checks run on :5173, not base-pathed :4173 preview).
+  - `AGENTS.md`: 350-line rule scoped to NEW files (Zombie.js 1315,
+    AudioBank.js 1239, Game.js 927, cityDressing.js 749 already exceed it);
+    new "TASKS.md protocol" section (read via RAG not whole, update-in-place,
+    keep Status overview current, evidence belongs in docs/.research);
+    index-selection rule of thumb (identifier→graft, how/why→zg, prose→RAG);
+    `.hermes/` + `docs/spec-*.md` added to Layout.
+  - README: layout line no longer claims verify-game lives in `test/`; RAG
+    blurb documents `--filter`/`--json` and idempotent rebuilds.
+  Evidence: npm test 308/308, verify 81 ok/0/0, build green, check-assets
+  34/0, secrets-scan clean 196 files; rag-query verified on AGENTS.md hard
+  rules, gh-pages deploy, flashlight/stamina; exit codes 0/3/2 confirmed.
+
+- **v6 visuals (11) — Wan2GP image pass: poster restore + screamer face v2 DONE
+  (user request: improve visuals via Wan2GP generate/edit)**:
+  - New reusable spec dir `tools/image-specs/` (image counterpart of
+    audio-specs). Note: wangp_assets.py reads `model_type`, NOT `model`
+    (default qwen_image_21_7B); z_image + mattias LoRA needs
+    `"model_type": "z_image"`.
+  - `v2_poster_v3.json` — qwen_image_21_7B **edit** (refs → image_mode 3) of
+    the shipped wanted poster: restore contrast/sharpness, kill JPEG smearing,
+    keep layout + Swedish text. Result: portrait + "EJ LÄNGRE I FART" now
+    legible at gameplay distance; shipped as public/assets/posters/poster.jpg
+    (old kept at .research/poster_before.jpg).
+  - `v2_screamer_face.json` — z_image + mattias LoRA t2i: open-mouth screamer
+    portrait (the old face was a closed-mouth snarl that betrayed the type at
+    range). Wired by filename swap (Zombie.js loads faces/{type}-face.jpg by
+    pattern; check-assets pins the pattern) →
+    public/assets/faces/screamer-face.jpg.
+  - Verified in-browser: inspect-zombie screamer render shows the open scream;
+    e2e-faces PASS, e2e-face-diff PASS, e2e-browser 18/18, look-metrics
+    unchanged bands (no bloom-cut regressions), npm test 308/308, verify
+    81/0/0, build green, check-assets 34/0, secrets-scan clean.
+  - NOTE: inspect-zombie/e2e tools need PLAYWRIGHT_BROWSERS_PATH=$PWD/.browsers
+    (the hardcoded executablePath fallback misses; AGENT-ASSET-PIPELINE should
+    add the env var to every invocation).
+  - NEXT (queued image ideas, see this round's analysis): photoreal facade
+    512x512 tile (hero facades are the biggest flat spot), wet-asphalt tile
+    v2 (current one has a baked-in round puddle ring — bad for 30x30 repeat),
+    shotgun viewmodel skin (only weapon without one), muzzle-flash sprite v2,
+    ground-grass corner patch, per-type face variants 2/3 refresh.
