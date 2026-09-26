@@ -61,9 +61,11 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   public/assets/sky/moon.jpg; texture-mapped disc, lower elevation, bigger.
   Before/after via tools/look-capture.mjs + look-metrics.
 
-- [ ] **T8 Playlist rotation — verify** (likely DONE by v6 audio (8)):
-  confirm playPlaylist rotates javelin→hord→matsubou in browser; remove any
-  leftover single-track loop path; README wording.
+- [x] **T8 Playlist rotation — VERIFIED DONE** (v6 audio (8) shipped it):
+  browser check confirms playPlaylist rotates javelin→hord→matsubou with
+  per-song lengths and wraps back to song 1; no leftover single-track loop
+  callers (playLevelMusic has no call sites; LEVEL_TRACKS kept for the
+  AudioBank API only). README already describes the playlist.
 
 - [ ] **T9 Co-op zombie swarm targeting** (steering reads nearest **living**
   player from Match/WorldCore — dead/respawning players are ignored until
