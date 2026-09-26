@@ -363,6 +363,24 @@ function makeGame(doc, hud) {
 }
 
 {
+  // Hosted high score: the title label follows the async GET /api/highscore
+  // result through Score's _onBestChange hook, and dispose reverses the hook.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  game.score = { best: 100, _onBestChange: null }
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  assert.strictEqual(find(title, 'highscore').textContent, 'HIGH SCORE: 100')
+  game.score.best = 900
+  game.score._onBestChange()
+  assert.strictEqual(find(title, 'highscore').textContent, 'HIGH SCORE: 900', 'late hosted best refreshes the label')
+  screens.dispose()
+  assert.strictEqual(game.score._onBestChange, null, 'dispose clears the callback')
+}
+
+{
   // V5P-2: directional damage edge glow + amount-scaled vignette
   const { hudRoot, fxRoot } = makeHUDWorld()
   const hud = new HUD(hudRoot, fxRoot)

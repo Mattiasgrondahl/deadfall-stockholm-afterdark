@@ -117,7 +117,9 @@ export class Game {
     this.renderer = this.headless ? new StubRenderer() : null
     this.env = this.headless
       ? { document: null, window: null, canvasFactory: fakeCanvasFactory }
-      : { document: document, window: window, canvasFactory: () => document.createElement('canvas') }
+      // localStorage rides along so Score persists the high score through the
+      // env (its documented contract) instead of reaching for window globals.
+      : { document: document, window: window, localStorage: window.localStorage, canvasFactory: () => document.createElement('canvas') }
 
     // Reduced motion: default the setting from the OS media query (browser
     // only; headless keeps the default false).
@@ -413,6 +415,9 @@ export class Game {
     })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
+    // Hosted high score: seed the stored best from the backend so a fresh
+    // browser still shows the global record (best-effort; silent offline).
+    if (!this.headless) this.score.adoptBest()
     // WIRING:BLOOD (V10) — every weapon sprays blood
     this.blood = new Blood(this.scene)
     // WIRING:BULLETHOLES — gun shots that hit a wall leave a scorch decal.
@@ -689,7 +694,10 @@ export class Game {
     this.setState(GameState.GAMEOVER)
     if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
     if (this.audio) this.audio.stopAmbient()
+    // Commit the record locally, then mirror it to the hosted backend
+    // (POST /api/highscore) — fire-and-forget, never blocks the game-over UI.
     const record = this.score ? this.score.newRecord() : false
+    if (this.score && record) this.score.submitBest()
     if (this.screens) this.screens.showGameOver({
       wave: this.waveManager ? this.waveManager.wave : 0,
       kills: this.kills,

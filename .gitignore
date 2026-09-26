@@ -45,3 +45,6 @@ docs/spec-*.md
 /ckpts/
 /outputs/
 /.baseline-head/
+
+# hosted high-score store (production host runtime state)
+server/highscore.json

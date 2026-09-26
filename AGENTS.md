@@ -44,6 +44,9 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
 - `src/world/` — City, Lighting, Sky, snow, cityDressing (LCG city layout).
 - `src/net/` — NetClient, Multiplayer, Match, WorldCore, protocol.
 - `server/server.js` — authoritative ws room server (`npm run server`, PORT=8080).
+  Also hosts the game over HTTP (`DIST_DIR` overrides the web root) and the
+  hosted high score at `GET`/`POST /api/highscore` (persisted to git-ignored
+  `server/highscore.json`; `HIGHSCORE_FILE` overrides).
 - `public/assets/` — all shipped binary assets (audio, faces, outfits,
   weapons, zombies/GLB, posters, facades, ground, ground).
 - `test/` — `node --test` suite (auto-discovered; 308 tests green at the time

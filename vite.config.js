@@ -15,6 +15,11 @@ export default defineConfig({
         ws: true,
         rewrite: (p) => p.split('?')[0],
       },
+      // Hosted high score lives on the same game server; proxy it too so the
+      // dev page (Score._apiBase -> location.origin) reaches :8080.
+      '/api/highscore': {
+        target: process.env.MP_SERVER || 'http://127.0.0.1:8080',
+      },
     },
   },
   preview: { port: 4173, host: true },

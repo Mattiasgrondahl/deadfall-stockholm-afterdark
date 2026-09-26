@@ -358,6 +358,16 @@ export class Screens {
     this._hideAll()
     if (this._game.score) this._highScoreText.textContent = 'HIGH SCORE: ' + this._game.score.best
     this._title.classList.add('visible')
+    // The hosted best may land after boot (GET /api/highscore is async) —
+    // refresh the label when it does, without ever lowering what is shown.
+    if (this._game.score && !this._hsRefresh) {
+      this._hsRefresh = () => {
+        if (this._game.score && this._highScoreText.textContent !== 'HIGH SCORE: ' + this._game.score.best) {
+          this._highScoreText.textContent = 'HIGH SCORE: ' + this._game.score.best
+        }
+      }
+      this._game.score._onBestChange = this._hsRefresh
+    }
   }
 
   showPause() { this._hideAll(); this._pause.classList.add('visible') }
@@ -422,6 +432,12 @@ export class Screens {
       this._doc.removeEventListener('keydown', this._keyFn)
     }
     if (typeof this._game.offStateChange === 'function') this._game.offStateChange(this._stateFn)
+    // Reverse the hosted-high-score hook: the callback lives on Score, so
+    // dispose must remove it too (the listener is owned by Screens).
+    if (this._game.score && this._game.score._onBestChange === this._hsRefresh) {
+      this._game.score._onBestChange = null
+    }
+    this._hsRefresh = null
     if (this._bannerTimer) clearTimeout(this._bannerTimer)
     while (this._root.firstChild) this._root.removeChild(this._root.firstChild)
   }

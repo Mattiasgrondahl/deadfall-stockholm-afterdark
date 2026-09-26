@@ -25,7 +25,53 @@ import {
 } from '../src/net/protocol.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DIST = path.resolve(__dirname, '..', 'dist')
+// Web root: DIST_DIR overrides for production hosting (the app checkout keeps
+// it beside server/); the default resolves to the repo's dist/.
+const DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.resolve(__dirname, '..', 'dist')
+// Hosted high score: one JSON file beside the server (git-ignored dir), the
+// single global record every visitor shares. Writes are serialized through
+// the in-memory value; the file is the persistence across restarts.
+const HS_FILE = process.env.HIGHSCORE_FILE || path.join(__dirname, 'highscore.json')
+
+/** Read the persisted high score (0 when missing/corrupt). */
+function readHighScore() {
+  try {
+    const v = Number(JSON.parse(fs.readFileSync(HS_FILE, 'utf8')).best)
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0
+  } catch { return 0 }
+}
+
+/** Persist the high score; failures are swallowed (in-memory value stands). */
+function writeHighScore(v) {
+  try { fs.writeFileSync(HS_FILE, JSON.stringify({ best: Math.floor(v) })) } catch { /* read-only fs */ }
+}
+
+/** Handle /api/highscore: GET returns {best}, POST {score} raises it. */
+function serveHighScore(req, res, state) {
+  if (req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    res.end(JSON.stringify({ best: state.best }))
+    return
+  }
+  if (req.method === 'POST') {
+    let body = ''
+    req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy() })
+    req.on('end', () => {
+      let v = NaN
+      try { v = Number(JSON.parse(body).score) } catch { /* bad json -> NaN */ }
+      if (Number.isFinite(v) && v >= 0 && v <= 1e9) {
+        const next = Math.floor(v)
+        if (next > state.best) { state.best = next; writeHighScore(next) }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      res.end(JSON.stringify({ best: state.best }))
+      return
+    })
+    return
+  }
+  res.writeHead(405, { Allow: 'GET, POST' })
+  res.end('method not allowed')
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -33,10 +79,18 @@ const MIME = {
   '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.wasm': 'application/wasm',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
 }
 
 function serveStatic(req, res) {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
+  // Hosted high-score API, served at both the root and the Pages base path so
+  // one server instance answers either build.
+  const hsState = req._hsState
+  if (hsState && (urlPath === '/api/highscore' || urlPath === '/deadfall-stockholm-afterdark/api/highscore')) {
+    serveHighScore(req, res, hsState)
+    return
+  }
   // The Pages build is emitted with Vite base `/deadfall-stockholm-afterdark`,
   // so the HTML references /deadfall-stockholm-afterdark/assets/*. When this
   // server serves dist/ at root, strip that base prefix so those asset URLs
@@ -51,7 +105,10 @@ function serveStatic(req, res) {
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('not found'); return }
     const ext = path.extname(filePath).toLowerCase()
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
+    // Vite emits content-hashed asset filenames, so /assets/* is immutable and
+    // cacheable forever; index.html must never be cached or a deploy stalls.
+    const cache = urlPath.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache'
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cache })
     res.end(data)
   })
 }
@@ -148,7 +205,10 @@ export function startServer(opts = {}) {
   const port = opts.port ?? Number(process.env.PORT || 8080)
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0'
   const room = new Room(opts.difficulty)
-  const httpServer = http.createServer(serveStatic)
+  // Shared high-score state, attached to every request so serveStatic can see
+  // it without module-level mutable state (tests get a fresh store).
+  const hsState = { best: Number.isFinite(opts.highScore) ? Math.floor(opts.highScore) : readHighScore() }
+  const httpServer = http.createServer((req, res) => { req._hsState = hsState; serveStatic(req, res) })
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
   wss.on('connection', (socket) => {
@@ -185,13 +245,13 @@ export function startServer(opts = {}) {
   })
 
   return {
-    http: httpServer, wss, room,
+    http: httpServer, wss, room, hsState,
     close() { clearInterval(timer); wss.close(); server.close() },
   }
 }
 
 // Re-export for tests that drive a Room/Match without sockets.
-export { buildHello }
+export { buildHello, readHighScore, writeHighScore }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   startServer()

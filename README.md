@@ -106,7 +106,8 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
   an ~18% chance to drop a battery (**+35%** flashlight charge). Drops blink
   and expire after 30 s.
 - Kill scoring: walker 10, shambler 15, screamer 25, brute 150, plus a wave
-  bonus of 50 × wave. Your best score persists in `localStorage`.
+  bonus of 50 × wave. Your best score persists in `localStorage` and is
+  mirrored to the hosted global record (see "Hosted high score").
 - The flashlight follows your view; its battery lasts ~2 minutes of continuous
   use and flickers as it runs low. A dead battery cannot be switched back on —
   grab a battery pickup.
@@ -286,3 +287,14 @@ clients predict their own movement and interpolate everyone else.
   socket server needs an always-on host (a small VPS, Railway/Render/Fly, or a
   home machine with a public port). The static game can stay on Pages while the
   server runs elsewhere — the client just needs the server URL.
+
+## Hosted high score
+
+The high score is one global record shared by every visitor, not per-device
+localStorage. `server/server.js` answers `GET`/`POST /api/highscore` (the
+value persists to git-ignored `server/highscore.json`; `HIGHSCORE_FILE`
+overrides the path). The client adopts the hosted best on boot and mirrors a
+new record on game over (`src/game/Score.js`), so the title screen shows the
+global record even in a fresh browser. On the Pages build the fetch targets
+the game server's origin; the Vite dev server proxies `/api/highscore` to
+:8080 alongside `/ws`.

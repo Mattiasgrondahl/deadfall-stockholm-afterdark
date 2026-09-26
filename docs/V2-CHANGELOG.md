@@ -1400,3 +1400,31 @@ spending a single mesh, light or point.
 - Evidence: `npm test` 308/308, `node tools/verify-game.mjs` 81 ok / 0 fail /
   0 skipped, `npm run build` green, check-assets 34 refs / 0 problems,
   secrets-scan clean (196 files), rag queries verified.
+
+## v6 hosting (1) — hosted global high score API (round 59)
+
+- Request: make the high score a single shared record owned by the production
+  host instead of per-device localStorage.
+- `server/server.js`: `GET`/`POST /api/highscore` at both the root and the
+  Pages base path; the best only moves upward, junk bodies ignored, DELETE
+  rejected (405). Persisted to git-ignored `server/highscore.json`
+  (`HIGHSCORE_FILE` overrides); `DIST_DIR` overrides the web root; static
+  responses now send `Cache-Control` (immutable for hashed `/assets/*`,
+  no-cache for the rest) and the MIME table learned mp3/wav/ogg.
+- `src/game/Score.js`: `adoptBest()` (GET — raises the stored best, never
+  lowers it, mirrored into localStorage), `submitBest()` (POST — best-effort),
+  `commitRecord()` (chains both). `_apiBase()` targets the game-server origin
+  (`location.origin`), not the page base path — Pages has no backend, and the
+  dev server proxies `/api/highscore` to :8080 (vite.config.js).
+- `src/game/Game.js` (WIRING:SCORE + onPlayerDeath): browser boots call
+  `adoptBest()`; a new record POSTs once. `env` now carries `localStorage`
+  (Score's documented contract). `src/game/Screens.js`: the title HIGH SCORE
+  label refreshes when the async GET lands (`_onBestChange`), and `dispose()`
+  removes the hook.
+- Tests: `test/highscore-api.test.mjs` (server GET/POST/405 + cache headers),
+  `test/score-hosted.test.mjs` (adopt/submit/commit chains, offline-safe),
+  `hud-screens.test.mjs` gained the late-best refresh + dispose-reversal case.
+- Evidence: `npm test` 314/314, verify-game 81 ok / 0 fail / 0 skipped, build
+  green, check-assets 34/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
+  0 console errors (the dev proxy fixed the earlier 404 console error), and a
+  live browser shows the hosted best (4242) on the title screen.

@@ -65,4 +65,67 @@ export class Score {
     }
     return false
   }
+
+  /** Base URL for the hosted backend. The high score is a single global
+   *  record owned by the game server, so it is queried on the same origin the
+   *  WebSocket already uses (location.host, port 8080 when the game server
+   *  serves the site) — NOT the page's base path: the Pages build is served
+   *  from /deadfall-stockholm-afterdark while GitHub Pages itself has no
+   *  backend, and the dev server proxies /ws (and /api/highscore) to :8080.
+   *  Falls back to the base path when there is no location (non-browser). */
+  _apiBase() {
+    if (typeof location !== 'undefined' && location && location.host) {
+      return location.protocol + '//' + location.host
+    }
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
+    return base.replace(/\/$/, '')
+  }
+
+  /** Production-hosted best: seed the stored best from the server
+   *  (GET /api/highscore) so the title screen shows the hosted record even in
+   *  a fresh browser — localStorage is per-device. Best-effort: fetch or
+   *  storage failures are swallowed and the local best is never lowered. */
+  async adoptBest(fetchFn) {
+    const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
+    if (!f) return this.best
+    try {
+      const r = await f(this._apiBase() + '/api/highscore')
+      if (!r || !r.ok) return this.best
+      const j = await r.json()
+      const v = Number(j && j.best)
+      if (Number.isFinite(v) && v > this.best) {
+        this.best = v
+        try {
+          const s = this._storage()
+          if (s) s.setItem(STORAGE_KEY, String(v))
+        } catch (err) { /* storage unavailable — in-memory best still set */ }
+        if (this._onBestChange) this._onBestChange()
+      }
+    } catch (err) { /* offline / no backend — keep the local best */ }
+    return this.best
+  }
+
+  /** Submit the current best to the hosted backend (POST /api/highscore).
+   *  Best-effort: any failure is swallowed — the local best already stands. */
+  async submitBest(fetchFn) {
+    const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
+    if (!f || !(this.best > 0)) return false
+    try {
+      const r = await f(this._apiBase() + '/api/highscore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ score: this.best })
+      })
+      return !!r && r.ok
+    } catch (err) { return false }
+  }
+
+  /** Game-over commit: save locally if it is a record, then mirror it to the
+   *  hosted backend. Takes the same optional fetch injection as submitBest so
+   *  tests can chain both calls offline. Returns whether a record was made. */
+  async commitRecord(fetchFn) {
+    const made = this.newRecord()
+    await this.submitBest(fetchFn)
+    return made
+  }
 }
