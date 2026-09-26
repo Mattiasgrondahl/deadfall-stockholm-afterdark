@@ -10,7 +10,7 @@
 
 const KEY_CODES = {
   w: ['KeyW'], a: ['KeyA'], s: ['KeyS'], d: ['KeyD'],
-  shift: ['ShiftLeft', 'ShiftRight'], crouch: ['KeyC'],
+  shift: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'],
   r: ['KeyR'], p: ['KeyP'], m: ['KeyM'], escape: ['Escape'], space: ['Space'],
   f: ['KeyF'], one: ['Digit1'], two: ['Digit2'], three: ['Digit3'], four: ['Digit4'], five: ['Digit5']
 }
@@ -209,6 +209,7 @@ export class Input {
     st.left = !!this.down['KeyA']
     st.right = !!this.down['KeyD']
     st.sprint = !!(this.down['ShiftLeft'] || this.down['ShiftRight'])
-    st.crouch = !!this.down['KeyC']
+    // v3 controls: crouch is Left Ctrl first, KeyC kept as a legacy alias.
+st.crouch = !!(this.down['ControlLeft'] || this.down['KeyC'])
   }
 }

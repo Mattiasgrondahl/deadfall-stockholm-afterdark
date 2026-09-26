@@ -78,7 +78,7 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
 | Mouse | Look (pointer lock) |
 | Shift | Sprint (drains stamina; the flashlight does not block it) |
 | Space | Jump |
-| C | Crouch (disables sprint) |
+| Ctrl (left) / C | Crouch (disables sprint) |
 | Left mouse | Fire (current weapon) |
 | R | Reload (firearms; melee weapons need no reload) |
 | 1 | Switch to the axe |

@@ -65,6 +65,17 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.dispose()
 }
 
+// --- v3 controls: crouch is Left Ctrl first, KeyC stays a legacy alias ---
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  key(env, 'ControlLeft', 'keydown')
+  assert.strictEqual(st.crouch, true, 'Left Ctrl crouches'); assert.strictEqual(input.isDown('crouch'), true)
+  key(env, 'ControlLeft', 'keyup'); assert.strictEqual(st.crouch, false)
+  key(env, 'KeyC', 'keydown'); assert.strictEqual(st.crouch, true, 'KeyC alias still crouches')
+  key(env, 'KeyC', 'keyup'); assert.strictEqual(st.crouch, false)
+  input.dispose()
+}
+
 // --- pointer lock + look accumulation ---
 {
   const env = makeEnv(); const { input, st } = makeInput(env)
