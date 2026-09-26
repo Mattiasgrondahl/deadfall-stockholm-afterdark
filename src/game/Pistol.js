@@ -3,6 +3,9 @@ import { raySphere } from './ray.js'
 
 // Pistol: semi-automatic sidearm; one trigger pull = one round (own jitter,
 // wall occlusion, nearest-zombie hit). Fast fire, small spread, long range.
+// v3 gameplay (1): true semi-auto cadence — the old 0.28 s gate is cut to
+// 0.08 s so rapid clicks fire in quick succession (still a hard floor so a
+// held button cannot melt the barrel or out-pace the audio voice budget).
 // A fatal head hit fires the optional onDecapitate callback (Task E wires the
 // rolling-head pool to it). Mirrors the WeaponBank surface (update/shoot/
 // reload/reset/dispose, getZombies/inputState/blood/onHit).
@@ -10,7 +13,7 @@ import { raySphere } from './ray.js'
 
 const MAG = 12, RESERVE = 36, DMG = 26
 const HEAD_MULT = 2, RANGE = 24, SPREAD = 0.03
-const RELOAD_TIME = 1.1, FIRE_INTERVAL = 0.28
+const RELOAD_TIME = 1.1, FIRE_INTERVAL = 0.08
 const FLASH_TIME = 0.05, RECOIL_KICK = 0.02, RECOIL_DECAY = 0.12
 // v6 visuals (6): muzzle-flash peak. 300 cd over a 6 m reach adds 3.89 linear
 // luminance to a zombie at 5 m (tonemapped 0.88) but exactly 0 beyond 6 m, so

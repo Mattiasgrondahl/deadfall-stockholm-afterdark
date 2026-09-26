@@ -99,7 +99,8 @@ node tools/generate-zombie-faces.mjs  # regenerate the face textures (needs WanG
   wave triggers a brief respite with a countdown and next-wave preview.
 - Five weapons, switched with **1–5**: an **axe** (melee arc, unlimited
   swings), a **shotgun** (5-round magazine, 30 reserve, 6-pellet spread
-  blast), a **pistol** (12-round magazine, 36 reserve), a **sword** (melee)
+  blast), a **pistol** (12-round magazine, 36 reserve, true semi-auto —
+  rapid clicks fire in quick succession), a **sword** (melee)
   and a **sniper** (5-round magazine, 20 reserve, high damage). Headshots
   deal double damage with firearms. The run starts with the shotgun.
 - Killing a zombie has a ~55% chance to drop a shell box (**+8** shells) and

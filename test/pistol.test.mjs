@@ -51,7 +51,21 @@ test('pistol stats match the contract', () => {
   assert.equal(p.range, 24)
   assert.equal(p.spread, 0.03)
   assert.equal(p.reloadTime, 1.1)
-  assert.equal(p.fireInterval, 0.28)
+  assert.equal(p.fireInterval, 0.08, 'v3 semi-auto cadence gate')
+})
+
+test('v3 semi-auto: 12 rounds fire in quick succession without reload', () => {
+  const { pistol: p } = makePistol()
+  p.getZombies = () => []
+  p.inputState = { fire: false, reload: false }
+  let fired = 0
+  for (let i = 0; i < 12; i++) {
+    p.update(0.1) // 100 ms apart — above the 0.08 s gate, below the old 0.28 s
+    if (p.shoot()) fired++
+  }
+  assert.equal(fired, 12, 'every click fires while the mag lasts')
+  assert.equal(p.ammo, 0)
+  assert.equal(p.isReloading, true, 'empty mag auto-reloads')
 })
 
 test('single round: centered torso takes 26, head takes 52; offset zombie untouched', () => {
