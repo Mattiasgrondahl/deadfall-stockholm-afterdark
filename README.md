@@ -1,9 +1,12 @@
 # Deadfall: Stockholm Afterdark
 
 A first-person zombie survival shooter set in a frozen, snow-covered Stockholm
-after dark. Built with **Three.js** and **Vite**, 100% procedural (no external
-assets, no backend). Survive the zombie waves, keep your magazine loaded, and
-try to see the dawn.
+after dark. Built with **Three.js** and **Vite**. The world, characters, and
+most sounds are generated procedurally in code; a curated layer of locally
+generated assets (Wan2GP/YuE2 power-metal soundtrack, zombie faces, outfits,
+weapon textures, a rigged zombie GLB) ships alongside, and a WebSocket server
+provides optional co-op. Survive the zombie waves, keep your magazine loaded,
+and try to see the dawn.
 
 ## Play online
 
@@ -214,7 +217,7 @@ docs/                  architecture + research notes
 
 ## Agent code navigation (dev tooling)
 
-Two local, key-free indexers are wired into this repo for coding agents (see
+Three local, key-free indexers are wired into this repo for coding agents (see
 `AGENTS.md` for usage guidance):
 
 - **graft** — deterministic tree-sitter code graph, no model, no network:
@@ -225,9 +228,14 @@ Two local, key-free indexers are wired into this repo for coding agents (see
   embedding model (16M params, CPU): `npm run zg -- query "how do zombies
   steer around obstacles"`; reindex with `npm run zg-index` (~10 s, model
   cached in git-ignored `.zvec-home/`).
+- **RAG** — dependency-free lexical TF-IDF index over code **and** prose docs
+  (TASKS/CHANGELOG/README included), tuned for natural-language questions:
+  `npm run rag-index` then `npm run rag -- "flashlight drains stamina"`
+  (ranked `file:lines` chunks with symbol boosts; `--update` reindexes first).
+  Index lives in git-ignored `.research/rag/`.
 
-Both index caches (`graft/`, `.zvec-grep/`, `.zvec-home/`) are git-ignored
-and regenerable; they are never part of the game build.
+All index caches (`graft/`, `.zvec-grep/`, `.zvec-home/`, `.research/`) are
+git-ignored and regenerable; they are never part of the game build.
 
 ## Verification
 

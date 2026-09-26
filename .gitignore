@@ -26,7 +26,7 @@ _geom-check.mjs
 .probe-wave.mjs
 
 # internal AI-orchestration docs (not part of the game)
-AGENTS.md
+# AGENTS.md is committed on purpose: coding agents need it in every clone.
 TASKS.md
 
 # internal per-task implementation specs

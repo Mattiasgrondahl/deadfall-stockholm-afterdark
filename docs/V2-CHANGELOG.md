@@ -1360,3 +1360,43 @@ spending a single mesh, light or point.
   restores the first length, scalar call still replicates across the list.
 - Evidence: audio suite green, `npm test` 308/308 (0 fail / 0 skipped),
   `node tools/verify-game.mjs` 81 ok / 0 fail / 0 skipped, build green.
+
+## v6 tooling (1) — agent capability upgrade: RAG + guard tools + docs (round 58)
+
+- Request: improve agentic coding for this repo — RAG over the codebase,
+  detailed agent instructions, an asset/visual-pipeline doc, and any missing
+  tools. Approved plan: AGENTS.md + docs/AGENT-ASSET-PIPELINE.md + RAG tools
+  + check-assets/secrets-scan, then commit/push.
+- New tools (all dependency-free, all wired as npm scripts):
+  - `tools/rag-index.mjs` / `tools/rag-query.mjs` (`rag-index`, `rag`):
+    lexical TF-IDF chunk index over src/server/tools/test/docs + README/
+    TASKS/MULTIPLAYER_PLAN/package.json. Natural-boundary chunking (md
+    headings, JS class/method starts, py defs; target 60/max 90 lines, 6
+    overlap), camelCase+snake_case sub-tokenization, sha256 incremental
+    reuse, `.research/rag/index.json` (137 files / 391 chunks). Query ranks
+    with symbol boost ×2.5, path boost ×1.2, full-coverage ×1.35;
+    --top/--full/--json/--filter/--update; exit 0/3/2. Verified: stamina/
+    flashlight query → Player.js:70-165 top; capFor query → WaveManager capFor.
+    Fills the gap graft (graph) and zg (embeddings) leave: prose-heavy docs.
+  - `tools/check-assets.mjs` (`check-assets`): static + pinned-dynamic asset
+    refs from shipped code → existence in public/ (+ dist/ when built) +
+    ffprobe duration vs SONG_PLAYLIST_SECONDS / LEVEL_TRACK_SECONDS parsed in
+    **source order** from Game.js (a first cut sorted alphabetically and
+    false-flagged hord/javelin; fixed via playlist-index mapping). 34 refs,
+    0 problems.
+  - `tools/secrets-scan.mjs` (`secrets-scan`): high-signal credential regexes
+    + benign allowlist + `--allow` literals; exit 1 on findings. Clean.
+- Docs: `AGENTS.md` (operational guide: hard rules, layout, commands,
+  7-step verification workflow, headless drive pattern, three nav indexes,
+  Pages deploy procedure, delegation conventions — README's dangling
+  "see AGENTS.md" reference now resolves); `docs/AGENT-ASSET-PIPELINE.md`
+  (Wan2GP headless contract: env_uv python, GPU 2 only, yue2 prompt=lyrics/
+  alt_prompt=style + duration-as-upper-bound + save_score side files, image
+  model routing qwen_image_21_7B/z_image + LoRA, ffmpeg post, Blender
+  flatpak + GLB bufferView repair, visual-inspection tool table, SwiftShader
+  limits, troubleshooting signatures). README: stale "100% procedural (no
+  external assets, no backend)" corrected; agent-nav section lists all three
+  indexes.
+- Evidence: `npm test` 308/308, `node tools/verify-game.mjs` 81 ok / 0 fail /
+  0 skipped, `npm run build` green, check-assets 34 refs / 0 problems,
+  secrets-scan clean (196 files), rag queries verified.

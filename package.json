@@ -17,7 +17,11 @@
     "graft-build": "graft build .",
     "graft-check": "graft check",
     "zg": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg",
-    "zg-index": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg index --embedding local/potion-code-16m-v2 ."
+    "zg-index": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg index --embedding local/potion-code-16m-v2 .",
+    "rag-index": "node tools/rag-index.mjs",
+    "rag": "node tools/rag-query.mjs",
+    "check-assets": "node tools/check-assets.mjs",
+    "secrets-scan": "node tools/secrets-scan.mjs"
   },
   "dependencies": {
     "three": "^0.185.1",
