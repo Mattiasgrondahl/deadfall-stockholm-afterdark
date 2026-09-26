@@ -189,7 +189,9 @@ src/game/              Game (loop/state), Input, Player, Zombie,
                        AudioBank, Blood, Score, PostFX (optional bloom), ray
 src/world/             City (procedural environment), cityDressing, Lighting,
                        sky, snow
-test/                  node:test logic tests + headless playthrough (verify-game.mjs)
+test/                  node:test logic tests (43 files)
+tools/                 headless playthrough + guards (verify-game.mjs,
+                       check-assets.mjs, secrets-scan.mjs, rag-index/query)
 docs/                  architecture + research notes
 ```
 
@@ -229,10 +231,11 @@ Three local, key-free indexers are wired into this repo for coding agents (see
   steer around obstacles"`; reindex with `npm run zg-index` (~10 s, model
   cached in git-ignored `.zvec-home/`).
 - **RAG** — dependency-free lexical TF-IDF index over code **and** prose docs
-  (TASKS/CHANGELOG/README included), tuned for natural-language questions:
-  `npm run rag-index` then `npm run rag -- "flashlight drains stamina"`
-  (ranked `file:lines` chunks with symbol boosts; `--update` reindexes first).
-  Index lives in git-ignored `.research/rag/`.
+  (TASKS/CHANGELOG/README/AGENTS included), tuned for natural-language
+  questions: `npm run rag-index` then `npm run rag -- "flashlight drains
+  stamina"` (ranked `file:lines` chunks with symbol boosts; `--update`
+  reindexes first, `--filter src/game` scopes, `--json` for machine output).
+  Index lives in git-ignored `.research/rag/` and is incremental + idempotent.
 
 All index caches (`graft/`, `.zvec-grep/`, `.zvec-home/`, `.research/`) are
 git-ignored and regenerable; they are never part of the game build.

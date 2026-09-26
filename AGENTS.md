@@ -27,7 +27,10 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   points ≤ 2500, zombies ≤ 24. Internal caps: blood pool 300 (`Blood.js:17`),
   stains 120, groan voices 4 (`AudioBank.js:16`), drops 20 (`AmmoDrops.js:25`),
   snow 1800 (`snow.js:35`), wave concurrency cap ≤ 16 (`WaveManager.js`).
-- **Files stay under ~350 lines**; split subsystems into helpers instead.
+- **New files stay under ~350 lines**; split a subsystem into helpers instead.
+  Several legacy files exceed this (Zombie.js 1315, AudioBank.js 1239,
+  Game.js 927, cityDressing.js 749) — do not grow them further; extract new
+  logic into a focused helper module with its own test.
 - In `src/game/Game.js` edit **only inside the `// WIRING:*` regions** unless
   you own the file.
 - No placeholders/TODOs left behind. `npm run build` must pass after any task.
@@ -47,7 +50,14 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   of writing). `tools/` — manual probes (NOT auto-discovered).
 - `docs/` — ARCHITECTURE, V2-PLAN, V2-CHANGELOG (round history), V2-DECISIONS,
   perf-baseline, AGENT-ASSET-PIPELINE (this agent guide's asset companion).
-- `TASKS.md` — git-ignored work log; append a round entry after each task.
+  `docs/spec-*.md` are per-task implementation specs (git-ignored).
+- `.hermes/` — git-ignored mission docs: `deadfall-progress.md` (phase log of
+  the v6 improvement workstream), `deadfall-playtest.md`, `evidence/`, and
+  `skills/` (task-specific playbooks: game-experience-analyzer,
+  game-experience-density-optimizer, game-design-proposal-writer,
+  paranoia-ai-system-evolver). Check `.hermes/deadfall-progress.md` before
+  starting gameplay/visual/audio work — phases there may already cover it.
+- `TASKS.md` — git-ignored work log; see "TASKS.md protocol" below.
 
 ## Commands (always run from the repo root)
 
@@ -104,6 +114,11 @@ kills readers plus `setPlayerPos`, `setPlayerHealth`, `damagePlayer`,
 
 ## Code navigation (three complementary indexes)
 
+**Rule of thumb:** exact identifier or call graph → graft; "how/why does X
+work" → zg; prose history (TASKS/CHANGELOG/README) → RAG. All three caches are
+git-ignored and regenerable; if a tool errors, rebuild its cache rather than
+falling back to guessing.
+
 - **graft** (tree-sitter graph, zero model): `npm run graft-build` then
   `npm run graft -- ask "who calls setState"` / `-- skeleton src/game/Zombie.js`
   / `-- callers setState` / `-- grep "requestLock"`, `npm run graft-map`.
@@ -118,7 +133,9 @@ kills readers plus `setPlayerPos`, `setPlayerHealth`, `damagePlayer`,
   "flashlight drains stamina"` returns ranked `file:start-end` chunks with
   symbol lists and hit lines (`--full` for whole chunks, `--filter src/game`,
   `--json`, `--update` to reindex first). Exit 3 = no hits.
-  Use it when graft/zg miss prose-heavy docs (V2-CHANGELOG, README).
+  Use it when graft/zg miss prose-heavy docs (V2-CHANGELOG, README, AGENTS.md,
+  TASKS.md). Rebuild after bulk edits: `npm run rag-index` is incremental and
+  idempotent (unchanged files are reused).
 
 ## Asset generation & visual inspection
 
@@ -161,12 +178,32 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
   `match-flow`, `remote-player` — no browser needed.
 - Co-op browser probe: `tools/_coop-live.mjs` (two pages, one room).
 
+## TASKS.md protocol (the round log agents read and write)
+
+`TASKS.md` is git-ignored and ~120 KB / 1600+ lines. It is the handoff between
+rounds, so treat it as a database, not a novel:
+
+- **Read it via RAG, never whole.** `node tools/rag-query.mjs "deploy gh-pages"
+  --filter TASKS.md` (or `--update` first) returns the located chunks. Reading
+  all 1685 lines burns context for nothing.
+- **Update, don't just append.** A round entry goes *under* its version heading
+  (`## v3 tasks`, `## Ralph continuation …`), and superseded claims are edited
+  in place with `(Supersedes …)` — never leave a stale "DONE"/"IN PROGRESS"
+  above a contradicting one.
+- **Keep the Status overview at the top current** — it is the only section a
+  new agent should need: current branch/HEAD, test + verify + E2E counts, live
+  gh-pages commit, and anything awaiting the user.
+- **Open questions live in `## Open / awaiting user`**; delete them when the
+  user answers. Long evidence dumps belong in `docs/` or `.research/`, not here.
+- Never `git add` it without `-f`.
+
 ## Conventions for agents working here
 
 - Branch `v2` is the active line (`origin/v2`); `master`/`feat/iteration-2`
   is the frozen v1. Commit messages: `v6 <area> (<n>): <summary>` style.
-- `TASKS.md` is git-ignored — append a dated round entry describing what
-  changed and the verification numbers; never `git add` it without `-f`.
+- `TASKS.md` is git-ignored — add a dated round entry under its version
+  heading with what changed plus the verification numbers, and edit stale
+  claims in place (see "TASKS.md protocol" above).
 - Prefer `edit` (targeted) over full rewrites; keep comments dense — the code
   base documents itself with block comments explaining *why*.
 - When delegating (subagents): keep each child single-file / single-deliverable

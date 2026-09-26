@@ -29,7 +29,7 @@ const OUT_DIR = path.join(ROOT, '.research', 'rag')
 const OUT_FILE = path.join(OUT_DIR, 'index.json')
 
 const DEFAULT_ROOTS = ['src', 'server', 'tools', 'test', 'docs']
-const LOOSE_FILES = ['README.md', 'TASKS.md', 'MULTIPLAYER_PLAN.md', 'package.json']
+const LOOSE_FILES = ['README.md', 'TASKS.md', 'MULTIPLAYER_PLAN.md', 'AGENTS.md', 'index.html', 'vite.config.js', 'package.json']
 const EXCLUDE_DIRS = new Set(['node_modules', '.browsers', '.research', 'dist', '.git', 'graft', '.zvec-grep', '.zvec-home', '.npm-cache', '.fxhome', '.baseline-head', '.deploy-ghpages'])
 const EXCLUDE_PREFIXES = ['tools/_', 'tools/debug-', 'tools/probe-', 'tools/micro-shot']
 const EXCLUDE_NAMES = new Set(['package-lock.json'])
@@ -85,6 +85,11 @@ function chunkFile(rel, text) {
   const ext = path.extname(rel)
   const isMd = ext === '.md'
   const isPy = ext === '.py'
+  // Markdown prose is dense: force-split long runs so no chunk exceeds
+  // CHUNK_MAX + FORCE_SPLIT (a 650-line section otherwise becomes one
+  // unscoreable blob that dilutes every term and floods --full output).
+  const FORCE_SPLIT = CHUNK_MAX * 3
+  let start_ = 0
   const boundaries = [0]
   for (let i = 1; i < lines.length; i++) {
     const L = lines[i]
@@ -98,7 +103,8 @@ function chunkFile(rel, text) {
       else if (/^\s{2}(static )?(get |set |async )?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{/.test(L)) boundary = true
       else if (/^export class\b/.test(L) || /^class\b/.test(L)) boundary = true
     }
-    if (boundary) boundaries.push(i)
+    if (!boundary && i - start_ >= FORCE_SPLIT) boundary = true
+    if (boundary) { boundaries.push(i); start_ = i }
   }
   const chunks = []
   let start = 0
@@ -174,8 +180,14 @@ function build(roots, loose, force) {
     try { prev = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8')) } catch { prev = null }
   }
   const files = collectFiles(roots, loose)
+  // prev.chunks is a FLAT array (one entry per chunk), so group it by file
+  // before the reuse lookup — `Map.get()` returns one chunk, not a list.
   const fileMeta = new Map(prev ? prev.files.map(f => [f.path, f]) : [])
-  const chunksByFile = new Map(prev ? prev.chunks.map(c => [c.file, c]) : [])
+  const chunksByFile = new Map()
+  if (prev) for (const c of prev.chunks || []) {
+    if (!chunksByFile.has(c.file)) chunksByFile.set(c.file, [])
+    chunksByFile.get(c.file).push(c)
+  }
   const seen = new Set()
   let reused = 0, rebuilt = 0, removed = 0
   const outFiles = []
@@ -188,10 +200,11 @@ function build(roots, loose, force) {
     if (st.size > MAX_FILE_BYTES) continue
     const hash = createHash('sha256').update(fs.readFileSync(abs)).digest('hex').slice(0, 16)
     const old = fileMeta.get(rel)
-    if (old && old.hash === hash && chunksByFile.has(rel)) {
+    const prevChunks = chunksByFile.get(rel)
+    if (old && old.hash === hash && prevChunks && prevChunks.length) {
       reused++
       outFiles.push(old)
-      for (const c of chunksByFile.get(rel)) outChunks.push(c)
+      for (const c of prevChunks) outChunks.push(c)
       continue
     }
     rebuilt++
