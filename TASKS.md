@@ -45,15 +45,18 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v2` @ `bd37587`)**: v6 audio (8) trilingual playlist
-  and v6 tooling (1) agent-capability upgrade are committed; **v6 tooling (2)
-  agent-guidance + RAG correctness pass** landed (see the tooling section at the
-  end of this file). Baseline re-verified this round: **npm test 308/308,
-  verify-game 81 ok / 0 fail / 0 skipped, build green, check-assets 34/0,
-  secrets-scan clean, RAG index 144 files / 411 chunks.**
-  Awaiting user: gh-pages redeploy of `e915b19`+ (live bundle still predates the
-  new playlist), `.research/assets-candidates/` review (poster_v2 / menu_bg /
-  stinger), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
+- **Current (Sep 26, branch `v2` @ `3ee5c90`)**: v6 audio (8) playlist, v6
+  tooling (1)+(2), and **v6 visuals (11) Wan2GP image pass** (restored wanted
+  poster + open-scream screamer face) are committed AND pushed. Baseline
+  re-verified: **npm test 308/308, verify-game 81 ok / 0 fail / 0 skipped,
+  build green, check-assets 34/0, secrets-scan clean, RAG index 146 files /
+  413 chunks.**
+  **Deployed**: gh-pages `f8b5cb7` (build of `3ee5c90`) — live-verified: index
+  references `index-CqBq1X8l.js` + `index-ttUmrf6J.css` (200), poster.jpg +
+  screamer-face.jpg serve the new files, `song_javelin_sv.mp3` 200 (the
+  playlist is now live too). (Supersedes `8bc9f1e`, `14436a0`, `9f878c6`.)
+  Awaiting user: `.research/assets-candidates/` leftovers (menu_bg v2 review,
+  stinger tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
 
 ## v3 tasks
 1. **Per-type face textures + procedural walk cycle** — DONE (commit `079572b`).
