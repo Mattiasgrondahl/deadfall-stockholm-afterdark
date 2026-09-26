@@ -32,13 +32,11 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
 - [x] **T4 Crouch keybind → Left Ctrl** DONE `61bfa48`: ControlLeft primary,
   KeyC alias kept; input.test + README updated.
 
-- [ ] **T5 Difficulty: FRENZY default + NIGHTMARE add-on** (Screens.js title
-  toggles, Game.js WIRING region, Zombie.js DIFFICULTY table, WaveManager,
-  test/difficulty.test.mjs). User decision: Nightmare **stacks on FRENZY** —
-  FRENZY stays the default mode; Nightmare is an extra toggle on top:
-  zombie speed × 1.5 on top of FRENZY's 2× (3× total), run starts at wave 3,
-  and it keeps FRENZY's flat-50-HP rule. Nightmare requires FRENZY (enabling
-  it turns FRENZY on; turning FRENZY off turns Nightmare off).
+- [x] **T5 Difficulty: FRENZY default + NIGHTMARE add-on** DONE `6646d9b`:
+  DIFFICULTY gains nightmare {3x, flat 50, startWave 3}; WaveManager takes
+  opts.startWave; Game default difficulty = frenzy; title row has a third
+  NIGHTMARE toggle (frenzy lights up with it); banner per preset.
+  316/316, verify 81/0/0.
 
 - [ ] **T6 Player name for standard games + named high score, XSS-safe**
   (Screens.js input, Score.js, server /api/highscore payload {best, name}):
