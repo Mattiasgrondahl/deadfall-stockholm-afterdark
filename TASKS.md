@@ -45,18 +45,23 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v2` @ `3ee5c90`)**: v6 audio (8) playlist, v6
-  tooling (1)+(2), and **v6 visuals (11) Wan2GP image pass** (restored wanted
-  poster + open-scream screamer face) are committed AND pushed. Baseline
-  re-verified: **npm test 308/308, verify-game 81 ok / 0 fail / 0 skipped,
-  build green, check-assets 34/0, secrets-scan clean, RAG index 146 files /
-  413 chunks.**
+- **Current (Sep 26, branch `v2` @ `3ee5c90` + uncommitted v6 hosting (1))**:
+  v6 audio (8) playlist, v6 tooling (1)+(2), and **v6 visuals (11) Wan2GP
+  image pass** (restored wanted poster + open-scream screamer face) are
+  committed AND pushed. **v6 hosting (1) — hosted global high score**
+  (server `/api/highscore` + Score adopt/submit + Screens refresh + vite
+  `/api/highscore` proxy) is implemented and verified but NOT yet committed;
+  full battery green: **npm test 314/314, verify-game 81 ok / 0 fail / 0
+  skipped, build green, check-assets 34/0, secrets-scan clean, E2E 18/18 PASS
+  on :5173 with 0 console errors.**
   **Deployed**: gh-pages `f8b5cb7` (build of `3ee5c90`) — live-verified: index
   references `index-CqBq1X8l.js` + `index-ttUmrf6J.css` (200), poster.jpg +
   screamer-face.jpg serve the new files, `song_javelin_sv.mp3` 200 (the
   playlist is now live too). (Supersedes `8bc9f1e`, `14436a0`, `9f878c6`.)
-  Awaiting user: `.research/assets-candidates/` leftovers (menu_bg v2 review,
-  stinger tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
+  Awaiting user: commit + push the v6 hosting (1) working tree (and optional
+  gh-pages redeploy), `.research/assets-candidates/` leftovers (menu_bg v2
+  review, stinger tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the
+  zombie GLB.
 
 ## v3 tasks
 1. **Per-type face textures + procedural walk cycle** — DONE (commit `079572b`).
@@ -1756,3 +1761,35 @@ the original; state below is recovered from git history + probe evidence.
     v2 (current one has a baked-in round puddle ring — bad for 30x30 repeat),
     shotgun viewmodel skin (only weapon without one), muzzle-flash sprite v2,
     ground-grass corner patch, per-type face variants 2/3 refresh.
+
+- **Ralph round 59 — v6 hosting (1) hosted global high score DONE (not yet
+  committed)**: the previous round left this feature half-landed in the
+  working tree (server API + Score helpers + two new test files). This round
+  finished and verified it.
+  - Fixed `test/score-hosted.test.mjs` line 19: `async () {` was missing the
+    `=>` (whole file failed to parse — the suite was actually red, not green).
+  - `Score.commitRecord(fetchFn)` now forwards the injected fetch to
+    `submitBest` (was dropping it → fell to real fetch → 0 POSTs) and always
+    calls submitBest so a new best is mirrored even when this run is not a
+    record. Game.js game-over path keeps `newRecord()` + `submitBest()`.
+  - `Score._apiBase()` now targets `location.origin` (the game-server host),
+    NOT the Vite base path: Pages has no backend, so the old base-path URL
+    404'd and logged a console error in every E2E run. Headless falls back to
+    BASE_URL. `vite.config.js` gained a `/api/highscore` → :8080 proxy
+    (MP_SERVER honored) so the dev page reaches the backend.
+  - `Screens.showTitle` installs a `_onBestChange` refresh for the title HIGH
+    SCORE label when the async GET lands late; `Screens.dispose()` now removes
+    that hook (dispose-reversal rule). `test/hud-screens.test.mjs` covers the
+    late refresh + dispose clearing the callback.
+  - Docs: README "Hosted high score" section + kill-scoring line; AGENTS.md
+    server.js layout line (API + HIGHSCORE_FILE/DIST_DIR overrides);
+    docs/V2-CHANGELOG.md "v6 tooling (1)" style entry "v6 hosting (1)".
+  - Evidence: npm test 314/314 (was 308 + 6 new), verify-game 81 ok / 0 fail /
+    0 skipped, build green, check-assets 34/0, secrets-scan clean, E2E 18/18
+    PASS on :5173 with 0 console errors (the 404 is gone), live browser title
+    shows the hosted best (4242) via GET /api/highscore.
+  - NEXT: commit + push the working tree (server.js, Score.js, Screens.js,
+    Game.js, vite.config.js, .gitignore, README, AGENTS.md, CHANGELOG, 2 new
+    tests + hud-screens edit); optional gh-pages redeploy. Note: :8080 is
+    running an OLD server build (no /api/highscore) — restart `npm run server`
+    before trusting live probes; the dev :5173 proxy reaches the :8080 API.
