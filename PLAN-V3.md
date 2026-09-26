@@ -40,6 +40,13 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   sanitize (strip control chars, clamp ~24 chars, HTML-escape), render via
   textContent only. Title HIGH SCORE line shows `NAME — SCORE`. Test with an
   `<img src=x onerror=...>` payload producing zero markup nodes.
+  - **T6b Co-op lobby field descriptions** (Screens.js title CO-OP row):
+    the room-code field (currently placeholder "room code", default value
+    "default") gets a short helper description — it is the shared room/game
+    name every player must type to land in the same session; the name field
+    gets one too (display name shown to other players + on the scoreboard).
+    Render as small `textContent` helper lines under the inputs (same XSS
+    rules as above); cover in the hud-screens test.
 
 - [ ] **T7 Moon: lower, larger, detailed** (world/Sky.js + Wan2GP image job):
   generate high-res moon texture (qwen_image, GPU 2, background job) →
