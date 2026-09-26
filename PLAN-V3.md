@@ -29,8 +29,8 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   (Axe.js, Sword.js + their tests): shorter swing recovery, longer reach,
   animation = raise overhead → diagonal down-slash across the zombie body.
 
-- [ ] **T4 Crouch keybind → Left Ctrl** (Input.js; keep KeyC alias; README
-  controls table update).
+- [x] **T4 Crouch keybind → Left Ctrl** DONE `61bfa48`: ControlLeft primary,
+  KeyC alias kept; input.test + README updated.
 
 - [ ] **T5 Difficulty: FRENZY default + NIGHTMARE add-on** (Screens.js title
   toggles, Game.js WIRING region, Zombie.js DIFFICULTY table, WaveManager,
