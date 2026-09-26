@@ -45,23 +45,20 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v2` @ `3ee5c90` + uncommitted v6 hosting (1))**:
-  v6 audio (8) playlist, v6 tooling (1)+(2), and **v6 visuals (11) Wan2GP
-  image pass** (restored wanted poster + open-scream screamer face) are
-  committed AND pushed. **v6 hosting (1) — hosted global high score**
-  (server `/api/highscore` + Score adopt/submit + Screens refresh + vite
-  `/api/highscore` proxy) is implemented and verified but NOT yet committed;
-  full battery green: **npm test 314/314, verify-game 81 ok / 0 fail / 0
-  skipped, build green, check-assets 34/0, secrets-scan clean, E2E 18/18 PASS
-  on :5173 with 0 console errors.**
+- **Current (Sep 26, branch `v2` @ `df8a963`)**: v6 audio (8) playlist, v6
+  tooling (1)+(2), v6 visuals (11) Wan2GP image pass, and **v6 hosting (1)
+  hosted global high score** (`906a6af`) are committed AND pushed. Battery
+  green: **npm test 314/314, verify-game 81 ok / 0 fail / 0 skipped, build
+  green, check-assets 34/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
+  0 console errors.**
   **Deployed**: gh-pages `f8b5cb7` (build of `3ee5c90`) — live-verified: index
   references `index-CqBq1X8l.js` + `index-ttUmrf6J.css` (200), poster.jpg +
   screamer-face.jpg serve the new files, `song_javelin_sv.mp3` 200 (the
   playlist is now live too). (Supersedes `8bc9f1e`, `14436a0`, `9f878c6`.)
-  Awaiting user: commit + push the v6 hosting (1) working tree (and optional
-  gh-pages redeploy), `.research/assets-candidates/` leftovers (menu_bg v2
-  review, stinger tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the
-  zombie GLB.
+  Awaiting user: optional gh-pages redeploy of the new build (the hosted high
+  score needs the game server, which Pages cannot run),
+  `.research/assets-candidates/` leftovers (menu_bg v2 review, stinger
+  tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
 
 ## v3 tasks
 1. **Per-type face textures + procedural walk cycle** — DONE (commit `079572b`).
@@ -1762,10 +1759,10 @@ the original; state below is recovered from git history + probe evidence.
     shotgun viewmodel skin (only weapon without one), muzzle-flash sprite v2,
     ground-grass corner patch, per-type face variants 2/3 refresh.
 
-- **Ralph round 59 — v6 hosting (1) hosted global high score DONE (not yet
-  committed)**: the previous round left this feature half-landed in the
-  working tree (server API + Score helpers + two new test files). This round
-  finished and verified it.
+- **Ralph round 59 — v6 hosting (1) hosted global high score DONE + committed
+  (`906a6af`) + pushed (`v2` @ `df8a963`)**: the previous round left this
+  feature half-landed in the working tree (server API + Score helpers + two
+  new test files). This round finished, verified, committed and pushed it.
   - Fixed `test/score-hosted.test.mjs` line 19: `async () {` was missing the
     `=>` (whole file failed to parse — the suite was actually red, not green).
   - `Score.commitRecord(fetchFn)` now forwards the injected fetch to
@@ -1788,8 +1785,8 @@ the original; state below is recovered from git history + probe evidence.
     0 skipped, build green, check-assets 34/0, secrets-scan clean, E2E 18/18
     PASS on :5173 with 0 console errors (the 404 is gone), live browser title
     shows the hosted best (4242) via GET /api/highscore.
-  - NEXT: commit + push the working tree (server.js, Score.js, Screens.js,
-    Game.js, vite.config.js, .gitignore, README, AGENTS.md, CHANGELOG, 2 new
-    tests + hud-screens edit); optional gh-pages redeploy. Note: :8080 is
-    running an OLD server build (no /api/highscore) — restart `npm run server`
-    before trusting live probes; the dev :5173 proxy reaches the :8080 API.
+  - NEXT: optional gh-pages redeploy of the new build. Note: the :8080 process
+    answers `/api/highscore` but persists to `server/highscore.json`
+    (currently `best: 900`, not the 4242 from earlier probes — it is running
+    a build predating the file-store wiring); restart `npm run server` before
+    trusting live probes. The dev :5173 proxy reaches the :8080 API.
