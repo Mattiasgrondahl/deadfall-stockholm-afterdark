@@ -21,9 +21,9 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   on the ground; reuse shared geometry; respect S8 mesh gate (≤ 640);
   coordinate with decap-head pool (fatal body shots must not double-kill).
 
-- [ ] **T2 Pistol semi-auto + 12-round mag** (Pistol.js, test/pistol.test.mjs)
-  MAG=12 already ships; task = kill the FIRE_INTERVAL 0.28 s gate (or cut to
-  ≤ 0.1 s) so quick clicks fire in true succession; keep reload + reserve 36.
+- [x] **T2 Pistol semi-auto + 12-round mag** (Pistol.js, test/pistol.test.mjs)
+  DONE `5889f67`: FIRE_INTERVAL 0.28 → 0.08 s; 12-round mag unchanged; new
+  succession test; README updated. 315/315.
 
 - [ ] **T3 Melee faster + longer reach + overhead diagonal swing**
   (Axe.js, Sword.js + their tests): shorter swing recovery, longer reach,
