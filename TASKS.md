@@ -59,12 +59,13 @@ the original; state below is recovered from git history + probe evidence.
   green: **npm test 348/348, verify-game 81 ok / 0 fail / 0 skipped, build
   green, check-assets 35/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
   0 console errors.**
-  **Deployed**: gh-pages `f8b5cb7` (build of `3ee5c90`) — live-verified: index
-  references `index-CqBq1X8l.js` + `index-ttUmrf6J.css` (200), poster.jpg +
-  screamer-face.jpg serve the new files, `song_javelin_sv.mp3` 200 (the
-  playlist is now live too). (Supersedes `8bc9f1e`, `14436a0`, `9f878c6`.)
-  Awaiting user: optional gh-pages redeploy of the new build (the hosted high
-  score needs the game server, which Pages cannot run),
+  **Deployed**: gh-pages `9ce2d5f` (build of `v3` `71c11a0`) — live-verified Sep 27:
+  index references `index-C9g9DVzo.js` (200), `assets/sky/moon.jpg` serves 200,
+  CDN propagated (~60 s). This Pages build carries the full v3 overhaul (T7 moon,
+  T13 footprints, T14 blood, T15 poster, T16 close-out). (Supersedes `f8b5cb7`,
+  `8bc9f1e`, `14436a0`, `9f878c6`.)
+  Awaiting user: the hosted high score needs the game server, which Pages cannot
+  run (solo high score still works locally via localStorage),
   `.research/assets-candidates/` leftovers (menu_bg v2 review, stinger
   tweak), emissive 0.5-vs-0.8 call, Mixamo FBX rigs for the zombie GLB.
 
