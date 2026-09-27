@@ -45,7 +45,7 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v3` @ `0426df4`)**: v6 audio (8) playlist, v6
+- **Current (Sep 26, branch `v3` @ `2a5692e`, pushed to origin/v3)**: v6 audio (8) playlist, v6
   tooling (1)+(2), v6 visuals (11) Wan2GP image pass, and **v6 hosting (1)
   hosted global high score** (`906a6af`) are committed AND pushed. **v3 T1
   dismemberment chain DONE (`82398f1`)**, **v3 T3 melee faster+longer reach+
@@ -54,7 +54,8 @@ the original; state below is recovered from git history + probe evidence.
   DONE (`716ca01`)**, **v3 co-op cluster T9/T10/T11 DONE (`afe04e1`)**, and
   **v3 visuals T7 moon + T13 snow footprints + T14 irregular blood DONE
   (`0426df4`)** (T15 wanted posters already shipped on the center building).
-  Battery
+  **v3 T16 close-out DONE (`2a5692e`)** — every v3 plan task is now complete and
+  `v3` is pushed to origin. Battery
   green: **npm test 348/348, verify-game 81 ok / 0 fail / 0 skipped, build
   green, check-assets 35/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
   0 console errors.**

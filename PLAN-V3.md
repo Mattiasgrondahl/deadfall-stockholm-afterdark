@@ -112,8 +112,14 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
   ("wanted poster mounted on the center building front face"). Look-capture proof
   is env-bound (SwiftShader dies ~3–5 s into gameplay).
 
-- [ ] **T16 Close-out**: full battery + E2E + co-op probe + look-metrics;
-  TASKS.md round entry + Status overview; push `v3`.
+- [x] **T16 Close-out** DONE `2a5692e`: full battery green (npm test 348/348,
+  verify-game 81/0/0, build + `npm run pages` ✓, check-assets 35/0 with dist
+  carrying every asset incl. moon.jpg, secrets-scan clean); browser E2E 18/18
+  PASS on :5173 with 0 console/page errors; co-op UI probe PASS (3 mp-input
+  fields post-T6b, JOIN → playing + controller, 0 errors); look-metrics env-bound
+  (SwiftShader dies ~3–5 s into gameplay — moon/poster/footprint visuals verified
+  via headless tests + check-assets instead). TASKS.md round-67 entry + Status
+  overview updated; `v3` pushed to origin (new branch, tracking set).
 
 ## Execution order
 1. Quick wins: T2, T4, T8-verify, T5.
@@ -121,7 +127,7 @@ Commit style: `v3 <area> (<n>): <summary>`. Update TASKS.md per its protocol.
 3. Co-op: T9, T10, T11 — DONE `afe04e1`.
 4. Asset jobs (background, GPU 2): T7 DONE `0426df4`; T13/T14 DONE `0426df4`;
    T15 already shipped (poster on center building).
-5. T16 close-out.
+5. T16 close-out — DONE `2a5692e` (all v3 tasks complete).
 
 ## Risks / notes
 - Mesh budget (limbs, footprints, billboard) — gated by verify S8; reuse pools.
