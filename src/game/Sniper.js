@@ -174,9 +174,22 @@ export class Sniper {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
+      // v3 chain (round-60 order, same as Pistol): sever first, then count
+      // the landed round, then apply damage — so a body round that lands as
+      // the 4th resolves as the chain kill instead of dying to HP drain
+      // first. The sniper's 90 damage usually kills before the chain
+      // matters, but the ordering keeps the chain contract identical across
+      // weapons.
+      // v3 chain: a headshot bypasses the chain — no limb sever on head hits.
+      if (!head) {
+        const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
+        if (limb) this.audio?.dismember?.()
+      }
+      // v3 gameplay (2): a body round advances the dismemberment chain once.
+      // The sniper's 90 damage usually kills before the chain resolves, which
+      // is fine — the chain only ever severs or finishes off what is left.
+      if (!head && !hitZ.isDead && typeof hitZ._chainShot === 'function') hitZ._chainShot(1)
       hitZ.damage(dmg, this._shot, this.owner, head)
-      const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
-      if (limb) this.audio?.dismember?.()
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot)
       this.audio?.hitZombie?.()
       this.onHit?.(head ? 'head' : 'body') // HUD hit marker (headshot variant)

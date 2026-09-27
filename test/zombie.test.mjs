@@ -451,6 +451,12 @@ test('melee skips a player jumping above arm reach; hits once grounded', () => {
 })
 
 // ---- limb damage -------------------------------------------------------------
+// v3 T1: the dismemberment chain. hitLimbAt severs only when the impact lands
+// near a surviving limb; _chainShot counts the landed body rounds and the
+// round after three limbs are gone is the kill. The chain is hit-counted, so
+// it never touches maxHealth — the difficulty HP contract stays exact. Tests
+// below drive the two entry points exactly as the weapons do (hitLimbAt
+// first, then _chainShot).
 
 test('limb damage: shooting an arm severs it and the zombie keeps coming', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
@@ -483,6 +489,8 @@ test('limb damage: the boss cannot be dismembered', () => {
   assert.equal(zombie.hitLimbAt(-0.16, 0.47, 0), null, 'boss legs are immune')
   assert.equal(zombie.armsLost, 0)
   assert.equal(zombie.legsLost, 0)
+  zombie._chainShot(1)
+  assert.equal(zombie.isDead, false, 'the boss is immune to the chain kill too')
 })
 
 test('limb damage: a hit on the torso severs nothing', () => {
@@ -490,6 +498,85 @@ test('limb damage: a hit on the torso severs nothing', () => {
   assert.equal(zombie.hitLimbAt(0, 1.2, 0), null, 'torso hit is not a limb')
   assert.equal(zombie.armsLost, 0)
   assert.equal(zombie.legsLost, 0)
+})
+
+test('v3 chain: three limbs fall off, the fourth round kills', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  // Round 1: left arm.
+  assert.equal(zombie.hitLimbAt(-0.34, 1.42, 0.1), 'arm')
+  zombie._chainShot(1)
+  assert.equal(zombie.armsLost, 1)
+  assert.equal(zombie.isDead, false)
+  // Round 2: right arm.
+  assert.equal(zombie.hitLimbAt(0.34, 1.42, 0.1), 'arm')
+  zombie._chainShot(1)
+  assert.equal(zombie.armsLost, 2)
+  assert.equal(zombie.isDead, false)
+  // Round 3: a leg — the zombie starts to limp.
+  assert.equal(zombie.hitLimbAt(-0.16, 0.47, 0), 'leg')
+  assert.equal(zombie.legsLost, 1)
+  assert.equal(zombie.isDead, false, 'three limbs gone is still alive')
+  // Round 4: the kill shot, wherever it lands.
+  assert.equal(zombie.hitLimbAt(0, 1.2, 0), null, 'the kill round severs nothing')
+  zombie._chainShot(1)
+  assert.equal(zombie.isDead, true, 'the fourth body round kills')
+  assert.equal(zombie.health, 0)
+})
+
+test('v3 chain: rounds that miss the limbs still advance the chain', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  // Three center-mass rounds sever nothing but spend the chain...
+  for (let i = 0; i < 3; i++) {
+    assert.equal(zombie.hitLimbAt(0, 1.2, 0), null)
+    zombie._chainShot(1)
+  }
+  assert.equal(zombie.armsLost, 0)
+  assert.equal(zombie.legsLost, 0)
+  assert.equal(zombie.isDead, false, 'three torso rounds are not lethal yet')
+  // ...the fourth landed round kills whatever is left.
+  zombie._chainShot(1)
+  assert.equal(zombie.isDead, true, 'the fourth landed round kills whatever is left')
+})
+
+test('v3 chain: a severed limb leaves the hit-flash set and is reversible', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  assert.equal(zombie.hitLimbAt(-0.34, 1.42, 0.1), 'arm')
+  assert.equal(zombie._parts.includes(zombie._armL), false, 'severed arm leaves the flash set')
+  zombie.damage(10) // non-fatal: flash repaints the surviving parts only
+  assert.equal(zombie._armL.material, zombie._limbRest.armL, 'a severed arm is never repainted')
+  zombie.restoreLimbs(0, 0)
+  assert.equal(zombie._armL.visible, true, 'restoreLimbs regrows the arm')
+  assert.equal(zombie.armsLost, 0)
+  assert.ok(zombie._parts.includes(zombie._armL), 'the limb is back in the flash set')
+})
+
+test('v3 chain: the chain kill routes through the normal death path', () => {
+  const { zombie } = makeZombie('walker', 0, 0, 1)
+  zombie.armsLost = 2
+  zombie.legsLost = 1
+  zombie._chainShots = 3
+  zombie.lastDamager = 'p1'
+  zombie._chainKill()
+  assert.equal(zombie.isDead, true)
+  assert.equal(zombie.health, 0)
+  assert.equal(zombie.lastHitHead, false, 'a chain kill is a body kill')
+  assert.equal(zombie._parts[0].material, DEADMAT, 'corpse material swap ran')
+})
+
+test('v3 chain: the chain never touches HP (difficulty contract intact)', () => {
+  // The chain is hit-counted, so it must not raise or lower health: a frenzy
+  // walker still dies to exactly 2 pistol body rounds (26 + 26 >= 50) and a
+  // normal walker to 2 rounds (50 HP), regardless of what the chain severs.
+  const scene = new THREE.Scene()
+  const f = new Zombie(scene, 'walker', 0, 0, 1, 'frenzy')
+  assert.equal(f.maxHealth, 50, 'frenzy flat 50 HP is untouched by the chain')
+  f.hitLimbAt(-0.34, 1.42, 0.1)
+  f._chainShot(1)
+  f.damage(26)
+  assert.equal(f.health, 24, 'round 1 severs the left arm and deals 26')
+  f.damage(26)
+  assert.ok(f.isDead, 'the second body round kills by damage, not by the chain')
+  assert.equal(f.armsLost, 1, 'the chain ended after the first arm')
 })
 
 // v6 visuals (5): clearer enemy silhouettes. The readability gate is Michelson

@@ -202,11 +202,23 @@ export class Pistol {
       const dmg = this.damage * (head ? this.headMultiplier : 1)
       this._hitP.copy(o).addScaledVector(this._shot, bestT)
       this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._shot)
+      // v3 chain: a HEADSHOT bypasses the dismemberment chain entirely — no
+      // limb is ever severed by a head round, and the chain never advances.
+      // The fatal headshot goes straight to the decap pool.
+      if (!head) {
+        // Limb damage: a hit near an arm/leg severs it (arm keeps it coming, a
+        // lost leg makes it limp). The boss ignores it.
+        const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
+        if (limb) this.audio?.dismember?.()
+      }
+      // v3 gameplay (2): a body round advances the dismemberment chain once
+      // (sever on shots 1-3, kill on shot 4). A headshot never reaches the
+      // chain, and a zombie already dead absorbs nothing. The chain runs
+      // BEFORE damage so the 4th round is the chain kill, not the HP drain:
+      // a shambler at 12 HP would otherwise die to the 26-damage round before
+      // _chainKill can sever the last limb and attribute the kill.
+      if (!head && !hitZ.isDead && typeof hitZ._chainShot === 'function') hitZ._chainShot(1)
       hitZ.damage(dmg, this._shot, this.owner, head)
-      // Limb damage: a hit near an arm/leg severs it (arm keeps it coming, a
-      // lost leg makes it limp). The boss ignores it.
-      const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
-      if (limb) this.audio?.dismember?.()
       if (head && hitZ.isDead) this.onDecapitate?.(hitZ, this._shot) // fatal headshot
       this.audio?.hitZombie?.()
       this.onHit?.(head ? 'head' : 'body') // HUD hit marker (headshot variant)

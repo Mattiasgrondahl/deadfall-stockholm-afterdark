@@ -7,6 +7,7 @@ import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from '.
 import { Zombie, ATTACK_RANGE, AIR_CLEAR, DIFFICULTY } from '../game/Zombie.js'
 import { WaveManager } from '../game/WaveManager.js'
 import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
+import { DroppedLimbPool } from '../game/DroppedLimbPool.js'
 
 /**
  * Match — Phase 0 of MULTIPLAYER_PLAN.md (§4.1, §9): the server-side
@@ -89,6 +90,11 @@ export class Match {
     this.matchTimeCap = opts.matchTimeCap ?? MATCH_TIME_CAP
 
     this.drops = new AmmoDrops(this.scene, null)
+    // v3 T1: the authoritative match owns a shared dropped-limb pool so the
+    // server-side zombies run the same dismemberment chain as single-player.
+    // The server never renders, so the pool's meshes are inert here — it
+    // exists to keep the code path identical (and to bound limb meshes).
+    this.limbs = new DroppedLimbPool(this.scene)
     this.wave = new WaveManager(this.scene, this.spawnPoints, this.collision, null, {
       onWaveStart: (w) => this.events.push({ k: 'waveStart', wave: w }),
       onWaveCleared: (w) => this.events.push({ k: 'waveCleared', wave: w }),
@@ -169,7 +175,13 @@ export class Match {
 
   /** Spawn a zombie (the WaveManager calls this; tests may too). */
   spawnZombie(type, x, z, wave = this.wave ? this.wave.wave : 1) {
+    // v3 T1: the server-side zombies run the same hit-counted dismemberment
+    // chain as single-player (clients report hits; the server never fires
+    // weapons itself). HP follows the difficulty table exactly — the chain
+    // never touches it.
     const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
+    // v3 T1: the shared limb pool, so the server-side chain drops limbs too.
+    if (this.limbs) zombie.drops = this.limbs
     zombie._matchId = ++this._zombieSeq
     this.zombies.push(zombie)
     return zombie
@@ -182,6 +194,7 @@ export class Match {
     this.tick++
     this.time += d
     updateWorld(d, this.ws)
+    if (this.limbs) this.limbs.update(d) // v3 T1: tumble dropped limbs on the server too
     this._flow(d)
     return d
   }

@@ -322,6 +322,30 @@ test('remote zombie bodies have face + hair + eyes and mirror server limb loss',
   mp.dispose()
 })
 
+test('proxy sever geometry matches the server Zombie (round-60 radius 0.416)', () => {
+  // The client prediction must sever on exactly the impacts the server-side
+  // Zombie severs: a dead-centre torso hit (0.417 m from the arm sockets)
+  // severs nothing, while a chest-aim impact that clips an arm severs it.
+  // Stale 0.3/0.34 radii made the proxy sever LESS than the server, so the
+  // client kept showing a limb the server had already dropped.
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const e = mp.zombies.get('z1')
+  const proxy = e.getTarget() // lazily built weapon-hit proxy
+  // Dead-centre torso hit at z1's position: no sever (margin 0.000944).
+  assert.equal(proxy.hitLimbAt(1, 1.2, 2), null, 'torso-centre hit severs nothing')
+  assert.equal(e._limbs.arms, 0, 'no arm lost from the torso hit')
+  // Impact 0.42 m from the left arm socket (a chest-aim clip): severs the arm.
+  // The proxy severs AND counts the round inside hitLimbAt (its own mirror of
+  // the chain — the server's authoritative limbs re-sync the counter).
+  assert.equal(proxy.hitLimbAt(1 - 0.34, 1.42, 2 + 0.25), 'arm', 'clip near left arm severs it')
+  assert.equal(e._armL.visible, false, 'left arm hidden by the prediction')
+  assert.equal(e._limbs.arms, 1, 'arm count advanced')
+  assert.equal(e._falling.length >= 1, true, 'severed arm spawned a falling piece')
+  assert.equal(e._chainShots, 1, 'sever advanced the chain counter')
+  mp.dispose()
+})
+
 test('remote zombie corpse collapses then expires after lingering', () => {
   const { mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })

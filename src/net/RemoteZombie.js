@@ -61,6 +61,9 @@ export class RemoteZombie {
     this._legL = b.legL; this._legR = b.legR
     this._armRest = { l: b.armL.rotation.x, r: b.armR.rotation.x }
     this._limbs = { arms: 0, legs: 0, head: 0 }
+    // v3 chain: landed-round counter for the client-side chain prediction.
+    // The server's `limbs` counts are authoritative and re-sync it.
+    this._chainShots = 0
     this.isDead = false
     this._deathT = 0
     this._removed = false
@@ -86,6 +89,10 @@ export class RemoteZombie {
     this._applyLimb('legL', L.legs >= 1)
     this._applyLimb('legR', L.legs >= 2)
     this._applyHead(L.head >= 1)
+    // v3 chain: the server's limb counts are authoritative, so the local
+    // round counter is clamped to what actually happened (a prediction that
+    // ran ahead of the server is pulled back here).
+    this._chainShots = Math.min(this._chainShots, L.arms + L.legs)
     if (dead && !this.isDead) this._die()
     if (!dead) this._predictedDead = false
     if (!this.isDead) {
@@ -223,20 +230,50 @@ export class RemoteZombie {
         if (self.onHit) self.onHit(self.id, amount, head)
       },
       hitLimbAt(x, y, z) {
-        // Client-side prediction: sever the nearest limb for instant feedback.
-        const near = (lx, ly, r) => {
-          const dx = x - (self._x + lx), dz = z - (self._z + 0), dy = y - ly
+        // v3 T1 chain: client-side prediction mirrors the server chain —
+        // landed body round 1 takes the LEFT arm, round 2 the RIGHT arm,
+        // round 3 a leg, and the round after three limbs are gone is the
+        // kill. The server's snapshot is authoritative and re-syncs the
+        // counts, so a wrong prediction is corrected by the next snapshot.
+        const near = (lx, ly, lz, r) => {
+          const dx = x - (self._x + lx), dz = z - (self._z + lz), dy = y - ly
           return dx * dx + dz * dz + dy * dy < r * r
         }
-        if (self._limbs.legs < 2) {
-          if (self._legL && self._legL.visible && near(-0.16, 0.47, 0.34)) { self._applyLimb('legL', true); self._limbs.legs++; return 'leg' }
-          if (self._legR && self._legR.visible && near(0.16, 0.47, 0.34)) { self._applyLimb('legR', true); self._limbs.legs++; return 'leg' }
+        if (self._predictedDead || self.type === 'brute') return null // boss immune; kill owned by the server
+        // v3 chain: the kill resolves first — three limbs gone means this
+        // round finishes the zombie (predicted locally; the snapshot confirms).
+        if (self._chainShots >= 1 && self._limbs.arms + self._limbs.legs >= 3) {
+          self._predHp = 0; self._predictedDead = true
+          return null
         }
+        // v3 chain order: rounds 1-2 take the arms (left first), round 3 a
+        // leg — only when the impact actually lands near a surviving limb.
+        // Sever radius 0.416 m mirrors Zombie._limbAt (round 60): the proxy
+        // must sever on exactly the impacts the server-side Zombie severs, or
+        // the client hides a limb the server still shows (and vice versa)
+        // until the next snapshot re-syncs. 0.416 is the largest radius that
+        // keeps a dead-centre torso hit (0.417 m from a socket) a non-sever.
+        // Socket offsets include the arm sockets' z (±0.1), same as Zombie.
+        const R = 0.416
         if (self._limbs.arms < 2) {
-          if (self._armL && self._armL.visible && near(-0.34, 1.42, 0.3)) { self._applyLimb('armL', true); self._limbs.arms++; return 'arm' }
-          if (self._armR && self._armR.visible && near(0.34, 1.42, 0.3)) { self._applyLimb('armR', true); self._limbs.arms++; return 'arm' }
+          if (self._armL && self._armL.visible && near(-0.34, 1.42, 0.1, R)) { self._applyLimb('armL', true); self._limbs.arms++; self._chainShots++; if (self.onHit) self.onHit(self.id, 0, false, 'arm'); return 'arm' }
+          if (self._armR && self._armR.visible && near(0.34, 1.42, 0.1, R)) { self._applyLimb('armR', true); self._limbs.arms++; self._chainShots++; if (self.onHit) self.onHit(self.id, 0, false, 'arm'); return 'arm' }
+        }
+        if (self._limbs.legs < 2) {
+          if (self._legL && self._legL.visible && near(-0.16, 0.47, 0, R)) { self._applyLimb('legL', true); self._limbs.legs++; self._chainShots++; if (self.onHit) self.onHit(self.id, 0, false, 'leg'); return 'leg' }
+          if (self._legR && self._legR.visible && near(0.16, 0.47, 0, R)) { self._applyLimb('legR', true); self._limbs.legs++; self._chainShots++; if (self.onHit) self.onHit(self.id, 0, false, 'leg'); return 'leg' }
         }
         return null
+      },
+      _chainShot(n = 1) {
+        // v3 T1 chain: the landed-round counter for the proxy. After three
+        // limbs are gone the next landed round is the kill — predicted locally
+        // so the body collapses at once, then confirmed by the snapshot.
+        for (let i = 0; i < n; i++) {
+          if (self._predictedDead) return
+          if (self._chainShots >= 3) { self._predHp = 0; self._predictedDead = true; return }
+          self._chainShots++
+        }
       }
     }
     this._proxy = proxy

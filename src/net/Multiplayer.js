@@ -127,7 +127,9 @@ export class Multiplayer {
           entry._box = box
           this.zombies.set(z.id, entry)
         } else {
-          entry = new RemoteZombie({ scene: this.scene, id: z.id, type: z.type, onHit: (v, d, h) => this.net.sendHit(v, d, h) })
+          // v3 chain: a sever cue passes dmg 0 (visual feedback only) and must not
+          // send an authoritative HIT message — only real damage is sent.
+          entry = new RemoteZombie({ scene: this.scene, id: z.id, type: z.type, onHit: (v, d, h) => { if (d > 0) this.net.sendHit(v, d, h) } })
           this.zombies.set(z.id, entry)
           liveCount++
         }

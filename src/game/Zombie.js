@@ -94,6 +94,10 @@ const CHARGE_TIME = 0.55
 // v3 difficulty (1): 'nightmare' STACKS on frenzy (user decision) — 2× × 1.5
 // = 3× zombie speed, same flat-50-HP rule, and the run starts at wave 3
 // (startWave). It requires frenzy; the title toggle enforces that pairing.
+// v3 T1: NORMAL is identity (hpBase null → per-type TABLE hp). The
+// dismemberment chain is hit-counted, so it is carried by the SHAMBLER
+// (90 HP survives rounds 1-3 at 26/round: 90−78 = 12 HP left) — the walker's
+// 50 HP dies to two rounds and simply ends the chain early, as designed.
 export const DIFFICULTY = {
   normal: { speedMult: 1, hpBase: null, startWave: 1 },
   frenzy: { speedMult: 2, hpBase: 50, startWave: 1 },
@@ -564,7 +568,7 @@ function contactNormal(pos, aabbs, radius, wantX, wantZ, out) {
 }
 
 export class Zombie {
-  constructor(scene, type, x, z, wave = 1, difficulty = 'normal') {
+  constructor(scene, type, x, z, wave = 1, difficulty = 'normal', opts = {}) {
     if (!TABLE[type]) throw new Error('unknown zombie type: ' + type)
     const diff = DIFFICULTY[difficulty] || DIFFICULTY.normal
     this.type = type
@@ -572,6 +576,13 @@ export class Zombie {
     this.speed = TABLE[type].speed * diff.speedMult
     const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
     this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
+    // v3 T1: the dismemberment chain is hit-counted, NOT damage-counted (the
+    // user decision), so HP is untouched by it — the shipped difficulty
+    // contract (frenzy flat 50 HP = 2 pistol bodies / 1 headshot) stays exact.
+    // The chain only severs limbs and fires the chain kill; in FRENZY/
+    // NIGHTMARE the flat-50-HP damage simply ends the chain early (see
+    // hitLimbAt / _chainShot). `opts` is kept for spawn-site compatibility.
+    void opts
     // The brute is the wave-5 boss: a 1.4× silhouette, so both weapon hitboxes
     // scale by HITBOX_SCALE (the two-sphere contract and the per-type radii
     // 0.45/0.3 stay exact for the three regular types).
@@ -631,6 +642,19 @@ export class Zombie {
     let seed = Math.floor((x + 200) * 100 + (z + 200) * 37 + ORDER.indexOf(type) * 101)
     for (let i = 0; i < 3; i++) seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff
     this._phase = (seed / 0x7fffffff) * 2 * Math.PI
+    // v3 gameplay (2): the same seed drives the dropped-limb tumble via the
+    // standard LCG shape (AmmoDrops.js:61). Each sever advances it once, so
+    // limb spin/direction are deterministic per zombie and per hit.
+    let limbSeed = seed
+    this._rand = () => { limbSeed = (Math.imul(limbSeed, 48271) >>> 0) % 65537; return limbSeed / 65537 }
+    // v3 T1 chain: landed BODY rounds (hit-counted, not damage-counted).
+    // Firearms call _chainShot once per round (shotgun: once per blast).
+    // Wired to Game's DroppedLimbPool as `this.drops`.
+    this._chainShots = 0
+    this.drops = null
+    // v3 chain: limbs severed so far (reverse order = regrow order). Kept so
+    // restoreLimbs() can undo a wrong client-side prediction.
+    this._severed = []
 
     // Body: torso, head, two arms, two legs — all from the shared GEO2 pool,
     // posed per type. Child order is fixed: torso, head, armL, armR, legL, legR.
@@ -725,6 +749,11 @@ export class Zombie {
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
     this._restMats = [topMat, mat, mat, mat, bottomMat, bottomMat]
+    // v3 chain: parallel rest materials for the four limbs only (indices 2-5
+    // of _parts). A severed limb must NOT be repainted by the hit-flash
+    // recovery while a corpse repaints it to DEADMAT, so _sever* removes the
+    // limb from _parts and keeps its rest material here for revive().
+    this._limbRest = { armL: mat, armR: mat, legL: bottomMat, legR: bottomMat }
     this._flashT = 0
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
@@ -822,10 +851,18 @@ export class Zombie {
     // Capture the arm bones so the death collapse can splay them on the actual
     // skinned skeleton (the primitive limbs are hidden, so rotating them does
     // nothing visible). Rest rotations are stored so the collapse is reversible.
+    // v3 chain: `left` tags the bone's side so a severed primitive arm can
+    // hide its matching skinned bone (and revive() can bring it back).
     this._armBones = []
+    this._legBones = []
     root.traverse((o) => {
       if (o.isBone && /upperarm/i.test(o.name)) {
-        this._armBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z })
+        this._armBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z, left: /left/i.test(o.name) })
+      }
+      // v3 chain: leg bones are captured too so a severed leg hides its twin
+      // on the skinned rig (rest rotations kept so the death splay reverses).
+      if (o.isBone && /upperleg|thigh|knee|shin/i.test(o.name)) {
+        this._legBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z, left: /left/i.test(o.name) })
       }
     })
     // The primitive body is the always-on visual now, so keep every primitive
@@ -1221,47 +1258,207 @@ export class Zombie {
   }
 
   /**
-   * Limb-damage hit test. Weapons call this with the world-space point where a
-   * bullet struck a zombie's body. If the point lands on an arm (near an arm
-   * mesh) or a leg (near a leg mesh), that limb is severed: its mesh is hidden
-   * and the counter increments. Arms keep the zombie moving normally; losing a
-   * leg makes it limp (slower + a one-legged hop). Returns 'arm' | 'leg' | null
-   * so the caller can play a dismember cue. The boss ignores limb damage.
-   * Deterministic (no Math.random): the hit point alone decides.
+   * Advance the dismemberment chain by one landed BODY round — v3 T1.
+   * Firearms call this once per round (once per blast for the shotgun) after
+   * the damage + limb-sever pass. The chain is hit-counted, not
+   * damage-counted (the user decision), so it holds in every difficulty:
+   * rounds 1-3 have already severed their limbs via hitLimbAt (left arm,
+   * right arm, a leg), and the round that lands after three limbs are gone
+   * kills whatever is left through the normal death path. In FRENZY/
+   * NIGHTMARE the flat-50-HP damage usually kills before the chain resolves,
+   * which simply ends the chain early — that is the shipped kill economy,
+   * not a chain failure. The boss is immune.
+   *
+   * `this._chainShots` counts LANDED BODY ROUNDS only — the weapons call
+   * _chainShot once per round, and a sever never double-counts because the
+   * round that severed is the round being counted. A round that severs
+   * nothing still counts, so the chain keeps moving when the player is
+   * spraying center mass.
+   */
+  _chainShot(n = 1) {
+    if (this.isDead || this.isBoss) return
+    for (let i = 0; i < n; i++) {
+      if (this.isDead) return
+      if (this._chainShots >= 3) { this._chainKill(); return }
+      this._chainShots++
+    }
+  }
+
+  /**
+   * Limb-damage hit test — v3 T1 dismemberment chain. Weapons call this with
+   * the world-space point where a bullet struck a zombie's body, BEFORE the
+   * chain step (_chainShot) for that round.
+   *
+   * The chain is hit-counted, not damage-counted (the user decision), so it
+   * holds in every difficulty: a round that lands ON a limb severs it (left
+   * arm first, then right arm, then a leg — speed drops with the limp), and
+   * the round that lands after three limbs are gone kills the zombie
+   * outright. A center-mass round severs nothing but still spends the chain,
+   * so spraying the torso walks left arm → right arm → a leg → kill through
+   * the limbs the impacts actually clip, with the 4th landed round always
+   * finishing the job. A severed limb is hidden on the body and dropped as a
+   * tumbling clone into the shared DroppedLimbPool (`this.drops`, wired by
+   * Game; absent in unit tests). Headshots bypass the chain entirely and kill
+   * whenever the head hitbox absorbs the shot. In FRENZY/NIGHTMARE the
+   * flat-50-HP damage usually kills before the chain resolves, which simply
+   * ends the chain early. The boss is immune. Returns 'arm' | 'leg' | null.
+   * Deterministic (no Math.random): the hit point + counter decide.
    */
   hitLimbAt(x, y, z) {
     if (this.isDead || this.isBoss) return null
-    // Limb centers (local, before the group origin offset): arms hang at
-    // y≈1.42, ±0.34 in x; legs at y≈0.47, ±0.16 in x. A hit point within a
-    // small radius of a surviving limb's world center severs it. The boss is
-    // too tough to dismember, so it returns null. Deterministic: the point
-    // alone decides.
+    // v3 chain: the kill resolves BEFORE the limb test — the zombie is already
+    // dying, so no further limb may be severed by this hit. The gate is three
+    // limbs gone AND at least one prior round landed (`_chainShots >= 1`), so
+    // the very first shot of a run can never be a chain kill even if a
+    // pathological hit point clipped three limbs at once.
+    if (this._chainShots >= 1 && this.armsLost + this.legsLost >= 3) { this._chainKill(); return null }
+    return this._limbAt(x, y, z)
+  }
+
+  /**
+   * Pure limb-sever test — v3 T1 (split out so the shotgun can run it per
+   * pellet for the visual sever cue without advancing the chain). No dead /
+   * boss / chain-kill gates here: the caller owns those. Returns 'arm' |
+   * 'leg' | null.
+   */
+  _limbAt(x, y, z) {
     const ox = this.position.x, oz = this.position.z, oy = this.position.y
-    const near = (lx, ly, lz, r) => {
+    const d2 = (lx, ly, lz) => {
       const dx = x - (ox + lx), dz = z - (oz + lz), dy = y - (oy + ly)
-      return Math.hypot(dx, dy, dz) <= r
+      return dx * dx + dy * dy + dz * dz
     }
-    // Check legs first (a leg hit shouldn't be stolen by an overlapping arm).
-    if (this.legsLost < 2) {
-      if (this._legL && this._legL.visible && near(-0.16, 0.47, 0, 0.34)) { this._severLeg(this._legL); return 'leg' }
-      if (this._legR && this._legR.visible && near(0.16, 0.47, 0, 0.34)) { this._severLeg(this._legR); return 'leg' }
-    }
+    // v3 chain: sever radius 0.416 m. Weapons record the impact where the round
+    // meets the torso hit-sphere SHELL, not the zombie's centre. The shell at
+    // chest aim height (y 1.45) passes 0.40–0.46 m from the arm sockets across
+    // the pistol's spread, so chest rounds clip the arms; a dead-centre round
+    // (y 1.2) lands 0.417 m from a socket and severs nothing while still
+    // spending the chain. 0.416 is the largest radius that keeps the
+    // dead-centre torso point outside the sever disc.
+    const LIMB_R2 = 0.416 * 0.416
+    const onLimb = (lx, ly, lz) => d2(lx, ly, lz) <= LIMB_R2
+    // v3 chain order: rounds 1-2 take the arms (left first), round 3 takes a
+    // leg. Only when a limb is actually hit does the chain sever — a torso hit
+    // severs nothing, but _chainShot still counts the round.
     if (this.armsLost < 2) {
-      if (this._armL && this._armL.visible && near(-0.34, 1.42, 0.1, 0.3)) { this._severArm(this._armL); return 'arm' }
-      if (this._armR && this._armR.visible && near(0.34, 1.42, 0.1, 0.3)) { this._severArm(this._armR); return 'arm' }
+      if (this._armL && this._armL.visible && onLimb(-0.34, 1.42, 0.1)) { this._severArm(this._armL); return 'arm' }
+      if (this._armR && this._armR.visible && onLimb(0.34, 1.42, 0.1)) { this._severArm(this._armR); return 'arm' }
     }
+    if (this.legsLost < 2) {
+      if (this._legL && this._legL.visible && onLimb(-0.16, 0.47, 0)) { this._severLeg(this._legL); return 'leg' }
+      if (this._legR && this._legR.visible && onLimb(0.16, 0.47, 0)) { this._severLeg(this._legR); return 'leg' }
+    }
+    // v3 chain: the impact missed every surviving limb (a high torso hit, or
+    // the limbs on that side are already gone) — nothing severs, but the
+    // round still counts via _chainShot.
     return null
   }
 
+  // v3 gameplay (2): the dismemberment chain (see hitLimbAt). Shot order is
+  // left arm → right arm → leg → kill. A severed limb hides on the body,
+  // leaves the hit-flash/death-material set (so a flash recovery or the
+  // DEADMAT corpse swap never repaints a limb that is no longer there), and
+  // drops as a tumbling clone into Game's shared DroppedLimbPool.
   _severArm(mesh) {
+    const left = mesh === this._armL
     mesh.visible = false
     this.armsLost++
+    this._severed.push(mesh)
+    const i = this._parts.indexOf(mesh)
+    if (i >= 0) { this._parts.splice(i, 1); this._restMats.splice(i, 1) }
+    if (this.drops) this.drops.drop(GEO2.arm, mesh.material, this.position.x, this.position.y + 1.42, this.position.z, this._rand)
+    if (this._armBones && this._armBones.length) {
+      // Hide the matching bones on the skinned body so the visible GLB body
+      // loses the same arm the primitive fallback hides.
+      for (const ab of this._armBones) if (ab.left === left && ab.bone) ab.bone.visible = false
+    }
   }
 
   _severLeg(mesh) {
+    const left = mesh === this._legL
     mesh.visible = false
     this.legsLost++
     this._limp = true
+    this._severed.push(mesh)
+    const i = this._parts.indexOf(mesh)
+    if (i >= 0) { this._parts.splice(i, 1); this._restMats.splice(i, 1) }
+    if (this.drops) this.drops.drop(GEO2.leg, mesh.material, this.position.x, this.position.y + 0.47, this.position.z, this._rand)
+    // The skinned GLB body has no per-leg primitive twin, but hiding the
+    // matching leg bones keeps the visible rig consistent with the limp.
+    if (this._legBones) {
+      for (const lb of this._legBones) if (lb.left === left && lb.bone) lb.bone.visible = false
+    }
+  }
+
+  /** v3 chain kill: the 4th body shot ends the run for this zombie — it
+   *  takes lethal damage through the normal death path (DEADMAT swap,
+   *  corpse flop to the ground, kill attribution). */
+  _chainKill() {
+    if (this.isDead) return
+    // v3 chain: the kill round also takes the last limb the geometry missed.
+    // The chain order is armL → armR → leg → kill; when a leg was never
+    // clipped (chest-aim impacts sit ~1 m from the leg sockets), the kill
+    // severs one surviving limb so the player always sees three limbs drop
+    // before the corpse falls. Prefer a leg (the chain's 3rd slot), then an
+    // arm if both legs are already gone.
+    if (this.legsLost < 2) {
+      if (this._legL && this._legL.visible) this._severLeg(this._legL)
+      else if (this._legR && this._legR.visible) this._severLeg(this._legR)
+    } else if (this.armsLost < 2) {
+      if (this._armL && this._armL.visible) this._severArm(this._armL)
+      else if (this._armR && this._armR.visible) this._severArm(this._armR)
+    }
+    this.damage(this.health + 1, null, this.lastDamager, false)
+  }
+
+  /** v3 chain: bring a severed limb back (co-op snapshot rollback / revive).
+   *  Reverses _severArm/_severLeg exactly: the mesh re-enters _parts at its
+   *  original slot with its rest material, and the matching skinned bones
+   *  return. The chain counter is NOT touched — it counts landed rounds, not
+   *  severs, and a regrown limb only ever means the server saw fewer limbs
+   *  than the client predicted (restoreLimbs). */
+  _regrowLimb(mesh) {
+    const i = this._severed.indexOf(mesh)
+    if (i < 0) return false
+    this._severed.splice(i, 1)
+    mesh.visible = true
+    if (mesh === this._armL || mesh === this._armR) {
+      this.armsLost = Math.max(0, this.armsLost - 1)
+      const left = mesh === this._armL
+      if (this._armBones) for (const ab of this._armBones) if (ab.left === left && ab.bone) ab.bone.visible = true
+    } else {
+      this.legsLost = Math.max(0, this.legsLost - 1)
+      if (this.legsLost === 0) this._limp = false
+      const left = mesh === this._legL
+      if (this._legBones) for (const lb of this._legBones) if (lb.left === left && lb.bone) lb.bone.visible = true
+    }
+    // Re-insert at the original child slot so the fixed child order (torso,
+    // head, armL, armR, legL, legR) and the parallel _restMats stay aligned.
+    const slot = this.group.children.indexOf(mesh)
+    if (slot >= 0 && this._parts.length < this.group.children.length) {
+      this._parts.splice(slot, 0, mesh)
+      this._restMats.splice(slot, 0, mesh === this._armL || mesh === this._armR
+        ? this._limbRest.armL : this._limbRest.legL)
+    } else {
+      this._parts.push(mesh)
+      this._restMats.push(mesh === this._armL || mesh === this._armR
+        ? this._limbRest.armL : this._limbRest.legL)
+    }
+    return true
+  }
+
+  /** v3 chain: reverse the whole dismemberment chain (used when a co-op
+   *  snapshot reports fewer severed limbs than the client predicted). */
+  restoreLimbs(arms, legs) {
+    while (this.armsLost > arms && this._severed.length) {
+      const cand = this._severed.find((m) => m === this._armL || m === this._armR)
+      if (!cand) break
+      this._regrowLimb(cand)
+    }
+    while (this.legsLost > legs && this._severed.length) {
+      const cand = this._severed.find((m) => m === this._legL || m === this._legR)
+      if (!cand) break
+      this._regrowLimb(cand)
+    }
   }
 
   /** Contract signature; `dir` is accepted and ignored. `by` (optional) is
@@ -1281,6 +1478,8 @@ export class Zombie {
       this.isDead = true
       this.deathTimer = 0
       this._flashT = 0
+      // v3 chain: a severed limb is no longer in _parts, so the corpse swap
+      // never repaints a mesh that is gone from the body.
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
       for (const e of this._eyes) e.material = DEADEYEMAT
       this._face.material = DEADMAT

@@ -25,6 +25,11 @@ const KICK = 0.018
 const DIP_Y = -0.05, DIP_Z = 0.06
 const UP = new THREE.Vector3(0, 1, 0)
 
+// v3 gameplay (2): the dismemberment chain is hit-counted per ROUND, not per
+// pellet — one blast is one chain step. A target that is already dead absorbs
+// nothing (the kill belongs to the round that finished it).
+const landedHits = (z) => (z && !z.isDead ? 1 : 0)
+
 export class Shotgun {
   constructor(scene, camera, collision, audio) {
     this.scene = scene
@@ -62,6 +67,10 @@ export class Shotgun {
     this._up = new THREE.Vector3()
     this._pellet = new THREE.Vector3()
     this._hitP = new THREE.Vector3()
+    // v3 chain: scratch list of zombies hit by body pellets in the current
+    // blast; drained once at the end of shoot() so the chain advances per
+    // blast, not per pellet (no per-frame allocation).
+    this._chainTargets = []
 
     // View model: receiver, barrel, pump, stock — camera-attached.
     this.view = new THREE.Group()
@@ -174,6 +183,7 @@ export class Shotgun {
     this._up.crossVectors(this._right, this._dir).normalize()
     const o = this.camera.position
     const hitSet = [] // distinct zombies hit by this blast
+    this._chainTargets.length = 0 // v3 chain: targets hit by body pellets this blast
     let headHit = false
     for (let i = 0; i < this.pellets; i++) {
       // Per-pellet jitter around the aim direction (deterministic LCG).
@@ -195,6 +205,10 @@ export class Shotgun {
         }
       }
       if (hitZ) {
+        // v3 chain: the chain advances once per blast (see _chainShot), so a
+        // pellet that lands after the target already died must not deal
+        // damage or sever again — the kill belongs to the first round.
+        if (hitZ.isDead) continue
         // Boss armor: the brute's hide shrugs off most buckshot (shotgunArmor
         // < 1), so a full blast deals far less than 6×22 — the boss needs many
         // blasts. Regular zombies are unarmored (×1).
@@ -203,11 +217,19 @@ export class Shotgun {
         this._hitP.copy(o).addScaledVector(this._pellet, bestT)
         this.blood?.burst(this._hitP.x, this._hitP.y, this._hitP.z, dmg, head, this._pellet)
         hitZ.damage(dmg, this._pellet, this.owner, head)
-        // Limb damage: a pellet landing near an arm/leg severs it.
-        const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
-        if (limb) this.audio?.dismember?.()
+        // v3 chain: a head-hit pellet bypasses the chain — no limb sever.
+        if (!head) {
+          // Limb damage: a pellet landing near an arm/leg severs it.
+          const limb = hitZ.hitLimbAt ? hitZ.hitLimbAt(this._hitP.x, this._hitP.y, this._hitP.z) : null
+          if (limb) this.audio?.dismember?.()
+        }
         hitZ._lastBlastHits = (hitZ._lastBlastHits || 0) + 1
         if (!hitSet.includes(hitZ)) hitSet.push(hitZ)
+        // v3 chain: remember this target so the blast advances its chain once
+        // after all pellets are cast (a headshot kill never reaches this).
+        // One entry per zombie: six body pellets on the same body queue one
+        // chain step, not six, so the drain is one step per blast.
+        if (!head && !this._chainTargets.includes(hitZ)) this._chainTargets.push(hitZ)
         if (head) headHit = true
       } else if (wall) {
         // No zombie absorbed this pellet: break a lamp if the wall was one,
@@ -237,6 +259,17 @@ export class Shotgun {
     }
     if (hitSet.length) this.onHit?.(headHit ? 'head' : 'body') // V5P-1: HUD hit marker
     for (const z of hitSet) z._lastBlastHits = 0
+    // v3 gameplay (2): the blast advances the dismemberment chain exactly once
+    // per zombie it hit with a body pellet (a headshot kill never gets here).
+    // Drain BEFORE stepping: the old code advanced the chain and only then
+    // cleared the list, so the next blast re-stepped every stale target —
+    // two blasts walked the whole chain and the third was the chain kill.
+    const chainTargets = this._chainTargets
+    this._chainTargets = []
+    for (const z of chainTargets) {
+      if (z.isDead || z.isBoss) continue
+      if (typeof z._chainShot === 'function') z._chainShot(landedHits(z))
+    }
     this.audio?.shoot?.()
     if (this.ammo === 0) this.reload()
     return true

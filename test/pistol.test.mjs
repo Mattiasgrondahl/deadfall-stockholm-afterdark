@@ -20,6 +20,12 @@ function fakeZombie(x, z, hp = 50) {
     isDead: false,
     health: hp,
     hits: [],
+    // v3 chain: the dismemberment chain is hit-counted, so the stand-in keeps
+    // the counters the real Zombie exposes (a fake never severs).
+    armsLost: 0,
+    legsLost: 0,
+    _chainShots: 0,
+    _chainShot(n = 1) { this._chainShots += n },
     getHitboxes: () => [
       { center: new THREE.Vector3(x, 1.2, z), radius: 0.45, isHead: false },
       { center: new THREE.Vector3(x, 1.8, z), radius: 0.3, isHead: true }
@@ -80,12 +86,14 @@ test('single round: centered torso takes 26, head takes 52; offset zombie untouc
   assert.equal(p.ammo, 11, 'one shot consumes one round')
   assert.equal(torsoZ.hits.length, 1, 'single round, single hit')
   assert.equal(torsoZ.hits[0].amount, 26, 'body damage')
+  assert.equal(torsoZ._chainShots, 1, 'v3 chain: a body round advances the chain')
   assert.equal(headZ.hits.length, 0, 'offset zombie untouched')
   camera.lookAt(4, 1.8, 6) // aim at the other zombie's head
   p.update(0.3)            // past the 0.28 s fire interval
   fireOnce(p)
   assert.equal(headZ.hits.length, 1)
   assert.equal(headZ.hits[0].amount, 52, '26 * 2 headshot')
+  assert.equal(headZ._chainShots, 0, 'v3 chain: a headshot never touches the chain')
   assert.equal(torsoZ.hits.length, 1, 'torso zombie not hit again')
 })
 

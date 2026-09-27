@@ -16,6 +16,7 @@ import { BulletHoles } from './BulletHoles.js'
 import { Lamps } from './Lamps.js'
 import { GlassShards } from './GlassShards.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
+import { DroppedLimbPool } from './DroppedLimbPool.js'
 import { Zombie, DIFFICULTY } from './Zombie.js'
 import { WaveManager } from './WaveManager.js'
 import { updateWorld } from './WorldCore.js'
@@ -447,6 +448,10 @@ export class Game {
       // severed head (shared geometry/materials; pool caps at 3).
       this.headPool = new DecapitatedHeadPool(this.scene)
       this.weapon.onDecapitate = (z, dir) => { if (this.headPool) this.headPool.spawn(z, dir) }
+      // WIRING:DISMEMBER (v3 T1): severed limbs tumble into a shared pool
+      // (24 slots, recycled), and every zombie spawned this run gets a handle
+      // on it. Game owns the pool; Zombie never allocates limb geometry.
+      this.limbs = new DroppedLimbPool(this.scene)
     }
     // WIRING:UI (browser only; headless keeps hud/screens null)
     if (this.env.document) {
@@ -604,6 +609,7 @@ export class Game {
     if (this.glassShards) this.glassShards.clear()
     if (this.lamps) this.lamps.reset()
     if (this.headPool) this.headPool.clear()
+    if (this.limbs) this.limbs.clear() // v3 T1: dropped limbs do not survive a restart
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
     this.timeInGame = 0
@@ -745,6 +751,8 @@ export class Game {
     if (this.blood) this.blood.update(dt)
     // WIRING:DECAPITATE (Task E)
     if (this.headPool) this.headPool.update(dt)
+    // WIRING:DISMEMBER (v3 T1): tumble + settle the limbs dropped this frame.
+    if (this.limbs) this.limbs.update(dt)
     // WIRING:LAMPS — advance relight timers + shard animation.
     if (this.lamps) this.lamps.update(dt)
     if (this.glassShards) this.glassShards.update(dt)
@@ -823,6 +831,9 @@ export class Game {
     // WIRING:SPAWN (owned by task D: create zombie, push into this.zombies, return it)
     const wave = this.waveManager ? this.waveManager.wave : 1
     const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
+    // WIRING:DISMEMBER (v3 T1): the run's shared limb pool, so a severed arm
+    // or leg drops as a tumbling clone instead of just vanishing.
+    if (this.limbs) zombie.drops = this.limbs
     this.zombies.push(zombie)
     // The wave-5 boss owns the HUD boss bar for as long as it is alive.
     if (zombie.isBoss) this._boss = zombie
