@@ -3,6 +3,7 @@
 import assert from 'node:assert'
 import { HUD } from '../src/game/HUD.js'
 import { Screens } from '../src/game/Screens.js'
+import { Score } from '../src/game/Score.js'
 
 // ---- fake DOM ---------------------------------------------------------
 function makeElement(ownerDoc, tag = 'div') {
@@ -725,6 +726,50 @@ function fakeWave(o) {
   assert.ok(size('hud-value') >= 20, 'hud-value stays >= 20px on narrow screens')
   assert.ok(size('weapon-ammo') >= 20, 'weapon-ammo stays >= 20px on narrow screens')
   assert.ok(size('hud-music-btn') >= 12, 'music button stays >= 12px on narrow screens')
+}
+
+{
+  // v3 T6: named high score render + XSS safety + T6b co-op field helpers.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  // Real Score so setName sanitizes + clamps exactly as production does.
+  const score = new Score({ localStorage: null }, () => 1)
+  score.best = 235
+  score.bestName = 'Ana'
+  game.score = score
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  const hs = find(title, 'highscore')
+  assert.strictEqual(hs.textContent, 'HIGH SCORE: Ana — 235', 'named record shows NAME — SCORE')
+  // A new solo record is attributed to the typed name via score.setName.
+  let started = 0
+  game.startGame = () => { started++ }
+  const soloInput = find(title, 'mp-row') // first mp-row is the PLAYER name row
+  // find the input among the row's children
+  const nameInput = soloInput.children.find((c) => String(c.tagName).toLowerCase() === 'input')
+  nameInput.value = '  <img src=x onerror=alert(1)>  '
+  // START routes through _startSolo -> score.setName (sanitized by Score) then startGame.
+  screens._startSolo()
+  assert.strictEqual(started, 1, 'START starts a solo run')
+  assert.strictEqual(game.score.name, '<img src=x onerror=alert', 'name sanitized + clamped to 24')
+  // XSS safety: the record holder name is rendered via textContent only — the
+  // high-score element gains NO child markup nodes from it (zero markup nodes).
+  game.score.bestName = '<img src=x onerror=alert(1)>'
+  screens.showTitle()
+  assert.strictEqual(hs.children.length, 0, 'name added as text, not markup nodes')
+  assert.ok(hs.textContent.includes('<img'), 'hostile payload survives as inert text')
+  // T6b: co-op room + name fields each carry a short helper description.
+  const mpRows = []
+  const collectRows = (el) => { for (const c of el.children) { if (c.classList.contains('mp-row')) mpRows.push(c); collectRows(c) } }
+  collectRows(title)
+  const coopRow = mpRows.find((r) => r.children.some((c) => c.classList && c.classList.contains('mp-input') && c.value === 'default'))
+  assert.ok(coopRow, 'co-op row present')
+  const helperTexts = coopRow.children.filter((c) => c.classList.contains('tagline')).map((c) => c.textContent)
+  assert.ok(helperTexts.some((t) => /shared game name/i.test(t)), 'room-code helper describes the shared room')
+  assert.ok(helperTexts.some((t) => /scoreboard/i.test(t)), 'name helper mentions the scoreboard')
+  screens.dispose()
 }
 
 console.log('hud-screens OK')

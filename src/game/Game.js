@@ -717,6 +717,7 @@ export class Game {
       kills: this.kills,
       score: this.score ? this.score.value : 0,
       best: this.score ? this.score.best : 0,
+      name: this.score ? this.score.name : '',
       record
     })
   }

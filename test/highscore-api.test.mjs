@@ -19,13 +19,13 @@ function listen(opts = {}) {
   })
 }
 
-test('GET /api/highscore returns the seed best (root + base path)', async () => {
-  const s = await listen({ highScore: 1234 })
+test('GET /api/highscore returns the seed best + name (root + base path)', async () => {
+  const s = await listen({ highScore: 1234, highScoreName: 'Ana' })
   try {
     const a = await (await fetch(s.base + '/api/highscore')).json()
     const b = await (await fetch(s.base + '/deadfall-stockholm-afterdark/api/highscore')).json()
-    assert.deepEqual(a, { best: 1234 })
-    assert.deepEqual(b, { best: 1234 })
+    assert.deepEqual(a, { best: 1234, name: 'Ana' })
+    assert.deepEqual(b, { best: 1234, name: 'Ana' })
   } finally { s.close() }
 })
 
@@ -33,12 +33,31 @@ test('POST raises the best only upward; garbage is ignored', async () => {
   const s = await listen({ highScore: 500 })
   try {
     const post = (body) => fetch(s.base + '/api/highscore', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
-    assert.deepEqual(await (await post(JSON.stringify({ score: 100 }))).json(), { best: 500 }, 'lower is ignored')
-    assert.deepEqual(await (await post(JSON.stringify({ score: 900 }))).json(), { best: 900 }, 'higher wins')
-    assert.deepEqual(await (await post('not json')).json(), { best: 900 }, 'bad body ignored')
-    assert.deepEqual(await (await post(JSON.stringify({ score: -5 }))).json(), { best: 900 }, 'negative ignored')
+    assert.deepEqual(await (await post(JSON.stringify({ score: 100, name: 'a' }))).json(), { best: 500, name: '' }, 'lower is ignored')
+    assert.deepEqual(await (await post(JSON.stringify({ score: 900, name: 'Zed' }))).json(), { best: 900, name: 'Zed' }, 'higher wins')
+    assert.deepEqual(await (await post('not json')).json(), { best: 900, name: 'Zed' }, 'bad body ignored')
+    assert.deepEqual(await (await post(JSON.stringify({ score: -5 }))).json(), { best: 900, name: 'Zed' }, 'negative ignored')
     const r = await fetch(s.base + '/api/highscore', { method: 'DELETE' })
     assert.equal(r.status, 405, 'DELETE rejected')
+  } finally { s.close() }
+})
+
+test('v3 T6: a hostile XSS name is sanitized server-side, never stored as markup', async () => {
+  const s = await listen({ highScore: 10 })
+  try {
+    const post = (body) => fetch(s.base + '/api/highscore', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    // Control chars stripped, whitespace collapsed, clamped to 24 chars.
+    const hostile = '<img src=x onerror=alert(1)>\n\t<b>zz</b>'
+    const r = await (await post(JSON.stringify({ score: 500, name: hostile }))).json()
+    assert.equal(r.best, 500)
+    assert.ok(r.name.length <= 24, `name clamped to 24 (${r.name.length})`)
+    assert.ok(!new RegExp('[\\u0000-\\u001f\\u007f]').test(r.name), 'no control characters survive')
+    assert.ok(!/\s{2,}/.test(r.name), 'no runs of whitespace survive')
+    // The payload survives as inert TEXT (it is rendered via textContent), but
+    // crucially it is never markup: the server stores the raw characters, and
+    // the client never uses innerHTML. Assert the record holder is exactly the
+    // sanitized string, so a downstream textContent render yields zero nodes.
+    assert.equal(r.name, '<img src=x onerror=alert(1)> <b>zz</b>'.slice(0, 24))
   } finally { s.close() }
 })
 

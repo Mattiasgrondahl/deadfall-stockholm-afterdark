@@ -51,8 +51,6 @@ export class Screens {
       row.appendChild(key); row.appendChild(act)
       grid.appendChild(row)
     }
-    const startBtn = d.createElement('button'); startBtn.className = 'btn primary'; startBtn.textContent = 'START'
-    startBtn.addEventListener('click', () => this._game.startGame())
     const settingsBtn = d.createElement('button'); settingsBtn.className = 'btn'; settingsBtn.textContent = 'SETTINGS'
     settingsBtn.addEventListener('click', () => this.showSettings())
     panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs)
@@ -72,7 +70,21 @@ export class Screens {
     this._nightmareBtn.addEventListener('click', () => this._setDifficulty('nightmare'))
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
-    panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn); panelT.appendChild(startBtn)
+    panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
+    // v3 T6: a display name for the SOLO run. It is sanitized (control chars
+    // stripped, whitespace collapsed, clamped to 24) and attributed to a new
+    // high score, then hosted so every visitor sees the record holder's name.
+    const nameRow = d.createElement('div'); nameRow.className = 'mp-row'
+    const nameLabel = d.createElement('div'); nameLabel.className = 'difficulty-label'; nameLabel.textContent = 'PLAYER'
+    this._soloNameInput = d.createElement('input'); this._soloNameInput.className = 'mp-input'
+    this._soloNameInput.type = 'text'; this._soloNameInput.placeholder = 'your name'; this._soloNameInput.value = 'player'
+    const soloHint = d.createElement('div'); soloHint.className = 'tagline dim'
+    soloHint.textContent = 'Shown on the high score if you set a record.'
+    nameRow.appendChild(nameLabel); nameRow.appendChild(this._soloNameInput); nameRow.appendChild(soloHint)
+    panelT.appendChild(nameRow)
+    const startBtn = d.createElement('button'); startBtn.className = 'btn primary'; startBtn.textContent = 'START'
+    startBtn.addEventListener('click', () => this._startSolo())
+    panelT.appendChild(startBtn)
     // CO-OP: a room code + display name join the server-authoritative room.
     // JOIN calls Game.startMultiplayer, which builds the client controller and
     // renders other players' avatars + a scoreboard from server snapshots.
@@ -82,9 +94,16 @@ export class Screens {
     this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'default'
     this._nameInput = d.createElement('input'); this._nameInput.className = 'mp-input'
     this._nameInput.type = 'text'; this._nameInput.placeholder = 'your name'; this._nameInput.value = 'player'
+    // v3 T6b: short helper lines under each co-op field, rendered via
+    // textContent (same XSS rules as the high-score name).
+    const roomHint = d.createElement('div'); roomHint.className = 'tagline dim'
+    roomHint.textContent = 'Room code: the shared game name — everyone who types it lands in the same session.'
+    const nameHint = d.createElement('div'); nameHint.className = 'tagline dim'
+    nameHint.textContent = 'Your name: shown to other players and on the scoreboard.'
     const joinBtn = d.createElement('button'); joinBtn.className = 'btn'; joinBtn.textContent = 'JOIN CO-OP'
     joinBtn.addEventListener('click', () => this._joinCoop())
-    mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(this._nameInput); mpRow.appendChild(joinBtn)
+    mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(roomHint)
+    mpRow.appendChild(this._nameInput); mpRow.appendChild(nameHint); mpRow.appendChild(joinBtn)
     panelT.appendChild(mpRow)
     // Title-screen backdrop: the Wan2GP-generated alley plate sits behind the
     // panel inside the title overlay (dimmed by the overlay's own rgba wash).
@@ -353,6 +372,14 @@ export class Screens {
     this._game.startMultiplayer({ room, name })
   }
 
+  /** v3 T6: START a solo run, carrying the chosen display name into the score
+   *  so a new record is attributed to it (and hosted). */
+  _startSolo() {
+    const name = (this._soloNameInput && this._soloNameInput.value || '').trim()
+    if (this._game.score && name) this._game.score.setName(name)
+    this._game.startGame()
+  }
+
   _hideAll() {
     this._title.classList.remove('visible')
     this._pause.classList.remove('visible')
@@ -365,18 +392,27 @@ export class Screens {
 
   showTitle() {
     this._hideAll()
-    if (this._game.score) this._highScoreText.textContent = 'HIGH SCORE: ' + this._game.score.best
+    if (this._game.score) this._highScoreText.textContent = this._hsLabel(this._game.score)
     this._title.classList.add('visible')
     // The hosted best may land after boot (GET /api/highscore is async) —
     // refresh the label when it does, without ever lowering what is shown.
     if (this._game.score && !this._hsRefresh) {
       this._hsRefresh = () => {
-        if (this._game.score && this._highScoreText.textContent !== 'HIGH SCORE: ' + this._game.score.best) {
-          this._highScoreText.textContent = 'HIGH SCORE: ' + this._game.score.best
+        if (this._game.score && this._highScoreText.textContent !== this._hsLabel(this._game.score)) {
+          this._highScoreText.textContent = this._hsLabel(this._game.score)
         }
       }
       this._game.score._onBestChange = this._hsRefresh
     }
+  }
+
+  /** v3 T6: the title HIGH SCORE label. When the hosted record has a holder
+   *  name it reads `HIGH SCORE: NAME — SCORE`; otherwise just the score. The
+   *  name is assigned via textContent only (never innerHTML), so a hostile
+   *  payload renders as inert text with zero markup nodes. */
+  _hsLabel(score) {
+    const name = score && score.bestName
+    return name ? 'HIGH SCORE: ' + name + ' — ' + score.best : 'HIGH SCORE: ' + score.best
   }
 
   showPause() { this._hideAll(); this._pause.classList.add('visible') }
@@ -406,10 +442,11 @@ export class Screens {
     else this.showTitle()
   }
 
-  showGameOver({ wave, kills, score = 0, best = 0, record = false }) {
+  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '' }) {
     this._hideAll()
     this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
-    this._recordText.textContent = record ? 'NEW HIGH SCORE — ' + best : ''
+    // v3 T6: a new record is attributed to the player's name (textContent only).
+    this._recordText.textContent = record ? (name ? 'NEW HIGH SCORE — ' + name + ' — ' + best : 'NEW HIGH SCORE — ' + best) : ''
     this._over.classList.add('visible')
   }
 

@@ -4,10 +4,35 @@
 // in localStorage when available (headless / storage-less envs degrade to
 // best = 0 without throwing). The HUD reads {value, best}; Screens shows score
 // + record flag on game over, and the title screen shows the stored best.
+// v3 T6: the record also carries a player NAME. The name is hosted (the server
+// stores {best, name}) so every visitor sees the record holder's name; the
+// client sanitizes on input and the server re-validates on POST, and the value
+// is only ever rendered via textContent — so a hostile payload can never
+// inject markup into the shared record.
 
 const VALUES = { walker: 10, shambler: 15, screamer: 25, brute: 150 }
 const WAVE_BONUS = 50
 export const STORAGE_KEY = 'deadfall-highscore'
+export const NAME_KEY = 'deadfall-player-name'
+export const MAX_NAME = 24
+
+// Control-character class (C0 + DEL) as an escape-only regex so this source
+// file stays plain ASCII — no literal control bytes in the file.
+const CTRL_RE = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
+
+/** v3 T6: sanitize a player-supplied name for the hosted high score. Strips
+ *  control characters (incl. newlines/tabs), collapses runs of whitespace,
+ *  trims, and clamps to MAX_NAME. This is the INPUT-side guard; the value is
+ *  always rendered with textContent (never innerHTML), so even a leftover
+ *  `<img src=x onerror=...>` becomes inert text — zero markup nodes. */
+export function sanitizeName(raw) {
+  const s = String(raw == null ? '' : raw)
+    .replace(CTRL_RE, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_NAME)
+  return s
+}
 
 export class Score {
   /**
@@ -19,6 +44,11 @@ export class Score {
     this._waveGetter = waveGetter || (() => 1)
     this.value = 0
     this.best = this._loadBest()
+    // v3 T6: the local player's chosen name (for a solo record) and the
+    // hosted record holder's name (from GET /api/highscore). Both are stored
+    // sanitized; render via textContent only.
+    this.name = this._loadName()
+    this.bestName = ''
   }
 
   _storage() {
@@ -35,6 +65,28 @@ export class Score {
       }
     } catch (err) { /* storage unavailable or corrupt -> 0 */ }
     return 0
+  }
+
+  _loadName() {
+    try {
+      const s = this._storage()
+      if (s) {
+        const n = s.getItem(NAME_KEY)
+        if (n) return sanitizeName(n)
+      }
+    } catch (err) { /* storage unavailable -> no name */ }
+    return ''
+  }
+
+  /** v3 T6: set the local player's name (sanitized + persisted). Called from
+   *  the title screen / co-op join so a new record is attributed to it. */
+  setName(raw) {
+    this.name = sanitizeName(raw)
+    try {
+      const s = this._storage()
+      if (s) s.setItem(NAME_KEY, this.name)
+    } catch (err) { /* storage unavailable — in-memory name still set */ }
+    return this.name
   }
 
   /** Points a kill of `type` on `wave` is worth. */
@@ -57,6 +109,7 @@ export class Score {
   newRecord() {
     if (this.value > this.best) {
       this.best = this.value
+      this.bestName = this.name // v3 T6: the record holder is this player
       try {
         const s = this._storage()
         if (s) s.setItem(STORAGE_KEY, String(this.value))
@@ -81,10 +134,10 @@ export class Score {
     return base.replace(/\/$/, '')
   }
 
-  /** Production-hosted best: seed the stored best from the server
-   *  (GET /api/highscore) so the title screen shows the hosted record even in
-   *  a fresh browser — localStorage is per-device. Best-effort: fetch or
-   *  storage failures are swallowed and the local best is never lowered. */
+  /** Production-hosted best: seed the stored best (and holder name) from the
+   *  server (GET /api/highscore) so the title screen shows the hosted record
+   *  even in a fresh browser — localStorage is per-device. Best-effort: fetch
+   *  or storage failures are swallowed and the local best is never lowered. */
   async adoptBest(fetchFn) {
     const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
     if (!f) return this.best
@@ -95,6 +148,9 @@ export class Score {
       const v = Number(j && j.best)
       if (Number.isFinite(v) && v > this.best) {
         this.best = v
+        // v3 T6: adopt the hosted holder's name (server already sanitized it,
+        // but re-sanitize defensively before render).
+        this.bestName = sanitizeName(j && j.name)
         try {
           const s = this._storage()
           if (s) s.setItem(STORAGE_KEY, String(v))
@@ -105,8 +161,9 @@ export class Score {
     return this.best
   }
 
-  /** Submit the current best to the hosted backend (POST /api/highscore).
-   *  Best-effort: any failure is swallowed — the local best already stands. */
+  /** Submit the current best + holder name to the hosted backend (POST
+   *  /api/highscore). Best-effort: any failure is swallowed — the local best
+   *  already stands. The name is sent sanitized; the server re-validates. */
   async submitBest(fetchFn) {
     const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
     if (!f || !(this.best > 0)) return false
@@ -114,7 +171,7 @@ export class Score {
       const r = await f(this._apiBase() + '/api/highscore', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ score: this.best })
+        body: JSON.stringify({ score: this.best, name: this.bestName || this.name || '' })
       })
       return !!r && r.ok
     } catch (err) { return false }

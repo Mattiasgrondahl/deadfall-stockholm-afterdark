@@ -32,39 +32,63 @@ const DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.re
 // single global record every visitor shares. Writes are serialized through
 // the in-memory value; the file is the persistence across restarts.
 const HS_FILE = process.env.HIGHSCORE_FILE || path.join(__dirname, 'highscore.json')
+const HS_MAX_NAME = 24
+const HS_CTRL = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
 
-/** Read the persisted high score (0 when missing/corrupt). */
+/** v3 T6: server-side name sanitizer for the hosted record. A hostile POST
+ *  must not poison the shared record, so the name is stripped of control
+ *  characters, whitespace-collapsed, trimmed and clamped before it is stored.
+ *  The value is only ever served back as JSON text and rendered client-side
+ *  via textContent, so it can never become markup. */
+function sanitizeName(raw) {
+  return String(raw == null ? '' : raw)
+    .replace(HS_CTRL, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, HS_MAX_NAME)
+}
+
+/** Read the persisted high score + holder name ({best, name}; 0/'' when
+ *  missing/corrupt). v3 T6: the record is now named. */
 function readHighScore() {
   try {
-    const v = Number(JSON.parse(fs.readFileSync(HS_FILE, 'utf8')).best)
-    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0
-  } catch { return 0 }
+    const j = JSON.parse(fs.readFileSync(HS_FILE, 'utf8'))
+    const v = Number(j.best)
+    const best = Number.isFinite(v) && v > 0 ? Math.floor(v) : 0
+    return { best, name: sanitizeName(j.name) }
+  } catch { return { best: 0, name: '' } }
 }
 
-/** Persist the high score; failures are swallowed (in-memory value stands). */
-function writeHighScore(v) {
-  try { fs.writeFileSync(HS_FILE, JSON.stringify({ best: Math.floor(v) })) } catch { /* read-only fs */ }
+/** Persist the high score + holder name; failures are swallowed (in-memory
+ *  value stands). v3 T6: stores {best, name}. */
+function writeHighScore(best, name) {
+  try { fs.writeFileSync(HS_FILE, JSON.stringify({ best: Math.floor(best), name: sanitizeName(name) })) } catch { /* read-only fs */ }
 }
 
-/** Handle /api/highscore: GET returns {best}, POST {score} raises it. */
+/** Handle /api/highscore: GET returns {best, name}, POST {score, name} raises
+ *  it (name re-validated server-side). v3 T6. */
 function serveHighScore(req, res, state) {
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-    res.end(JSON.stringify({ best: state.best }))
+    res.end(JSON.stringify({ best: state.best, name: state.name }))
     return
   }
   if (req.method === 'POST') {
     let body = ''
     req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy() })
     req.on('end', () => {
-      let v = NaN
-      try { v = Number(JSON.parse(body).score) } catch { /* bad json -> NaN */ }
+      let v = NaN, nm = ''
+      try { const j = JSON.parse(body); v = Number(j.score); nm = j.name } catch { /* bad json -> NaN */ }
       if (Number.isFinite(v) && v >= 0 && v <= 1e9) {
         const next = Math.floor(v)
-        if (next > state.best) { state.best = next; writeHighScore(next) }
+        if (next > state.best) {
+          state.best = next
+          state.name = sanitizeName(nm)
+          writeHighScore(next, state.name)
+        }
       }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      res.end(JSON.stringify({ best: state.best }))
+      res.end(JSON.stringify({ best: state.best, name: state.name }))
       return
     })
     return
@@ -206,8 +230,17 @@ export function startServer(opts = {}) {
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0'
   const room = new Room(opts.difficulty)
   // Shared high-score state, attached to every request so serveStatic can see
-  // it without module-level mutable state (tests get a fresh store).
-  const hsState = { best: Number.isFinite(opts.highScore) ? Math.floor(opts.highScore) : readHighScore() }
+  // it without module-level mutable state (tests get a fresh store). v3 T6: the
+  // record is named; opts.highScore overrides the best, opts.highScoreName the
+  // holder name (used by tests).
+  const boot = readHighScore()
+  const hsState = {
+    best: Number.isFinite(opts.highScore) ? Math.floor(opts.highScore) : boot.best,
+    // When a test seeds the best via opts.highScore, ignore the on-disk holder
+    // name (it may carry a value from a prior run) unless one is given.
+    name: opts.highScoreName != null ? sanitizeName(opts.highScoreName)
+      : (Number.isFinite(opts.highScore) ? '' : boot.name)
+  }
   const httpServer = http.createServer((req, res) => { req._hsState = hsState; serveStatic(req, res) })
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 

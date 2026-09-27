@@ -48,7 +48,7 @@ test('submitBest POSTs the best and commitRecord chains both', async () => {
   assert.equal(s.best, 777)
   assert.equal(calls.length, 1, 'one POST')
   assert.equal(calls[0].init.method, 'POST')
-  assert.deepEqual(JSON.parse(calls[0].init.body), { score: 777 })
+  assert.deepEqual(JSON.parse(calls[0].init.body), { score: 777, name: '' }, 'POST carries the (empty) holder name')
   // No best -> no POST.
   const idle = new Score({ localStorage: makeStorage() }, () => 1)
   assert.equal(await idle.submitBest(f), false, 'best 0 submits nothing')
