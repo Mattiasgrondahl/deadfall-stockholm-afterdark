@@ -86,6 +86,10 @@ export class Shotgun {
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.16), bodyMat)
     stock.position.set(0, -0.02, 0.28)
     this.view.add(receiver, barrel, pump, stock)
+    // The receiver/pump/stock skin (assets/weapons/shotgun.jpg) loads onto
+    // bodyMat in the browser; headless keeps the flat color. Tracked for dispose.
+    this._skinMat = bodyMat
+    this._skinLoaded = false
 
     // Muzzle flash: fading additive sprite + short-lived point light at barrel tip.
     let flashMap = null
@@ -112,6 +116,25 @@ export class Shotgun {
     this._peak = FLASH_PEAK
     this.camera.add(this.view)
     scene.add(this.camera)
+    this._loadSkin()
+  }
+
+  // Browser-only: load the shotgun skin onto the receiver/pump/stock material.
+  // Headless keeps the flat color. Color flips to white so the map renders at
+  // true color. Mirrors Sniper._loadSkin.
+  _loadSkin() {
+    if (typeof document === 'undefined') return
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
+      ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''
+    const loader = new THREE.TextureLoader()
+    loader.load(base + 'assets/weapons/shotgun.jpg', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      this._skinMat.color.set(0xffffff)
+      this._skinMat.map = tex
+      this._skinMat.needsUpdate = true
+      this._skinLoaded = true
+    }, undefined, () => { /* keep flat color */ })
   }
 
   /**
@@ -311,6 +334,9 @@ export class Shotgun {
       if (this.flash.material.map) this.flash.material.map.dispose()
       this.flash.material.dispose()
     }
+    // Dispose the loaded shotgun skin map (bodyMat shared by receiver/pump/stock;
+    // the child loop disposed the material itself but not its map texture).
+    if (this._skinMat && this._skinMat.map) this._skinMat.map.dispose()
     this.flashLight.dispose()
   }
 }

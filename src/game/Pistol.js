@@ -81,6 +81,11 @@ export class Pistol {
     grip.position.set(0, -0.09, 0.12)
     grip.rotation.x = 0.25
     this.view.add(slide, barrel, grip)
+    // The slide/frame skin (assets/weapons/pistol.jpg) is loaded onto bodyMat in
+    // the browser; headless keeps the flat dark color. Tracked so dispose() frees
+    // the texture (the slide + grip share this one material).
+    this._skinMat = bodyMat
+    this._skinLoaded = false
 
     // Muzzle flash: fading additive sprite + short-lived point light at barrel tip.
     let flashMap = null
@@ -108,6 +113,25 @@ export class Pistol {
     this._peak = FLASH_PEAK
     this.camera.add(this.view)
     scene.add(this.camera)
+    this._loadSkin()
+  }
+
+  // Browser-only: load the pistol skin onto the slide/frame material. Headless
+  // keeps the flat dark color. Color flips to white so the map renders at true
+  // color (MeshStandardMaterial multiplies map by color). Mirrors Sniper._loadSkin.
+  _loadSkin() {
+    if (typeof document === 'undefined') return
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
+      ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''
+    const loader = new THREE.TextureLoader()
+    loader.load(base + 'assets/weapons/pistol.jpg', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      this._skinMat.color.set(0xffffff)
+      this._skinMat.map = tex
+      this._skinMat.needsUpdate = true
+      this._skinLoaded = true
+    }, undefined, () => { /* keep flat color */ })
   }
 
   /**
@@ -270,6 +294,9 @@ export class Pistol {
       if (this.flash.material.map) this.flash.material.map.dispose()
       this.flash.material.dispose()
     }
+    // Dispose the loaded pistol skin (bodyMat is shared by slide + grip; the
+    // child loop already disposed bodyMat itself, but not its map texture).
+    if (this._skinMat && this._skinMat.map) this._skinMat.map.dispose()
     this.flashLight.dispose()
   }
 }
