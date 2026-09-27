@@ -234,6 +234,45 @@ export class Score {
     } catch (err) { return false }
   }
 
+  /** Submit the CURRENT RUN's score to the hosted backend (POST /api/highscore),
+   *  regardless of whether it beat the local best. v9: the hosted board is a
+   *  top-10 ladder that the server qualifies on its own, so every finished run
+   *  with a positive score should be offered to it — not only runs that beat the
+   *  player's own localStorage best (which previously meant a fresh player's run
+   *  never reached the board). Posts {score:value, name, room}; adopts the
+   *  returned top-10 board like submitBest. Best-effort: failures are swallowed. */
+  async submitRun(fetchFn) {
+    const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
+    const value = Math.floor(this.value)
+    if (!f || !(value > 0)) return false
+    try {
+      const r = await f(this._apiBase() + '/api/highscore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ score: value, name: this.name || '', room: this.room })
+      })
+      if (!r || !r.ok) return false
+      let updated = false
+      try {
+        const j = await r.json()
+        const rawTop = Array.isArray(j && j.top) ? j.top : []
+        const top = []
+        for (const e of rawTop) {
+          if (!e || typeof e !== 'object') continue
+          const sv = Number(e.score)
+          if (Number.isFinite(sv) && sv > 0) top.push({ name: sanitizeName(e.name), score: Math.floor(sv) })
+        }
+        const topChanged = top.length !== this.top.length ||
+          top.some((e, i) => !this.top[i] || this.top[i].score !== e.score || this.top[i].name !== e.name)
+        if (topChanged) { this.top = top; updated = true }
+        const bv = Number(j && j.best)
+        if (Number.isFinite(bv) && bv > this.best) { this.best = bv; this.bestName = sanitizeName(j && j.name); updated = true }
+      } catch { /* response not JSON — the POST still landed */ }
+      if (updated && this._onBestChange) this._onBestChange()
+      return true
+    } catch (err) { return false }
+  }
+
   /** Game-over commit: save locally if it is a record, then mirror it to the
    *  hosted backend. Takes the same optional fetch injection as submitBest so
    *  tests can chain both calls offline. Returns whether a record was made. */

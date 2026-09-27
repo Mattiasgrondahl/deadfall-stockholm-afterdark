@@ -48,6 +48,8 @@ export class Multiplayer {
     this.zombies = new Map() // matchId -> { mesh }
     this.lastSnap = null
     this.selfDead = false
+    this.selfHealth = null
+    this.selfStamina = null
     this._wasSelfDead = false
     // Co-op respawn hooks the Game wires up (no-ops until assigned).
     this.onSelfDeath = null
@@ -87,8 +89,20 @@ export class Multiplayer {
     const seen = new Set()
     // Self state from the authoritative roster: dead flag + respawn events.
     let selfDead = false
+    let selfHealth = null
+    let selfStamina = null
     for (const p of snap.players) {
-      if (p.id === this.pid) { selfDead = !!p.dead; continue } // self is first-person, not proxied
+      // v9: the server is authoritative for the self player's health/stamina too.
+      // The client runs an empty local horde (the server owns the zombies), so
+      // nothing damages the local player on the client — without adopting the
+      // snapshot health the HUD would always read full and death would never
+      // register visually. Capture them here; Game applies them to the player.
+      if (p.id === this.pid) {
+        selfDead = !!p.dead
+        if (Number.isFinite(p.health)) selfHealth = p.health
+        if (Number.isFinite(p.stamina)) selfStamina = p.stamina
+        continue // self is first-person, not proxied
+      }
       seen.add(p.id)
       let rp = this.players.get(p.id)
       if (!rp) {
@@ -100,6 +114,9 @@ export class Multiplayer {
       rp.apply(p, 1 / 60)
     }
     this.selfDead = selfDead
+    // v9: authoritative self health/stamina for the local HUD + death detection.
+    this.selfHealth = selfHealth
+    this.selfStamina = selfStamina
     // Surface self death/respawn transitions to the game (co-op respawn flow).
     if (selfDead && !this._wasSelfDead) this.onSelfDeath && this.onSelfDeath()
     if (!selfDead && this._wasSelfDead) this.onSelfRespawn && this.onSelfRespawn()

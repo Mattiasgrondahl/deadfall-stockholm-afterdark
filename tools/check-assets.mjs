@@ -47,8 +47,8 @@ for (const rel of SRC_FILES) {
 }
 // Dynamic ones the regex cannot see (concatenated names): pinned explicitly
 // from the known loaders so a renamed/removed file still trips the check.
-// Zombie faces: {type}{,2,3}-face.jpg for walker/shambler/screamer.
-for (const type of ['walker', 'shambler', 'screamer']) {
+// Zombie faces: {type}{,2,3}-face.jpg for walker/shambler/screamer/brute.
+for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
   addRef(`assets/faces/${type}-face.jpg`, 'src/game/Zombie.js (dynamic)')
   addRef(`assets/faces/${type}2-face.jpg`, 'src/game/Zombie.js (dynamic)')
   addRef(`assets/faces/${type}3-face.jpg`, 'src/game/Zombie.js (dynamic)')

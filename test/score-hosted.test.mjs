@@ -91,3 +91,36 @@ test('v8: submitBest adopts the returned board so the scorer appears immediately
   assert.equal(s.bestName, 'Zed', 'holder name adopted')
   assert.equal(fired, 1, 'change callback fired so the title board re-renders')
 })
+
+test('v9: submitRun posts the finished run even when it is NOT a local record', async () => {
+  // A fresh player has no local best yet, so newRecord()/submitBest would drop
+  // the run. submitRun posts the run's value to the hosted top-10 regardless,
+  // letting the server decide qualification.
+  const calls = []
+  const f = async (url, init) => {
+    calls.push({ url, init })
+    return { ok: true, json: async () => ({ best: 1000, name: 'REAPER', top: [{ name: 'REAPER', score: 1000 }, { name: 'Newbie', score: 320 }] }) }
+  }
+  const s = new Score({ localStorage: makeStorage(900) }, () => 1)
+  s.name = 'Newbie'
+  s.setRoom('ROOM7')
+  s.value = 320 // below the local best of 900 → not a record
+  const posted = await s.submitRun(f)
+  assert.equal(posted, true, 'run posted despite not beating the local best')
+  assert.equal(calls.length, 1, 'one POST')
+  assert.equal(calls[0].init.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].init.body), { score: 320, name: 'Newbie', room: 'ROOM7' }, 'posts the run value + name + room')
+  assert.equal(s.best, 1000, 'hosted best (1000) adopted over the local 900')
+  assert.equal(s.bestName, 'REAPER', 'hosted holder name adopted')
+  assert.deepEqual(s.top.map((e) => e.name), ['REAPER', 'Newbie'], 'hosted board adopted')
+})
+
+test('v9: submitRun skips a zero run and survives offline', async () => {
+  const f = async () => ({ ok: true, json: async () => ({}) })
+  const s = new Score({ localStorage: makeStorage() }, () => 1)
+  s.value = 0
+  assert.equal(await s.submitRun(f), false, 'zero run posts nothing')
+  const s2 = new Score({ localStorage: makeStorage() }, () => 1)
+  s2.value = 150
+  assert.equal(await s2.submitRun(async () => { throw new Error('network down') }), false, 'network failure is swallowed')
+})

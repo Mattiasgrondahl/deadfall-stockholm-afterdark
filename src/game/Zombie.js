@@ -76,7 +76,7 @@ const TABLE = {
   walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
   shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
   screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
-  brute: { speed: 0.7, hp: 520, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
+  brute: { speed: 0.7, hp: 5200, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
 /** Boss charge window: within this horizontal range the brute lunges instead
@@ -105,6 +105,12 @@ export const DIFFICULTY = {
 }
 
 const ORDER = ['walker', 'shambler', 'screamer', 'brute']
+
+/** v9 boss size: the brute's silhouette + hitbox scale. Doubled from the old
+ *  1.4 to 2.8 so the boss reads as a genuine giant ("2x larger"). Both the
+ *  primitive/skin body scale and the weapon hitbox radii use this single factor,
+ *  so the two-sphere hitbox contract stays consistent with the visible model. */
+const BOSS_SCALE = 2.8
 
 /**
  * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
@@ -690,7 +696,7 @@ export class Zombie {
     // (×0.35) is barely moved — it cannot be staggered out of its charge.
     // 1 = normal stagger (walker/shambler).
     this.staggerResist = TABLE[type].staggerResist
-    this._hitboxScale = this.isBoss ? 1.4 : 1
+    this._hitboxScale = this.isBoss ? BOSS_SCALE : 1
     // Charge (boss only): when the player is within CHARGE_RANGE the brute
     // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
     this._chargeT = 0
@@ -876,7 +882,7 @@ export class Zombie {
     const h = this._skinHeight()
     const dim = new THREE.Box3().setFromObject(skinned).getSize(new THREE.Vector3())
     const bb = new THREE.Box3().setFromObject(skinned)
-    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? 1.4 : 1) : 1
+    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? BOSS_SCALE : 1) : 1
     // Non-uniform: height on Y, per-type width on X/Z so silhouettes vary.
     const w = SKIN_WIDTH[this.type] || 1
     root.scale.set(scale * w, scale, scale * w)

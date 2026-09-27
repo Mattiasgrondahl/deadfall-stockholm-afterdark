@@ -175,6 +175,37 @@ test('Game.startMultiplayer builds the controller + starts the run', () => {
   game.multiplayer.dispose()
 })
 
+test('co-op applies the server-authoritative health to the local player (can die)', () => {
+  const game = new Game({ headless: true })
+  game.start()
+  const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
+  mp.net.socket.open()
+  mp.net.socket.receive({ t: MSG.WELCOME, pid: 'ada', roster: [] })
+  // The client runs an empty local horde, so nothing damages the local player
+  // on the client — the snapshot health is the only source of truth. A snapshot
+  // that reports the player hurt must drop the local HUD health.
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 40, stamina: 55, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  game.step(1 / 60)
+  assert.equal(game.player.health, 40, 'local player health synced from the snapshot')
+  assert.equal(game.player.stamina, 55, 'stamina synced too')
+  assert.equal(game.player.isDead, false, 'still alive at 40 hp')
+  // A lethal snapshot flips the local player to dead and triggers the respawn
+  // banner — the co-op death path the bug report said was impossible.
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 0, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: true },
+    { id: 'sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  game.step(1 / 60)
+  assert.equal(game.player.health, 0, 'lethal snapshot zeroes local health')
+  assert.equal(game.player.isDead, true, 'local player is dead')
+  assert.equal(game.state, 'playing', 'co-op death does not end the run')
+  assert.equal(game._respawning, true, 'respawn banner flow engaged')
+  mp.dispose(); game.multiplayer && game.multiplayer.dispose()
+})
+
 test('co-op suppresses local zombie sim + HUD reads server snapshot', () => {
   const game = new Game({ headless: true })
   game.start()

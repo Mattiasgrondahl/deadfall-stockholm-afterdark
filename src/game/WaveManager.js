@@ -48,8 +48,9 @@ const BOSS_EVERY = 5
 /** True when `wave` is a boss wave (a multiple of BOSS_EVERY). */
 const isBossWave = (wave) => wave > 0 && wave % BOSS_EVERY === 0
 /** Gap after a boss wave's queue is fully spawned and cleared before the boss
- *  stomps in — a short, dramatic pause instead of an instant spawn. */
-const BOSS_DELAY = 1.5
+ *  stomps in — a short dramatic beat. v9: cut from 1.5 s to 0.5 s so the boss
+ *  appears noticeably quicker once the escort wave is down. */
+const BOSS_DELAY = 0.5
 /** Spawn point for the boss: index 3 of City.getSpawnPoints() = (0, 85), the
  *  far north end of the main street, so the brute walks the player down. */
 const BOSS_POINT = { x: 0, z: 85 }

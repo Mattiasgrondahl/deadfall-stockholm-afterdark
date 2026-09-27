@@ -17,6 +17,75 @@ the original; state below is recovered from git history + probe evidence.
   outfits) committed `b2b59a3`; task 5 (melee slash animation, knockback, jump, weapon-surface
   textures) committed `f936263`; task 6 (FRENZY difficulty) committed `0b9fc8b` — 173/173
   tests green, verify-game 81 ok/0 fail/0 skipped. All v3 code commits pushed to origin.
+- **v6 audio+gameplay round (Sep 27, branch `v3`, HEAD `cf91c40`)**: scroll weapon
+  switching, sequential EN→JP→SV playlist (repeat-bug fix) + B-skip, dedicated
+  boss-fight music (song_boss.mp3, playlist paused during boss), flat blood
+  flecks, clothed zombie bodies (sleeve materials + fabric normal map). 349/349
+  tests, verify 81/0/0, build ok, check-assets 0 problems, secrets clean, E2E
+  18/18. LIVE: gh-pages `00b0177` (bundle `index-bHDUe3zf.js`, song_boss.mp3 200)
+  + zombie.p4ppse3n.top (zombie-app/dist redeployed, service active).
+- **v6 leaderboard round (Sep 27, branch `v3`, HEAD `b5717a6`)**: top-10 hosted
+  high-score list (server stores `top:[{name,score}]`, GET returns
+  `{best,name,top}` with best/name mirroring top[0] for back-compat, POST
+  inserts + caps at 10) + a title-screen TOP 10 board (textContent-only) +
+  random "Adjective Noun" player-name prefill on load (seeded LCG, no
+  Math.random). 351/351 tests, verify 81/0/0, build ok, check-assets 0 problems,
+  secrets clean, E2E 18/18. LIVE: gh-pages `bde0db9` (bundle `index-BC6pq3QP.js`)
+  + zombie.p4ppse3n.top (zombie-app/dist redeployed, service active).
+- **v7 room/score round (Sep 27, branch `v3`)**: room-scoped everything. (1) The
+  co-op scoreboard now lists online players by NAME (id→name map from
+  `snap.players`) + a `PLAYERS n` count line (`Multiplayer.scoreboard`/
+  `_renderScoreboard`). (2) The confusing "room 0/10" HUD readout (zombie-spawn
+  headroom, not players) is hidden except at the cap where `CAP n/cap` still
+  shows (`HUD.js` threat block; intermission branch now syncs `_threatSubText`).
+  (3) New top-right `KILLS n` / `HEADSHOTS n` HUD counters (`.hud-stats`, wired
+  via `hud.kills`/`hud.headshots` closures in Game.js HUD-wiring block). (4) The
+  50/100-kill achievements already exist in the `SLAYER [10,20,50,100]` ladder —
+  surfaced via the new KILLS counter. (5) `randomRoomCode()` (zombie-themed
+  `WORD-WORD-NN`, seeded LCG) prefills the co-op room input on load instead of
+  `default`. (6) PER-ROOM high scores: server keys rooms + leaderboards by the
+  hello `room` code (`Map<room,Room>` + `Map<room,{top}>`, per-room
+  `highscore-<room>.json` siblings, `hsRootFile()` resolves HIGHSCORE_FILE at
+  call time so tests can redirect); `/api/highscore` takes `?room=` (GET) /
+  `{room}` (POST), blank/absent → `default` (back-compat); `Score.setRoom` +
+  `adoptBest`/`submitBest` carry the room. 353/353 tests (+2), verify 81/0/0,
+  build ok, check-assets 0 problems, secrets clean, E2E 18/18. LIVE: gh-pages
+  `fc3d499` (bundle `index-CfMcMXH4.js`, verified live) + zombie.p4ppse3n.top
+  (zombie-app/dist redeployed + server/server.js synced + service active; origin
+  :8080 serves `index-CfMcMXH4.js`). Committed `fe5ad69`, pushed origin/v3.
+- **v8 leaderboard-update round (Sep 27, branch `v3`)**: two fixes. (1) The
+  title-screen board did not refresh when a run beat the lowest listed score —
+  `Score.submitBest` POSTed but discarded the response, so the player's own name
+  only appeared after a reload/`adoptBest`. Now `submitBest` parses the POST
+  response (the server returns the room's updated `top`) and adopts it into
+  `this.top`/`best`/`bestName` + fires `_onBestChange`, so a scorer appears on the
+  board immediately. (2) A fresh/empty board (per-room OR default) now seeds a
+  10-rank ladder `DEFAULT_TOP` (REAPER 1000, GRIM 900 … SETTOR 100) via
+  `readHighScore`; a new score that beats the lowest rank bumps the rest down a
+  step and drops the 11th, keeping exactly the 10 highest (`normalizeTop` clamp).
+  Tests updated: v7 per-room test now asserts the seeded ladder + bump-off; new
+  `score-hosted` test asserts submitBest adopts the returned board. 354/354
+  tests (+1), verify 81/0/0, build ok, check-assets 0 problems, secrets clean,
+  E2E 18/18. LIVE: gh-pages `7161aac` (bundle `index-cBHik3rP.js`, verified live)
+  + zombie.p4ppse3n.top (zombie-app/dist + server/server.js synced + service
+  active; origin :8080 serves `index-cBHik3rP.js`; fresh-room seed + bump verified
+  live). Committed `1a0f237`, pushed origin/v3.
+- **v9 difficulty-clarity round (Sep 27, branch `v3`)**: the title-screen
+  difficulty picker (NIGHT / FRENZY / NIGHTMARE) is now a clear single-choice
+  control. The SELECTED option is a solid accent fill (`--accent` background)
+  with dark ink text (`#0b1220`) + bright border + soft glow — unmistakable and
+  readable; unselected options are dim (`--ink-dim`, no fill). Previously both
+  selected and unselected text were near-white with only a faint translucent-blue
+  fill, so the active choice was hard to read/tell. `_setDifficulty` is now
+  mutually exclusive: NIGHTMARE no longer also lights up FRENZY (two buttons
+  looked selected at once); the nightmare-on-frenzy stacking stays a gameplay
+  concern handled by the preset, not the UI state. Tests +1 (354/354): contrast
+  assertion for dark text on the accent fill + a behavioral test that exactly one
+  toggle carries `on` at a time. verify 81/0/0, build ok, check-assets 0 problems,
+  secrets clean, E2E 18/18. LIVE: gh-pages `2af892f` (bundle `index-fa31L2MU.js`,
+  verified live) + zombie.p4ppse3n.top (zombie-app/dist redeployed + service
+  active; origin :8080 serves `index-fa31L2MU.js`). Committed `646901d`, pushed
+  origin/v3.
 - **Multiplayer**: `MULTIPLAYER_PLAN.md` drafted — server-authoritative 8-player over WebSockets
   (20 Hz tick, 10 Hz snapshots, client self-prediction, Phases 0–5, hosting options). Design
   only; no implementation yet. §12 open questions resolved to suggested defaults (respawn-on-delay,
@@ -1654,6 +1723,110 @@ the original; state below is recovered from git history + probe evidence.
   audio + music-playlist + restart-state 5/5.
   NEXT: when mp3s land — verify files, npm test + build + verify-game,
   browser smoke (playlist rotation), README audio section update, commit.
+
+## v6 audio + gameplay round (Sep 27 2026) — scroll weapons, sequential playlist, boss music, flat blood
+
+User asks (6): mouse-scroll weapon switching; sequential mp3 playlist (fix
+same-track repeat) reordered EN→JP→SV + skip-to-next; wave-5 music until boss
+then a dedicated mystical/slow/scary boss track; improve zombie body visuals
+(texture/clothing); flatten blood splatter (was reading as a 3D chunk).
+
+- **Playlist fix (AudioBank.js)**: the known-end `timeupdate` watchdog used to
+  rewind the SAME track at `len-0.25`, so the native `ended` advance handler
+  almost never fired → one song looped forever. Now, when a playlist is active,
+  the watchdog calls `_advancePlaylist()` (sequential playback) instead of
+  rewinding. Refactored `playPlaylist` to share `_advancePlaylist()` with the
+  `ended` handler. Added `skipPlaylistTrack()` (player skip), and
+  `pausePlaylistTrack()`/`resumePlaylistTrack()` (resume restores the paused
+  song's src). Added `playBossMusic(url, seconds)` + `stopBossMusic()` that
+  pause the playlist, swap in the boss track, then resume the playlist.
+  `_plPaused` flag added in the constructor.
+- **Game.js (WIRING:MUSIC + WIRING:WAVES)**: SONG_PLAYLIST reordered to
+  EN→JP→SV (`song_hord_en` 71s, `song_matsubou_ja` 86s, `song_javelin_sv` 180s)
+  with SONG_PLAYLIST_SECONDS=[71,86,180] (ffprobe-verified). Added BOSS_TRACK +
+  BOSS_TRACK_SECONDS=150. `onBossSpawn` → `audio.playBossMusic(...)` +
+  `_bossFightActive=true`; `onWaveCleared` → `audio.stopBossMusic()` when the
+  boss fell; reset clears `_bossFightActive` + stops boss music. B key →
+  `audio.skipPlaylistTrack()`.
+- **Input.js**: added `musicSkip` event (KeyB) and a `wheel` listener →
+  `inputState.scrollUp`/`scrollDown` press-edges (only while pointer-locked,
+  preventDefault); cleared in dispose; listener registered in attach() so
+  dispose reverses it.
+- **WeaponBank.js**: added `cycle(dir)` — steps `current` forward/backward
+  through [axe,shotgun,pistol,sword,sniper] (wraps) via switchTo; `update()`
+  consumes scrollDown→cycle(+1), scrollUp→cycle(-1).
+- **Blood.js**: droplets were `TetrahedronGeometry` (3D chunks) tumbling on a
+  random axis → read as 3D objects with height. Now `CircleGeometry(0.05,6)`
+  (flat flecks, DoubleSide) that lie face-up and spin in-plane about world Y
+  only, so airborne blood reads flat. Removed the now-dead `_axis` scratch.
+  Stains were already flat (rotateX(-PI/2), STAIN_Y=0.01).
+- **Zombie.js (v6 visuals 11)**: arms read as clothed — per-outfit SLEEVE_MATS
+  (clones of the outfit top, fed the albedo when it loads) replace the bare
+  MAT2 skin on armL/armR; head keeps MAT2 skin so the face decal reads. One
+  shared 64×64 fabric-weave NORMAL DataTexture (deterministic seeded LCG,
+  RepeatWrapping, repeat 2×2, normalScale 0.6) is assigned as normalMap of
+  every outfit top/bottom + sleeve material, breaking up the flat box faces.
+  SLEEVE_MATS exported; zombie.test.mjs + boss.test.mjs arm assertions updated
+  to SLEEVE_MATS membership. Full suite 349/349, verify 81/0/0, build ok.
+- **Boss audio asset**: `tools/audio-specs/df_boss.json` (dark gothic doom,
+  slow/minor/mystical/scary) generating via Wan2GP (background job
+  bash-681, GPU 2, ~30-90 min). On completion: ffmpeg loudnorm→mp3 →
+  `public/assets/audio/song_boss.mp3` + `dist/`, ffprobe → set
+  BOSS_TRACK_SECONDS to the true length.
+- **Tests**: audio.test.mjs playlist block rewritten for the new sequential
+  watchdog (watchdog advances, ended is an independent advance) + skip +
+  boss-music pause/resume assertions; weaponbank.test.mjs scroll-cycle test.
+  `npm test` 349/349 green; `npm run verify` 81 ok/0 fail/0 skipped;
+  `npm run build` ok; `check-assets` clean except the pending song_boss.mp3.
+  DONE: song_boss.mp3 landed (Wan2GP df_boss → ffmpeg loudnorm, 104.6s →
+  BOSS_TRACK_SECONDS=105), full battery green (349/349, verify 81/0/0, build
+  ok, check-assets 0 problems, secrets clean, E2E 18/18). Committed `cf91c40`
+  on `v3`, pushed origin/v3; gh-pages `00b0177` (bundle index-bHDUe3zf.js +
+  song_boss.mp3 200) deployed; zombie-app/dist redeployed + service active.
+
+## v6 leaderboard round (Sep 27 2026) — top-10 high score list + random player name
+
+User asks (2): a top-10 high score list of the best players; on browser load,
+randomize the player name instead of the default "player".
+
+- **server/server.js**: the hosted record is now a top-10 list. `highscore.json`
+  stores `{top:[{name,score}…]}` (a legacy `{best,name}` file migrates to a
+  one-entry list). `readHighScore`/`writeHighScore`/`normalizeTop`/`insertTop`
+  added; `serveHighScore` GET returns `{best,name,top}` where best/name mirror
+  top[0] (back-compat with older clients + the existing API tests), POST inserts
+  a qualifying score and keeps the best 10 (sorted desc, HS_TOP=10). `hsState`
+  is now `{top}`; `opts.highScore`/`opts.highScoreName` seed a one-entry list.
+- **Score.js**: `this.top=[]` added; `adoptBest` reads the hosted `top` list
+  (re-sanitizing each name defensively), sets `this.top`, and fires
+  `_onBestChange` when the list changes (not only when the best rises).
+- **Screens.js**: title screen renders a TOP 10 board (`.highscore-board`,
+  textContent-only, XSS-safe) from `score.top`, refreshed via `_onBestChange`.
+  `randomPlayerName(seed)` (module fn) picks an "Adjective Noun" handle via the
+  standard seeded LCG (no Math.random) seeded from Date.now; `_prefillRandomName`
+  fills the solo + co-op name inputs on the first title screen only when they
+  still hold the default "player". styles.css: `.highscore-board` rules.
+- **tests**: highscore-api rewritten for the list (insert, cap-at-10, sort,
+  back-compat best/name, XSS sanitize); score-hosted adds a top-list adopt test;
+  hud-screens adds a leaderboard-render + random-name-prefill test. 351/351
+  green, verify 81/0/0, build ok, check-assets 0 problems, secrets clean, E2E
+  18/18. Committed `b5717a6` on `v3`, pushed origin/v3; gh-pages `bde0db9`
+  (bundle index-BC6pq3QP.js) deployed; zombie-app/dist redeployed + active.
+
+## v6 brute boss face (Sep 27 2026) — boss face asset generation
+
+- `tools/generate-zombie-faces.mjs`: VARIANTS extended with the wave-5 boss type (`brute`, `brute2`, `brute3`, seeds 51/52/53) using the existing z_image + mattias_1024_z_2 LoRA settings. Header comment now says twelve faces.
+- Generated through the live Wan2GP Gradio UI on :7860 (GPU 2), one `--only` run per variant: `brute-face.jpg` 237133 B / 960x960 / seed 51 / 45.2 s; `brute2-face.jpg` 217261 B / 960x960 / seed 52 / 39.2 s; `brute3-face.jpg` 240781 B / 960x960 / seed 53 / 40.8 s. All three landed as baseline JPEG (no PNG→JPEG conversion needed), verified decodable as sRGB JPEG with sharp.
+- `node tools/check-assets.mjs`: 36 referenced assets, 0 problems. `tools/check-assets.mjs` dynamic-face list now includes `brute` (v10), so `brute*-face.jpg` is asserted there; `src/game/Zombie.js` loads `brute-face.jpg` plus `brute2/3-face.jpg` through the ORDER loop.
+
+## v10 boss + highscore + co-op fixes (Sep 27 2026)
+
+- **High score always saved** (`src/game/Score.js` + `src/game/Game.js`): new `Score.submitRun(fetchFn)` POSTs the finished run's `value` (not the local `best`) to `/api/highscore` whenever `value>0`, adopting the returned top-10/best. `Game.onPlayerDeath` now calls `submitRun()` on every game-over instead of gating on `record`/`submitBest`, so a fresh player's first run reaches the hosted board. Tests: `test/score-hosted.test.mjs` +2 (submitRun posts non-record run; skips zero/offline).
+- **Boss appears quicker** (`src/game/WaveManager.js`): `BOSS_DELAY` 1.5 → 0.5 s. `test/boss.test.mjs` wave-5 timing made frame-robust (incoming on the alive→0 frame, boss not spawned until past the 0.5 s delay).
+- **Boss 2× larger + 10× HP** (`src/game/Zombie.js`): new `BOSS_SCALE = 2.8` (was 1.4) drives both `_hitboxScale` and the skin body scale; `TABLE.brute.hp` 520 → 5200 (1.12^wave scaling kept). Tests updated: hitbox radii 0.63/0.42 → 1.26/0.84, wave-5/10 HP, pistol 200 shots / shotgun 99 blasts.
+- **New boss face**: `public/assets/faces/brute-face.jpg` (+2/3 variants) generated via `tools/generate-zombie-faces.mjs` (see v6 face entry above); `tools/check-assets.mjs` dynamic list extended with `brute`.
+- **Removed non-music background sound** (`src/game/Game.js`): dropped the `audio.startAmbient()` call on run start — the procedural wind/gust/city-hum bed no longer plays; only the mp3 soundtrack remains. `AudioBank.startAmbient` kept (unit-tested directly) but has no caller.
+- **Co-op zombies now hurt players / can die** (`src/net/Multiplayer.js` + `src/game/Game.js`): the client runs an empty local horde, so nothing damaged the local player. `Multiplayer._sync` now captures the snapshot's authoritative `selfHealth`/`selfStamina`; `Game` WIRING:MP-HEALTH applies them to the local player each frame (HUD reflects damage, death registers). `onSelfDeath` wired in `_wireMpHooks` to show the respawn banner. Test: `test/multiplayer.test.mjs` +1 (snapshot health drives local player, lethal snapshot kills + respawns).
+- Verification: `npm test` 357/357; `npm run verify` 81 ok / 0 fail; `npm run build` ok (index-CxRRsBAw.js); `check-assets` 39 assets 0 problems; `secrets-scan` clean (209 files); browser E2E 18/18 PASS against :5173.
 
 ## Conventions (unchanged)
 - No `Math.random` in src (deterministic LCG / fixed seeds).

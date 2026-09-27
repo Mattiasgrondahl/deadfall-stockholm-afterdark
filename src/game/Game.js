@@ -669,7 +669,10 @@ export class Game {
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
-    if (this.audio) { this.audio.startAmbient(); this.audio.playStart?.() }
+    // v9: the procedural ambient wind bed (drone + gusts + city hum) is removed —
+    // the only background sound is now the mp3 soundtrack music. playStart is the
+    // one-shot UI/UI-confirm blip, not a background loop, so it stays.
+    if (this.audio) { this.audio.playStart?.() }
     // v6 audio (8): the mp3 power-metal playlist rides the same user gesture
     // that starts the run (autoplay policy). Only when the mp3 layer is not
     // muted; headless playPlaylist is a no-op. The procedural MusicEngine
@@ -764,10 +767,14 @@ export class Game {
     this.setState(GameState.GAMEOVER)
     if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
     if (this.audio) this.audio.stopAmbient()
-    // Commit the record locally, then mirror it to the hosted backend
+    // Commit the record locally, then mirror the run to the hosted backend
     // (POST /api/highscore) — fire-and-forget, never blocks the game-over UI.
+    // v9: ALWAYS offer the finished run to the hosted top-10 board via
+    // submitRun(), not only when it beat the local best — a fresh player's first
+    // run now reaches the leaderboard instead of being dropped. newRecord() still
+    // drives the local best + the "NEW RECORD" banner.
     const record = this.score ? this.score.newRecord() : false
-    if (this.score && record) this.score.submitBest()
+    if (this.score) this.score.submitRun()
     if (this.screens) this.screens.showGameOver({
       wave: this.waveManager ? this.waveManager.wave : 0,
       kills: this.kills,
@@ -792,6 +799,15 @@ export class Game {
   _wireMpHooks(mp) {
     if (!mp) return mp
     mp.onSelfRespawn = () => this._respawnSelf()
+    // v9: the server killed this client (health hit 0). Show the co-op respawn
+    // banner + release the pointer, mirroring the local-death flow, so co-op
+    // death is visible and the player respawns when the snapshot revives them.
+    mp.onSelfDeath = () => {
+      if (this.state !== GameState.PLAYING) return
+      this._respawning = true
+      if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
+      if (this.screens) this.screens.showBanner('YOU DIED — RESPAWNING\u2026')
+    }
     return mp
   }
 
@@ -857,6 +873,24 @@ export class Game {
     // WIRING:MULTIPLAYER (Phase 5): advance the net layer, send local input,
     // and re-pose remote avatars from interpolated snapshots.
     if (this.multiplayer) this.multiplayer.update(dt, this.inputState, this.player ? this.player.yaw : 0)
+    // WIRING:MP-HEALTH (v9): the server is authoritative for the self player's
+    // health/stamina in co-op (the client runs an empty local horde, so nothing
+    // damages the local player on the client). Adopt the snapshot values so the
+    // HUD reflects incoming zombie damage and death can register in co-op.
+    if (this.multiplayer && this.player) {
+      if (Number.isFinite(this.multiplayer.selfHealth)) {
+        const h = Math.max(0, Math.min(this.player.maxHealth, this.multiplayer.selfHealth))
+        if (h !== this.player.health) {
+          const wasDead = this.player.isDead
+          this.player.health = h
+          this.player.isDead = h <= 0
+          if (this.player.isDead && !wasDead && this.player._onDamaged) this.player._onDamaged(0, null)
+        }
+      }
+      if (Number.isFinite(this.multiplayer.selfStamina)) {
+        this.player.stamina = Math.max(0, Math.min(this.player.maxStamina, this.multiplayer.selfStamina))
+      }
+    }
     // Boss HUD: the bar tracks the live boss while it stands; it clears when
     // the brute dies (the corpse is still in the list for a few seconds).
     if (this._boss && this._boss.isDead) this._boss = null
