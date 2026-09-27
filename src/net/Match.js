@@ -85,6 +85,7 @@ export class Match {
 
     // Match flow (Phase 3): respawn timers, disconnect grace, end state.
     this._respawnAt = new Map() // id -> time the dead player respawns
+    this._graceAt = new Map() // id -> time a disconnected slot is freed (v12 §7)
     this._ended = false
     this._endReason = null // 'waves' | 'timecap' | 'alldead'
     this.matchTimeCap = opts.matchTimeCap ?? MATCH_TIME_CAP
@@ -124,7 +125,15 @@ export class Match {
 
   /** Add a player at (x, z) (default: shared spawn). Returns the slot or null. */
   addPlayer(id, x = SPAWN.x, z = SPAWN.z, name = '') {
-    if (this.players.has(id) || this.players.size >= this.playersCap) return null
+    // v12: a reconnect within the grace window reclaims the held slot (same id,
+    // position, score, kills) rather than being rejected as a duplicate. The
+    // cap counts CONNECTED players only — a graced slot is not a live socket,
+    // so a full room plus a dropped player still admits a new joiner.
+    if (this.players.has(id)) {
+      const held = this.players.get(id)
+      return held.disconnected ? this._reclaim(id) : null
+    }
+    if (this._connectedCount() >= this.playersCap) return null
     const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 400)
     const inputState = freshInputState()
     const player = new Player(camera, inputState, this.collision, null)
@@ -159,16 +168,36 @@ export class Match {
     return slot
   }
 
-  /** Remove a player (disconnect). Detaches their view models; the slot,
-   *  kill/score history stay recorded. */
+  /** Remove a player (disconnect). v12: hold the slot for a grace window
+   *  (DISCONNECT_GRACE) instead of freeing it immediately, so a brief drop or a
+   *  page refresh can reconnect and reclaim the same slot (same id, position,
+   *  score). The slot is flagged disconnected so the sim skips it; `_flow` frees
+   *  it once the grace elapses. */
   removePlayer(id) {
     const slot = this.players.get(id)
     if (!slot) return false
-    this.players.delete(id)
-    slot.weapon.dispose()
-    slot.player.dispose()
-    this.ws.players = Array.from(this.players.values())
+    slot.disconnected = true
+    this._graceAt.set(id, this.time + DISCONNECT_GRACE)
+    this.ws.players = Array.from(this.players.values()).filter((s) => !s.disconnected)
     return true
+  }
+
+  /** Reclaim a disconnected slot during its grace window (reconnect). */
+  _reclaim(id) {
+    const slot = this.players.get(id)
+    if (!slot || !slot.disconnected) return null
+    slot.disconnected = false
+    this._graceAt.delete(id)
+    this.ws.players = Array.from(this.players.values()).filter((s) => !s.disconnected)
+    return slot
+  }
+
+  /** Count of connected (non-graced) players — the number the 8-slot cap
+   *  applies to (v12: held slots do not consume a slot). */
+  _connectedCount() {
+    let n = 0
+    for (const slot of this.players.values()) if (!slot.disconnected) n++
+    return n
   }
 
   getPlayer(id) { return this.players.get(id) || null }
@@ -216,22 +245,43 @@ export class Match {
         this._respawnAt.delete(id)
       }
     }
+    // v12: free disconnected slots whose grace window has elapsed (the player
+    // did not reconnect in time). Their view models are disposed here.
+    for (const [id, at] of this._graceAt) {
+      if (this.time >= at) {
+        const slot = this.players.get(id)
+        if (slot) {
+          slot.weapon.dispose()
+          slot.player.dispose()
+          this.players.delete(id)
+        }
+        this._graceAt.delete(id)
+        this.ws.players = Array.from(this.players.values()).filter((s) => !s.disconnected)
+      }
+    }
     // End conditions.
     if (this.wave && this.wave.wave >= BOSS_WAVE && this.wave.remaining === 0 && this.zombies.filter((z) => !z.isDead).length === 0) {
       this._end('waves')
     } else if (this.time >= this.matchTimeCap) {
       this._end('timecap')
-    } else if (this.players.size > 0 && this._allDeadNoRespawn()) {
+    } else if (this._connectedCount() > 0 && this._allDeadNoRespawn()) {
       this._end('alldead')
     }
   }
 
   _allDeadNoRespawn() {
+    // v12: only connected players count. A slot still inside its disconnect
+    // grace window is neither "alive" nor gone — it may reconnect — so it must
+    // not force an all-dead end. The match ends all-dead only when every
+    // connected player is dead with none pending respawn.
+    let connected = 0
     for (const slot of this.players.values()) {
+      if (slot.disconnected) continue
+      connected++
       if (!slot.player.isDead) return false
       if (this._respawnAt.has(slot.id)) return false // pending respawn -> not over
     }
-    return this.players.size > 0
+    return connected > 0
   }
 
   _end(reason) {
@@ -241,11 +291,16 @@ export class Match {
     this.events.push({ k: 'matchEnd', reason, scoreboard: this.scoreboard() })
   }
 
-  /** Final per-player scoreboard (plan §7): score + kills, sorted desc. */
+  /** Final per-player scoreboard (plan §7): score + kills, sorted desc.
+   *  v12: rows carry the display name too (from the slot roster, including
+   *  slots held in disconnect grace) so the co-op end screen can label players
+   *  instead of raw ids. */
   scoreboard() {
+    const names = new Map()
+    for (const [id, slot] of this.players) names.set(id, slot.name || id)
     const rows = []
     for (const [id, sc] of this.score) {
-      rows.push({ id, score: sc, kills: this.kills.get(id) || 0 })
+      rows.push({ id, name: names.get(id) || id, score: sc, kills: this.kills.get(id) || 0 })
     }
     rows.sort((a, b) => b.score - a.score)
     return rows
@@ -259,7 +314,10 @@ export class Match {
     this.kills.set(key, (this.kills.get(key) || 0) + 1)
     const wave = this.wave ? this.wave.wave : 1
     this.score.set(key, (this.score.get(key) || 0) + (KILL_VALUES[z.type] || 0) + WAVE_BONUS * wave)
-    this.events.push({ k: 'kill', victim: z._matchId, by: by !== null ? by : null, type: z.type })
+    // v12: the head flag rides along so the co-op kill feed can mark headshots.
+    // WorldCore fires onKill after Zombie.damage set lastHitHead on the killing
+    // blow (applyHit forwards the client's head flag into it).
+    this.events.push({ k: 'kill', victim: z._matchId, by: by !== null ? by : null, type: z.type, head: z.lastHitHead === true })
   }
 
   /** Authoritative hit from a client: a client-side shot confirmed a hit on the
@@ -316,6 +374,7 @@ export class Match {
   snapshot() {
     const players = []
     for (const slot of this.players.values()) {
+      if (slot.disconnected) continue // v12: drop from the roster during grace; reclaim on reconnect
       const p = slot.player
       const w = slot.weapon.current
       players.push({

@@ -70,3 +70,87 @@ test('match does not end while a respawn is pending', () => {
   m.step(TICK) // dead, respawn pending
   assert.equal(m.ended, false, 'pending respawn keeps the match alive')
 })
+
+// ---- v12: disconnect grace (MULTIPLAYER_PLAN §14 item 2) ----
+
+test('v12: disconnect holds the slot for the grace window, then frees it', () => {
+  const m = new Match({ players: [{ id: 'p0' }, { id: 'p1' }] })
+  assert.equal(m.removePlayer('p0'), true, 'remove accepted')
+  const slot = m.getPlayer('p0')
+  assert.ok(slot && slot.disconnected, 'slot held, flagged disconnected')
+  // Snapshot roster drops the disconnected player while grace is pending.
+  m.step(TICK)
+  const ids = m.snapshot().players.map((p) => p.id)
+  assert.ok(!ids.includes('p0'), 'graced player absent from the roster')
+  assert.ok(ids.includes('p1'), 'connected player still in the roster')
+  // Before the 5 s grace elapses the slot is still held.
+  run(m, 4.0)
+  assert.ok(m.getPlayer('p0'), 'slot still held inside the grace window')
+  // Cross the grace mark: the slot is freed and disposed.
+  run(m, 1.5)
+  assert.equal(m.getPlayer('p0'), null, 'slot freed once the grace elapses')
+})
+
+test('v12: reconnect within the grace window reclaims the same slot', () => {
+  const m = new Match({ players: [{ id: 'p0', x: 4, z: 8 }] })
+  const slot = m.getPlayer('p0')
+  slot.score = 42
+  m.score.set('p0', 42)
+  m.kills.set('p0', 3)
+  m.removePlayer('p0')
+  m.step(TICK)
+  // Rejoin (same id) inside the grace window: the held slot is reclaimed.
+  const reclaimed = m.addPlayer('p0', undefined, undefined, 'Ada')
+  assert.ok(reclaimed, 'reconnect reclaims the held slot')
+  assert.equal(reclaimed, slot, 'same slot object, not a fresh one')
+  assert.equal(reclaimed.disconnected, false, 'reclaimed slot is connected')
+  assert.equal(m.score.get('p0'), 42, 'score survives the drop')
+  assert.equal(m.kills.get('p0'), 3, 'kills survive the drop')
+  m.step(TICK)
+  const ids = m.snapshot().players.map((p) => p.id)
+  assert.ok(ids.includes('p0'), 'reclaimed player is back in the roster')
+})
+
+test('v12: all-dead end ignores the graced slot — the last connected player decides', () => {
+  // Shipped semantics (MULTIPLAYER_PLAN §12.1): the run ends when every
+  // CONNECTED player is dead with none pending respawn. A slot held in
+  // disconnect grace is out of the fight and does not keep the match alive.
+  const m = new Match({ players: [{ id: 'p0' }, { id: 'p1' }] })
+  m.getPlayer('p0').player.damage(9999)
+  m._respawnAt.clear() // p0 dead with no pending respawn
+  m.getPlayer('p1').player.damage(9999)
+  m._respawnAt.clear() // p1 dead with no pending respawn either
+  m.removePlayer('p1') // p1 drops (grace pending, not yet freed)
+  m.step(TICK)
+  assert.equal(m.ended, true, 'ended once the only connected player is dead')
+  assert.equal(m.endReason, 'alldead')
+  // The graced slot is still held, so the final scoreboard keeps its name.
+  const sb = m.scoreboard()
+  assert.equal(sb.length, 2, 'graced player still on the final scoreboard')
+})
+
+test('v12: a graced slot keeps the match alive while a connected player lives', () => {
+  // With one player still alive, a drop must not end the match — and the
+  // graced slot stays reclaimable until the window elapses.
+  const m = new Match({ players: [{ id: 'p0' }, { id: 'p1' }] })
+  m.removePlayer('p1')
+  m.step(TICK)
+  assert.equal(m.ended, false, 'match alive while p0 lives')
+  const slot = m.getPlayer('p1')
+  assert.equal(slot.disconnected, true, 'p1 held in grace, not deleted')
+  const reclaimed = m.addPlayer('p1', undefined, undefined, 'Ada')
+  assert.equal(reclaimed, slot, 'reconnect inside the window reclaims the slot')
+})
+
+test('v12: final scoreboard rows carry display names', () => {
+  const m = new Match()
+  m.addPlayer('p0', undefined, undefined, 'Ada')
+  m.addPlayer('p1')
+  m.score.set('p0', 100); m.score.set('p1', 300)
+  m.kills.set('p0', 5); m.kills.set('p1', 12)
+  const sb = m.scoreboard()
+  assert.equal(sb[0].name, 'p1', 'unnamed slot falls back to the id')
+  m.removePlayer('p0') // graced-out slot still contributes its name
+  const sb2 = m.scoreboard()
+  assert.equal(sb2[1].name, 'Ada', 'named row carries the display name even during grace')
+})

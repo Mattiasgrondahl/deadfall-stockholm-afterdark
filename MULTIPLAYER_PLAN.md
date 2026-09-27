@@ -1,9 +1,12 @@
 # Multiplayer Plan — "Deadfall: Stockholm Afterdark" (8-player, server-hosted)
 
-> Status: **design / planning only** — no implementation yet. This document is the
-> roadmap for adding a server-hosted 8-player mode on top of the existing
-> single-player game. It is intentionally concrete: every section maps to real
-> files and functions in the current codebase.
+> Status: **largely implemented** (Phases 0–5 shipped and headless-tested). The
+> netcode, server-authoritative sim, co-op combat, waves, respawn, match-flow and
+> single-origin hosting are all live. A short list of browser-side polish items
+> remains — see **§14 Implementation status & remaining work** at the end of this
+> document for the audited state and the concrete follow-ups. This document is the
+> roadmap that was followed; where the shipped game diverged from the original
+> design, the divergence is noted inline and in §14.
 
 ---
 
@@ -314,8 +317,9 @@ Each phase is independently shippable and testable headlessly where possible.
   `Match` simulates a 2-"player" scenario correctly with no DOM.
 
 ### Phase 1 — Server + 2 players, movement only (prove the netcode)
-- `server/server.js`: HTTP (serves `dist/`) + WebSocket; a single room;
-  fixed 20 Hz tick; `Match` with 2 players.
+- `server/server.js`: HTTP (serves `dist/`) + WebSocket; rooms keyed by room code
+  (one `Match` per code, many rooms per server); fixed 20 Hz tick; `Match` with 2
+  players.
 - `NetClient` (browser) in a debug build: sends movement/look, receives
   snapshots, renders a simple marker for the other player (no avatars yet).
 - Local prediction + reconciliation for self; interpolation for remote.
@@ -417,13 +421,37 @@ Each phase is independently shippable and testable headlessly where possible.
 
 ---
 
-## 12. Open questions (to decide before Phase 3)
+## 12. Design decisions (resolved — how they landed in the shipped game)
 
-1. **Death handling:** respawn-on-delay vs spectate vs "last one alive"? (Suggested: respawn for wave-based co-op.)
-2. **Match structure:** endless waves with a time cap, or a fixed wave count, or player-vs-player after waves clear?
-3. **Scoring/leaderboard:** per-room only, or a persistent global leaderboard (would need server-side storage)?
-4. **Room count / concurrent rooms on one server:** single room per server instance, or a room list the lobby browses?
-5. **Max players:** 8 is the target — confirm the mesh/triangle budget still holds with 8 avatars + 24 zombies + city (run `sceneStats` in a headless multi-match to verify).
+These were open questions at planning time; they are now decided and shipped. The
+choices below are the ones that fit *this* game (a wave-survival horde shooter,
+not a competitive arena):
+
+1. **Death handling — respawn-on-delay (3 s).** A dead co-op player respawns in
+   place after `RESPAWN_DELAY` seconds (`Match.js`), showing a "YOU DIED —
+   RESPAWNING…" banner rather than ending the run. This keeps co-op forgiving and
+   keeps everyone in the fight, which fits a co-op survival game. The run only
+   ends when *every* player is dead with none pending respawn (`alldead`).
+2. **Match structure — fixed wave ladder that ends at the wave-5 boss.** The
+   original plan floated "endless waves." The shipped game instead ends the match
+   when the wave-5 boss is cleared (`BOSS_WAVE = 5`), mirroring single-player's
+   wave-5 finale so solo and co-op share one progression. A 15-minute time cap
+   (`MATCH_TIME_CAP = 900`) ends a stalled room. (See §14: surfacing this end to
+   the co-op client is a remaining item.)
+3. **Scoring/leaderboard — per-room, persisted.** Each room code has its own
+   top-10 (`highscore-<room>.json`), seeded from a default ladder when empty. The
+   client always submits its finished run (`Score.submitRun`), so a first-time
+   player lands on the board. A global cross-room ladder is out of scope.
+4. **Room model — one room per room-code, many rooms per server.** The original
+   "single room per server instance" was superseded: `server.js` keeps a `rooms`
+   Map keyed by the sanitized room code, so one server hosts many independent
+   sessions (`roomFor(msg.room)`). Players who type the same code share a session;
+   the random zombie-themed room code on the title screen gives a fresh visitor
+   their own room + leaderboard.
+5. **Max players — 8, budget-checked.** `MAX_PLAYERS = 8` is enforced on join
+   (`sockets.size >= MAX_PLAYERS`). Remote avatars + remote zombies are capped
+   (`MAX_REMOTE`) with a shared fallback box over budget, keeping the scene inside
+   the mesh/light/point budgets.
 
 ---
 
@@ -443,3 +471,60 @@ Each phase is independently shippable and testable headlessly where possible.
   (Phase 1–2).
 - `package.json` (edit): `server` script (Phase 5).
 - `README.md` (edit): how to run the server + join a room (Phase 5).
+
+---
+
+## 14. Implementation status & remaining work (audited against the code)
+
+The plan was built and is live. Auditing each claim against the shipped source
+(`src/net/*`, `server/server.js`, `src/game/WorldCore.js`) gives the picture
+below. Verified by the headless MP suite (`test/server-room`, `net-client`,
+`match-flow`, `remote-player`, `match`, `multiplayer` — 50 tests green).
+
+### Shipped and verified
+
+| Plan area | Where it lives | State |
+|---|---|---|
+| §2/§4 server-authoritative headless sim | `src/net/Match.js` | ✅ |
+| §4.1 `updateWorld` extraction, used by **both** `Game` and `Match` | `src/game/WorldCore.js`; `Game.js` WIRING:UPDATE + `Match.js` | ✅ Phase 0 |
+| §4.2 20 Hz tick / 10 Hz snapshots | `protocol.js` `SERVER_TICK=0.05`, `SNAPSHOT_INTERVAL=0.1` | ✅ |
+| §4.3 rooms keyed by room code, 8-player cap | `server.js` `rooms` Map + `MAX_PLAYERS=8` | ✅ |
+| §4.4 input clamps (anti-cheat) | `protocol.js` `parseInput` clamps fwd/side/look to [-1,1] | ✅ |
+| §5 protocol (input/snap/events) | `src/net/protocol.js` | ✅ |
+| §5.4 client prediction + interpolation | `NetClient.js` `reconcileSelf`/`lerpPlayer`/`interpolated` | ✅ |
+| §6.2 NetClient | `src/net/NetClient.js` | ✅ |
+| §6.3 remote avatars + remote zombies | `src/game/RemotePlayer.js`, `src/net/RemoteZombie.js` | ✅ |
+| §7 respawn-on-delay (3 s), match-end (waves/time-cap/all-dead), final scoreboard | `Match.js` `RESPAWN_DELAY`, `MATCH_TIME_CAP`, `_end`, `scoreboard()` | ✅ |
+| §7 co-op death does not end the run; self health synced to the local player | `Multiplayer.js` `selfHealth`/`onSelfDeath` + `Game.js` MP-HEALTH | ✅ |
+| §10 single-origin hosting (server serves `dist/` + ws + highscore API) | `server/server.js`, `npm run server` | ✅ |
+| §13 file-level TODO list | all files present (`Multiplayer.js` under `src/net/`) | ✅ |
+
+### Remaining work (fits the game — the items below are the active TODO)
+
+These are the gaps between the plan's UI/edge-case intent and the shipped game.
+They are scoped to what genuinely improves *this* co-op survival mode:
+
+1. **Co-op match end is not surfaced to the client.** The server emits
+   `matchEnd` (with the final scoreboard) when wave 5 is cleared, the time cap is
+   hit, or all players are dead — but the client ignores it, so a finished co-op
+   run keeps running with no end screen. **Fix:** consume `matchEnd` in
+   `Multiplayer`/`Game` and show a co-op game-over / final-scoreboard screen.
+   *(Highest value: a match that ends silently is the most visible gap.)*
+2. **Disconnect grace period is declared but unused.** `DISCONNECT_GRACE = 5.0`
+   exists in `Match.js` but `removePlayer` frees the slot immediately on socket
+   close, so a brief drop (or a refresh) ejects the player and frees their slot.
+   **Fix:** hold the slot for the grace window so a reconnect reclaims it.
+3. **No per-player health bars.** The scoreboard shows `name: score / kills` but
+   not teammate health, so you cannot tell who is about to die. **Fix:** add a
+   compact health readout per player to the scoreboard.
+4. **No kill feed.** The scoreboard shows cumulative kill counts, not a rolling
+   feed of recent kills/headshots. **Fix:** a short kill-feed line in the co-op
+   HUD.
+5. **No server-URL lobby field.** The client derives the ws URL from
+   `location.host`, which is correct for the recommended single-origin host. A
+   "separate host" field (§10) is optional and only matters if the game is served
+   from Pages while the server runs elsewhere — low priority given the current
+   single-origin deployment.
+
+Items 1–4 are implemented in the v12 round (see `TASKS.md`); item 5 is deferred as
+out of scope for the single-origin deployment.

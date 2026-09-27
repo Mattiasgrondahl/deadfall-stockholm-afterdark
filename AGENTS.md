@@ -200,6 +200,72 @@ rounds, so treat it as a database, not a novel:
   user answers. Long evidence dumps belong in `docs/` or `.research/`, not here.
 - Never `git add` it without `-f`.
 
+## DSH/Ralph recovery and context protocol
+
+The filesystem is the source of truth, not the DSH conversation. Use this
+protocol for every long-running implementation round:
+
+- Start from a fresh Ralph round. Never resume a quarantined, looped, or
+  context-overflowed session.
+- Read `TASKS.md`, `AGENTS.md`, and the relevant `.hermes/deadfall-progress.md`
+  section before selecting work. Do not read all of `TASKS.md`; query it with
+  the RAG index and inspect only the current task context.
+- Before every meaningful action, identify the current task, acceptance
+  criterion, and expected changed files.
+- After every meaningful action, update `TASKS.md` with changed files, focused
+  test results, partial work, blockers, and the exact next action.
+- Save durable findings in `docs/` or `.research/`; never rely on chat history.
+
+### Required child-agent workflow
+
+Use one child at a time because the local Flash-Next backend has
+`max_batch_size: 1`:
+
+1. researcher — one focused investigation, concise evidence;
+2. coder — one file or one small subsystem, focused test;
+3. reviewer — inspect the actual files and test evidence.
+
+Keep child reports and handoffs below 8,192 characters and reports below 500
+words. Store the useful result in `TASKS.md` before starting the next child.
+
+### Context and loop limits
+
+The DSH role contract is 160,000 context tokens and 26,000 maximum output
+tokens. The Flash-Next backend has a 199,936-token cache. The external DSH
+watchdog hard-stops sessions at 160,000 measured input tokens and quarantines
+them before the backend can request the invalid 200,704-token allocation.
+
+Operationally, start a fresh Ralph round before 120,000 tokens. Do not carry
+large tool results, browser captures, full logs, or full source files between
+rounds.
+
+Never issue the same tool call with identical actual arguments more than twice.
+Changing only its description does not make it a new call. If a command gives
+no new information twice, change strategy or inspect the source directly. If
+the watchdog quarantines the session, do not press Proceed; start a fresh
+session from the filesystem.
+
+### Recovery prompt
+
+Use this after an interruption:
+
+```text
+Continue from the filesystem only.
+
+This is a fresh session after a DSH interruption or quarantined session. Do
+not replay or resume the previous conversation.
+
+Read TASKS.md and AGENTS.md, inspect git status, and identify the last
+incomplete checkpoint. Continue only the smallest unfinished task.
+
+Use one fresh Ralph round and one child at a time. Never repeat an identical
+tool call more than twice. Update TASKS.md after every meaningful action with
+changed files, focused test results, partial work, and the next action.
+
+Keep the working context below 120,000 tokens. If compaction fails, save state
+to TASKS.md and start another fresh round.
+```
+
 ## Conventions for agents working here
 
 - Branch `v2` is the active line (`origin/v2`); `master`/`feat/iteration-2`

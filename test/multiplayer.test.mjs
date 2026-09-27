@@ -110,11 +110,18 @@ test('scoreboard sorts by score and paints the DOM', () => {
   // The scoreboard panel was appended to body and populated with rows.
   assert.ok(doc.body.children.includes(mp._sbEl), 'panel attached to body')
   assert.equal(mp._sbEl.style.display, 'block', 'panel shown')
-  // head row + PLAYERS count line + 3 player rows = 5 children.
-  assert.equal(mp._sbEl.children.length, 5, 'head + count + 3 rows')
+  // v12: each player row is followed by its health bar, so head + count +
+  // (row + bar) x 3 = 8 children.
+  assert.equal(mp._sbEl.children.length, 8, 'head + count + 3 rows + 3 health bars')
   assert.match(mp._sbEl.children[0].textContent, /WAVE 2/)
   assert.match(mp._sbEl.children[1].textContent, /PLAYERS 3/, 'online-player count line (v7)')
   assert.match(mp._sbEl.children[2].textContent, /Alice: 410 pts  5 kills/, 'rows labelled by name (v7)')
+  // v12: the node after each row is its health bar, with a fill sized to health.
+  const bar = mp._sbEl.children[3]
+  assert.equal(bar.className, 'mp-hp', 'health bar node after the row')
+  assert.equal(bar.children.length, 1, 'bar holds a single fill')
+  assert.equal(bar.children[0].className, 'mp-hp-fill', 'fill node class')
+  assert.equal(bar.children[0].style.width, '90%', 'fill sized to Alice health 90')
   mp.dispose()
 })
 
@@ -434,4 +441,88 @@ test('remote target exposes position + knockback + shotgunArmor (melee-safe)', (
   assert.equal(b.shotgunArmor, 0.4, 'brute proxy carries brute shotgun armor')
   assert.equal(t.shotgunArmor, 1, 'walker proxy carries walker armor')
   mp.dispose()
+})
+
+test('v12: kill feed renders recent kills with killer names and headshot flags', () => {
+  const { mp, doc } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  // A body kill by alice and a headshot kill by bob (server kill events).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ events: [
+    { k: 'kill', victim: 'z1', by: 'alice', type: 'walker', head: false },
+    { k: 'kill', victim: 'z2', by: 'bob', type: 'brute', head: true }
+  ] }) })
+  assert.deepEqual(mp._killFeed, ['Bob ▸ PLAYER (HEAD)', 'Alice ▸ PLAYER'], 'most-recent first, headshot flagged')
+  const feed = mp._sbEl.children.find((c) => c.className === 'mp-killfeed')
+  assert.ok(feed, 'kill feed node painted')
+  assert.deepEqual(feed.children.map((c) => c.textContent), mp._killFeed, 'feed lines rendered in order')
+  // A player death event renders as "<victim> DIED" (no killer credited).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ events: [{ k: 'death', victim: 'bob', by: null }] }) })
+  // v12: death events are not kill events — the feed only tracks kills.
+  assert.equal(mp._killFeed[0], 'Bob ▸ PLAYER (HEAD)', 'death event did not pollute the kill feed')
+  // The feed is capped at 5 lines, most-recent first.
+  for (let i = 0; i < 8; i++) {
+    mp.socket.receive({ t: MSG.SNAP, ...snap({ events: [{ k: 'kill', victim: 'z1', by: 'me', type: 'walker', head: false }] }) })
+  }
+  assert.equal(mp._killFeed.length, 5, 'feed capped at 5')
+  mp.dispose()
+})
+
+test('v12: scoreboard rows paint per-player health bars (dead players show empty)', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'me', name: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'alice', name: 'Alice', x: 3, y: 1.7, z: 4, yaw: 1, pitch: 0, health: 20, stamina: 80, weapon: 'shotgun', ammo: 4, reserve: 20, dead: false },
+    { id: 'bob', name: 'Bob', x: -2, y: 1.7, z: 6, yaw: 2, pitch: 0, health: 0, stamina: 60, weapon: 'pistol', ammo: 12, reserve: 36, dead: true }
+  ] }) })
+  const bars = mp._sbEl.children.filter((c) => c.className === 'mp-hp')
+  assert.equal(bars.length, 3, 'one health bar per row')
+  // Rows are sorted by score desc: alice (410), me (200), bob (60).
+  assert.equal(bars[0].children[0].style.width, '20%', 'alice bar sized to 20 hp')
+  assert.equal(bars[0].children[0].style.background, '#c0392b', 'critical health (<25%) paints red')
+  assert.equal(bars[1].children[0].style.width, '100%', 'self bar full')
+  assert.equal(bars[2].children[0].style.width, '0%', 'dead player shows an empty bar')
+  assert.equal(bars[2].children[0].style.background, '#7a2b2b', 'dead bar paints dark red')
+  mp.dispose()
+})
+
+test('v12: matchEnd snapshot ends the co-op run and shows the game-over screen', async () => {
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ best: 0, top: [] }) })
+  try {
+    const game = new Game({ headless: true })
+    game.start()
+    const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
+    mp.net.socket.open()
+    mp.net.socket.receive({ t: MSG.WELCOME, pid: 'ada', roster: [] })
+    mp.net.socket.receive({ t: MSG.SNAP, ...snap({ wave: 5, players: [
+      { id: 'ada', name: 'Ada', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+      { id: 'sam', name: 'Sam', x: 4, y: 1.7, z: 2, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+    ] }) })
+    assert.equal(game.state, 'playing', 'still playing before the match ends')
+    game.kills = 7
+    game.score.value = 500
+    mp.net.socket.receive({ t: MSG.SNAP, ...snap({ wave: 5, events: [
+      { k: 'matchEnd', reason: 'waves', scoreboard: [
+        { id: 'sam', name: 'Sam', score: 800, kills: 11 },
+        { id: 'ada', name: 'Ada', score: 500, kills: 7 }
+      ] }
+    ] }) })
+    assert.equal(mp.matchEnded, true, 'controller latched the match end')
+    assert.equal(mp.endReason, 'waves', 'end reason surfaced')
+    assert.equal(mp.finalScoreboard.length, 2, 'final scoreboard captured')
+    assert.equal(game.state, 'gameover', 'co-op run stopped on the server match end')
+    // The wave shown on the end screen is the server-authoritative one.
+    assert.equal(game.multiplayer.lastSnap.wave, 5, 'end screen wave comes from the snapshot')
+    // A second matchEnd event must not re-fire the hook (one-shot latch).
+    let calls = 0
+    mp.onMatchEnd = () => { calls++ }
+    mp.net.socket.receive({ t: MSG.SNAP, ...snap({ events: [{ k: 'matchEnd', reason: 'timecap', scoreboard: [] }] }) })
+    assert.equal(calls, 0, 'match end fires exactly once')
+    await game.score.submitRun()
+    mp.dispose(); game.multiplayer && game.multiplayer.dispose()
+    game.dispose && game.dispose()
+  } finally {
+    if (prevFetch === undefined) delete globalThis.fetch
+    else globalThis.fetch = prevFetch
+  }
 })

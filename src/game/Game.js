@@ -795,6 +795,30 @@ export class Game {
     if (this.screens) this.screens.showBanner('RESPAWNED')
   }
 
+  /** v12: the server ended the co-op match (wave-5 cleared / time cap / all
+   *  players dead). Stop the run and show the game-over screen with this
+   *  client's final stats, mirroring the single-player end flow. The wave shown
+   *  is the server-authoritative one from the last snapshot (the local
+   *  WaveManager is unused in co-op). */
+  _endCoopRun() {
+    if (this.state !== GameState.PLAYING) return
+    this._respawning = false
+    this.setState(GameState.GAMEOVER)
+    if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
+    if (this.audio) this.audio.stopAmbient()
+    const record = this.score ? this.score.newRecord() : false
+    if (this.score) this.score.submitRun()
+    const wave = (this.multiplayer && this.multiplayer.lastSnap) ? (this.multiplayer.lastSnap.wave | 0) : 0
+    if (this.screens) this.screens.showGameOver({
+      wave,
+      kills: this.kills,
+      score: this.score ? this.score.value : 0,
+      best: this.score ? this.score.best : 0,
+      name: this.score ? this.score.name : '',
+      record
+    })
+  }
+
   /** Wire the co-op respawn hooks onto a freshly built controller. */
   _wireMpHooks(mp) {
     if (!mp) return mp
@@ -808,6 +832,9 @@ export class Game {
       if (this.input && this.input.locked() && this.env.document) this.env.document.exitPointerLock()
       if (this.screens) this.screens.showBanner('YOU DIED — RESPAWNING\u2026')
     }
+    // v12: the server ended the co-op match — stop the run + show the final
+    // scoreboard via the shared game-over screen.
+    mp.onMatchEnd = () => this._endCoopRun()
     return mp
   }
 

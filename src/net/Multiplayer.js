@@ -54,6 +54,15 @@ export class Multiplayer {
     // Co-op respawn hooks the Game wires up (no-ops until assigned).
     this.onSelfDeath = null
     this.onSelfRespawn = null
+    // v12: match-end hook. The server emits a `matchEnd` event (wave-5 cleared /
+    // time cap / all-dead) in a snapshot; Multiplayer surfaces it once so the
+    // Game can stop the co-op run and show the final scoreboard.
+    this.onMatchEnd = null
+    this.matchEnded = false
+    this.endReason = null
+    this.finalScoreboard = null
+    // v12: rolling kill feed (most-recent first) for the co-op scoreboard.
+    this._killFeed = []
     this._onWelcome = (msg) => { this.pid = msg.pid }
     this._onSnap = (snap) => { this.lastSnap = snap; this._sync(snap) }
     this._onClose = () => { /* NetClient already flips its own connected flag */ }
@@ -77,6 +86,26 @@ export class Multiplayer {
       'font:12px/1.4 monospace;color:#cfe3ff;background:rgba(10,14,22,0.6);' +
       'padding:6px 8px;border:1px solid rgba(120,150,200,0.3);display:none'
     if (d.body) d.body.appendChild(this._sbEl)
+  }
+
+  /** v12: append a kill to the rolling feed (most-recent first), capped short so
+   *  the scoreboard stays readable. Names are resolved from the snapshot roster;
+   *  an unknown killer id (a zombie kill with no player) reads as the victim
+   *  "died". Headshots are flagged so the feed can mark them. */
+  _pushKill(ev, snap) {
+    if (!this.doc) return
+    const names = {}
+    for (const p of (snap && snap.players) || []) if (p && p.id) names[p.id] = p.name || p.id
+    const victim = names[ev.victim] || 'PLAYER'
+    // v12: the killer of a zombie kill is always the player the server credited
+    // (`by` is a pid); the victim id is a zombie id that is never in the player
+    // roster, so it reads as "<killer> ▸ <TYPE>". A 'death' event (player victim)
+    // has no `by` and renders as "<victim> DIED".
+    const killer = ev.by != null ? (names[ev.by] || 'YOU') : null
+    const head = ev.head || ev.headshot || false
+    const line = killer ? `${killer} ▸ ${victim}${head ? ' (HEAD)' : ''}` : `${victim} DIED`
+    this._killFeed.unshift(line)
+    if (this._killFeed.length > 5) this._killFeed.length = 5
   }
 
   /**
@@ -123,7 +152,17 @@ export class Multiplayer {
     this._wasSelfDead = selfDead
     // Respawn events naming this client are also a revive signal.
     for (const ev of (snap.events || [])) {
-      if (ev && ev.k === 'respawn' && ev.victim === this.pid) this.onSelfRespawn && this.onSelfRespawn()
+      if (!ev) continue
+      if (ev.k === 'respawn' && ev.victim === this.pid) this.onSelfRespawn && this.onSelfRespawn()
+      // v12: match end — surface the final scoreboard to the Game once.
+      if (ev.k === 'matchEnd' && !this.matchEnded) {
+        this.matchEnded = true
+        this.endReason = ev.reason || null
+        this.finalScoreboard = Array.isArray(ev.scoreboard) ? ev.scoreboard : this.scoreboard(snap)
+        this.onMatchEnd && this.onMatchEnd(this.endReason, this.finalScoreboard)
+      }
+      // v12: kill feed — record recent kills (victim id + killer id + headshot).
+      if (ev.k === 'kill') this._pushKill(ev, snap)
     }
     // Drop avatars that left the roster.
     for (const [id, rp] of this.players) {
@@ -214,6 +253,28 @@ export class Multiplayer {
       const row = this.doc.createElement('div')
       row.textContent = `${r.name}: ${r.score} pts  ${r.kills} kills`
       this._sbEl.appendChild(row)
+      // v12: a compact health bar under each player so teammates' state is legible
+      // at a glance (who is about to drop). Dead players show an empty bar.
+      const bar = this.doc.createElement('div')
+      bar.className = 'mp-hp'
+      const fill = this.doc.createElement('div')
+      fill.className = 'mp-hp-fill'
+      const pct = Math.max(0, Math.min(100, Math.round((r.health / 100) * 100)))
+      fill.style.width = (r.dead ? 0 : pct) + '%'
+      fill.style.background = r.dead ? '#7a2b2b' : (pct > 50 ? '#3fae5a' : pct > 25 ? '#c9a227' : '#c0392b')
+      bar.appendChild(fill)
+      this._sbEl.appendChild(bar)
+    }
+    // v12: kill feed — the most recent kills, most-recent first.
+    if (this._killFeed.length) {
+      const feed = this.doc.createElement('div')
+      feed.className = 'mp-killfeed'
+      for (const line of this._killFeed) {
+        const lineEl = this.doc.createElement('div')
+        lineEl.textContent = line
+        feed.appendChild(lineEl)
+      }
+      this._sbEl.appendChild(feed)
     }
   }
 
@@ -226,10 +287,17 @@ export class Multiplayer {
     // id -> name map from the authoritative roster (names already sanitized by
     // the server / buildHello; empty name falls back to the pid).
     const names = {}
-    for (const p of (s.players || [])) if (p && p.id) names[p.id] = p.name || p.id
+    const health = {}
+    const dead = {}
+    for (const p of (s.players || [])) {
+      if (!p || !p.id) continue
+      names[p.id] = p.name || p.id
+      if (Number.isFinite(p.health)) health[p.id] = p.health
+      if (p.dead) dead[p.id] = true
+    }
     const rows = []
     for (const id of Object.keys(s.score || {})) {
-      rows.push({ id, name: names[id] || id, score: s.score[id] || 0, kills: (s.kills && s.kills[id]) || 0 })
+      rows.push({ id, name: names[id] || id, score: s.score[id] || 0, kills: (s.kills && s.kills[id]) || 0, health: health[id] != null ? health[id] : 100, dead: !!dead[id] })
     }
     rows.sort((a, b) => b.score - a.score)
     return rows
