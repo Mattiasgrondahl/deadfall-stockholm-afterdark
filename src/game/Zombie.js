@@ -66,24 +66,25 @@ const HAIR_MATS = [
 ]
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
- *  wave-5 boss: a tanky 520-HP bruiser (≈5.8× a shambler's base HP), slow
- *  shamble, heavy melee, and a short lunge (charge) when the player is within
- *  CHARGE_RANGE. `shotgunArmor` is a damage multiplier the Shotgun applies to
- *  each pellet that lands on this type — the boss's thick hide shrugs off most
- *  buckshot (×0.4), so it takes ≥10 full blasts (9×6×22×0.4=475 < 520, 10×=528
- *  ≥ 520) while the pistol (26/shot, no armor) needs exactly 20 body shots. */
+ *  wave-5 boss. v13 rebalance: the user wants the boss to take ≈10 SNIPER
+ *  shots (the sniper is the anti-boss weapon). Base 1400 → wave-5 scaling
+ *  1.12^4 ≈ 1.574 gives 2203 effective HP = 24 body / 12 head sniper shots
+ *  (90 / 180 dmg) — ≥10 of each. Pistol needs ~85 body shots, shotgun ~42
+ *  blasts (armor ×0.4). Speed 0.7 → 0.45: the boss now shambles slower than
+ *  the shambler itself, per the user's "make it slower" ask. */
 const TABLE = {
   walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
   shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
   screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
-  brute: { speed: 0.7, hp: 5200, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
+  brute: { speed: 0.45, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
 /** Boss charge window: within this horizontal range the brute lunges instead
  *  of shambling; the lunge adds CHARGE_SPEED for CHARGE_TIME seconds and its
- *  heavy melee lands at the end of the lunge. */
+ *  heavy melee lands at the end of the lunge. v13: CHARGE_SPEED 6 → 4 — the
+ *  boss is slower across the board. */
 const CHARGE_RANGE = 7
-const CHARGE_SPEED = 6
+const CHARGE_SPEED = 4
 const CHARGE_TIME = 0.55
 
 // Difficulty presets. NORMAL is the shipped baseline (identity). FRENZY: every
@@ -109,8 +110,10 @@ const ORDER = ['walker', 'shambler', 'screamer', 'brute']
 /** v9 boss size: the brute's silhouette + hitbox scale. Doubled from the old
  *  1.4 to 2.8 so the boss reads as a genuine giant ("2x larger"). Both the
  *  primitive/skin body scale and the weapon hitbox radii use this single factor,
- *  so the two-sphere hitbox contract stays consistent with the visible model. */
-const BOSS_SCALE = 2.8
+ *  so the two-sphere hitbox contract stays consistent with the visible model.
+ *  v13: 2.8 → 5.6 — the user wants the boss 4× LARGER than the v10 giant, so
+ *  the whole silhouette + hitbox doubles again (~5 m tall, 2.5 m torso sphere). */
+const BOSS_SCALE = 5.6
 
 /**
  * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
@@ -280,6 +283,77 @@ function fabricNormal() {
     FABRIC_REFS = 0
   }
   return FABRIC_NORMAL
+}
+// v4 VISUALS (A3): shared gore/dirt detail map for the bare skin (head + any
+// un-clothed body part). A mottled field of dark rotting-flesh patches so the
+// flat per-type skin color reads as decayed tissue rather than plastic. Built
+// once at module load as a DataTexture (headless-safe: no canvas/document),
+// deterministic (seeded LCG, no Math.random), shared across every zombie and
+// released at zero refs alongside FABRIC_NORMAL. The color map multiplies the
+// material color (so per-type tint survives); the roughness map adds wet/dry
+// variation.
+const SKIN_D_N = 64
+let SKIN_DETAIL = null
+let SKIN_DETAIL_R = null
+let SKIN_REFS = 0
+function buildSkinDetail(emissiveless) {
+  const n = SKIN_D_N
+  const data = new Uint8Array(n * n * 4)
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two independent seeded streams per texel (fixed states, order-independent).
+      const sx = ((x * 41 + y * 23 + 5) >>> 0) ^ 13337
+      const sy = ((y * 37 + x * 19 + 3) >>> 0) ^ 24680
+      // Low-frequency mottling: sum a few sine octaves for blobby dark patches.
+      const m = 0.5 + 0.5 * (
+        Math.sin(x * 0.55 + lcg(sx) * 1.5) * 0.5 +
+        Math.sin(y * 0.47 + lcg(sy) * 1.5) * 0.5
+      )
+      const grime = Math.max(0, m - 0.45) * 1.6 // most texels clean, some dark
+      const i = (y * n + x) * 4
+      if (emissiveless) {
+        // Color map: near-white where clean, dark bruise where grimed.
+        const v = Math.max(0.35, 1 - grime * 0.7)
+        const r = Math.round(255 * v * (1 - grime * 0.25)) // bruise toward red-brown
+        const g = Math.round(255 * v * (1 - grime * 0.45))
+        const b = Math.round(255 * v * (1 - grime * 0.35))
+        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255
+      } else {
+        // Roughness map: grime patches read wetter (darker = smoother) so the
+        // rotting flesh has wet/dry variation instead of uniform matte.
+        const rough = Math.min(255, Math.max(90, 255 - grime * 150))
+        data[i] = rough; data[i + 1] = rough; data[i + 2] = rough; data[i + 3] = 255
+      }
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 2)
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.generateMipmaps = true
+  tex.needsUpdate = true
+  return tex
+}
+function skinDetailMaps() {
+  if (SKIN_DETAIL === null) {
+    SKIN_DETAIL = buildSkinDetail(true)
+    SKIN_DETAIL.colorSpace = THREE.SRGBColorSpace
+    SKIN_DETAIL_R = buildSkinDetail(false)
+    SKIN_REFS = 0
+  }
+  return { map: SKIN_DETAIL, roughnessMap: SKIN_DETAIL_R }
+}
+// v4 VISUALS (A3): give the bare per-type skin materials (head + un-clothed
+// torso parts) the shared gore/dirt detail so bodies read as rotting flesh.
+// Assigned once at module load; the maps are shared and refcounted like the
+// fabric weave map.
+{
+  const dm = skinDetailMaps()
+  for (const k of Object.keys(MAT2)) {
+    MAT2[k].map = dm.map
+    MAT2[k].roughnessMap = dm.roughnessMap
+  }
 }
 // Per-outfit sleeve materials: one per archetype, cloned from that archetype's
 // top so sleeves always match the jacket/shirt they belong to. Swapped in by
@@ -860,6 +934,7 @@ export class Zombie {
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
     FABRIC_REFS++ // one more live zombie holding the shared weave map
+    SKIN_REFS++ // one more live zombie holding the shared gore/dirt maps
     // v5: try to swap in a rigged skinned mesh (browser-only, async). Until it
     // arrives the primitive body above is the visual; headless never swaps.
     this._skin = null // { root, skinned, mixer, clips, actions, current }
@@ -1623,6 +1698,12 @@ export class Zombie {
     if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
       FABRIC_NORMAL.dispose()
       FABRIC_NORMAL = null
+    }
+    if (SKIN_DETAIL !== null && --SKIN_REFS <= 0) {
+      SKIN_DETAIL.dispose()
+      SKIN_DETAIL_R.dispose()
+      SKIN_DETAIL = null
+      SKIN_DETAIL_R = null
     }
   }
 }
