@@ -91,7 +91,12 @@ export class Multiplayer {
       if (p.id === this.pid) { selfDead = !!p.dead; continue } // self is first-person, not proxied
       seen.add(p.id)
       let rp = this.players.get(p.id)
-      if (!rp) { rp = new RemotePlayer(this.scene, p.id); this.players.set(p.id, rp) }
+      if (!rp) {
+        // v3 T11: pass the display name + a canvas factory so the avatar gets a
+        // name label (browser only; headless has no canvas → label skipped).
+        rp = new RemotePlayer(this.scene, p.id, { name: p.name, canvasFactory: this.env.canvasFactory })
+        this.players.set(p.id, rp)
+      }
       rp.apply(p, 1 / 60)
     }
     this.selfDead = selfDead

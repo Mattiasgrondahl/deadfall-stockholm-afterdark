@@ -304,6 +304,9 @@ test('remote zombie bodies have face + hair + eyes and mirror server limb loss',
   assert.ok(e._face, 'remote body has a face')
   assert.ok(e._hair, 'remote body has hair')
   assert.equal(e._eyes.length, 2, 'remote body has two eyes')
+  // v3 T10: a live remote body is grounded — the group origin sits at the ground
+  // plane (feet at y 0), never floating above it like the old primitive box.
+  assert.equal(e.group.position.y, 0, 'live remote zombie feet sit on the ground (y 0)')
   // Snapshot limb loss severs the matching limbs + spawns a falling piece.
   const before = e._falling.length
   mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [

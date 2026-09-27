@@ -146,7 +146,7 @@ export class Room {
   }
 
   /** Assign the next free player id (p0..p7) and add it to the Match. */
-  join(socket) {
+  join(socket, name) {
     if (this.sockets.size >= MAX_PLAYERS) return null
     let id = null
     for (let i = 0; i < MAX_PLAYERS; i++) {
@@ -154,7 +154,7 @@ export class Room {
       if (!this.match.getPlayer(cand)) { id = cand; break }
     }
     if (!id) return null
-    const slot = this.match.addPlayer(id)
+    const slot = this.match.addPlayer(id, undefined, undefined, name)
     if (!slot) return null
     this.sockets.set(socket, id)
     return id
@@ -252,7 +252,9 @@ export function startServer(opts = {}) {
       try { msg = JSON.parse(raw.toString()) } catch { return }
       if (!joined) {
         if (msg.t !== MSG.HELLO) return
-        const id = room.join(socket)
+        // v3 T11: carry the hello display name into the slot so the snapshot can
+        // label remote avatars. buildHello already clamps to 24 chars.
+        const id = room.join(socket, msg.name)
         if (id === null) { socket.close(); return }
         joined = true
         socket.send(JSON.stringify(buildWelcome(id, room.match.snapshot().players)))

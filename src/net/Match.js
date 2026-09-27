@@ -123,7 +123,7 @@ export class Match {
   }
 
   /** Add a player at (x, z) (default: shared spawn). Returns the slot or null. */
-  addPlayer(id, x = SPAWN.x, z = SPAWN.z) {
+  addPlayer(id, x = SPAWN.x, z = SPAWN.z, name = '') {
     if (this.players.has(id) || this.players.size >= this.playersCap) return null
     const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 400)
     const inputState = freshInputState()
@@ -151,7 +151,7 @@ export class Match {
     player._onDamaged = (n, source) => this.events.push({
       k: 'hit', victim: id, dmg: n, by: source && source.type ? source.type : null
     })
-    const slot = { id, player, weapon, inputState, flashlight: null }
+    const slot = { id, player, weapon, inputState, flashlight: null, name: String(name || '').slice(0, 24) }
     this.players.set(id, slot)
     this.ws.players = Array.from(this.players.values())
     this.kills.set(id, 0)
@@ -324,7 +324,7 @@ export class Match {
         yaw: p.yaw, pitch: p.pitch,
         health: p.health, stamina: Math.round(p.stamina),
         weapon: w.name, ammo: w.ammo, reserve: w.reserve,
-        dead: p.isDead
+        dead: p.isDead, name: slot.name || ''
       })
     }
     const zombies = []

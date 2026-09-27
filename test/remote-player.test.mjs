@@ -28,11 +28,44 @@ test('RemotePlayer builds a 6-part avatar and applies a snapshot', () => {
   assert.equal(rp.group.position.x, 5)
   assert.equal(rp.group.position.z, -3)
   assert.equal(rp.group.rotation.y, 1.2, 'faces the yaw')
-  // Dead avatar goes dark.
+  // v3 T11: feet grounded — a standing snapshot (eye y 1.7) plants the group
+  // origin (feet) on the ground plane, not a body-height above it.
+  assert.equal(rp.group.position.y, 0, 'standing avatar feet sit on the ground (y 0)')
+  // Dead avatar goes dark + sinks below the ground plane.
   rp.apply({ id: 'p3', x: 5, y: 1.7, z: -3, yaw: 1.2, health: 0, dead: true }, 1 / 60)
+  assert.ok(rp.group.position.y < 0, 'dead avatar sinks below the ground')
   assert.equal(rp.torso.material, rp._mat === undefined ? rp.torso.material : rp.torso.material) // no throw
   rp.dispose()
   assert.equal(rp.group.parent, null, 'removed from scene on dispose')
+})
+
+test('v3 T11: remote avatars wear outfit materials + stay grounded + dispose cleanly', () => {
+  const scene = new THREE.Scene()
+  const rp = new RemotePlayer(scene, 'p0')
+  // v3 T11: torso/legs use the shared outfit materials (clothed look), while the
+  // head + arms keep the per-id tint so players stay distinguishable.
+  assert.notEqual(rp.torso.material, rp._mat, 'torso wears an outfit material, not the tint')
+  assert.notEqual(rp.legL.material, rp._mat, 'legs wear an outfit material, not the tint')
+  assert.equal(rp.head.material, rp._mat, 'head keeps the per-id tint')
+  // Outfit pick is deterministic per id (same id → same clothes across clients).
+  const b = new RemotePlayer(scene, 'p0')
+  assert.equal(rp.torso.material, b.torso.material, 'same id -> same outfit (deterministic)')
+  // A jump snapshot (eye y above standing) lifts the feet off the ground.
+  rp.apply({ id: 'p0', x: 0, y: 2.4, z: 0, yaw: 0, health: 100, dead: false }, 1 / 60)
+  assert.ok(rp.group.position.y > 0, 'jumping avatar lifts its feet above the ground')
+  // Headless (no canvas factory) skips the name label entirely.
+  assert.equal(rp._label, null, 'no name label without a canvas factory')
+  // A canvas factory yields a name label sprite above the head.
+  const fakeCanvas = { width: 0, height: 0, getContext: () => ({ clearRect() {}, fillRect() {}, fillText() {} }) }
+  const rp2 = new RemotePlayer(scene, 'p1', { name: 'Ana', canvasFactory: () => fakeCanvas })
+  assert.ok(rp2._label && rp2._label.isSprite, 'name label sprite built from a canvas')
+  assert.ok(rp2._label.position.y > 1.7, 'name label floats above the head')
+  // Sprites are not meshes, so the label does not count against the mesh budget.
+  let meshes = 0
+  scene.traverse((o) => { if (o.isMesh) meshes++ })
+  assert.ok(meshes <= 640, `mesh budget with labels: ${meshes} <= 640`)
+  rp.dispose(); b.dispose(); rp2.dispose()
+  assert.equal(rp2.group.parent, null, 'labelled avatar removed on dispose')
 })
 
 test('two RemotePlayers get distinct tints (stable per id)', () => {

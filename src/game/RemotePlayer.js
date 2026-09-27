@@ -8,7 +8,17 @@
 // It never simulates: the Game feeds it x/y/z/yaw/pitch/health/dead from the
 // snapshot each frame and it just positions + poses the parts. Headless-safe:
 // it builds plain THREE objects and touches no DOM/WebGL.
+//
+// v3 T11: the avatar now wears the SAME outfit materials the single-player
+// zombies wear (shared OUTFITMATS from Zombie.js — tops on the torso, bottoms
+// on the legs) so remote players read as clothed people instead of flat tinted
+// boxes; the head + arms keep a per-id tint so players stay distinguishable.
+// Feet are grounded on the ground plane (the group origin sits at the feet, not
+// the eye), so avatars no longer hover a body-height above the ground. A name
+// label (a canvas-texture Sprite) floats over the head in the browser; in
+// headless runs (no canvas factory) it is skipped and the budget is unchanged.
 import * as THREE from 'three'
+import { OUTFITMATS } from './Zombie.js'
 
 // Shared geometry (one instance reused by every avatar).
 const GEO = {
@@ -20,6 +30,13 @@ const GEO = {
 // Per-id tint so players read as distinct; falls back to a neutral color.
 const PALETTE = [0x3f7fbf, 0xbf7f3f, 0x3fbf7f, 0xbf3f7f, 0x7f3fbf, 0xbfbf3f, 0x3fbfbe, 0xbe3fbf]
 const DEAD_MAT = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 1 })
+// The snapshot carries the player's EYE height (position.y, STAND_EYE = 1.7 when
+// standing). The avatar group origin is the FEET, so the eye height is subtracted
+// to plant the feet on the ground plane instead of hovering a body above it.
+const STAND_EYE = 1.7
+// Deterministic outfit pick per id (no Math.random) so an avatar's clothes are
+// stable across snapshots and identical for every client seeing that player.
+const OUTFIT_COUNT = OUTFITMATS.tops.length
 
 function tintFor(id) {
   let h = 0
@@ -27,12 +44,47 @@ function tintFor(id) {
   return PALETTE[h % PALETTE.length]
 }
 
+function outfitFor(id) {
+  let h = 2166136261
+  const s = String(id)
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) & 0x7fffffff
+  return h % OUTFIT_COUNT
+}
+
+// Build a small name-plate texture from a canvas (browser only). Returns null
+// when no canvas is available (headless), so the label is simply skipped.
+function makeNameTexture(canvasFactory, name) {
+  if (!canvasFactory) return null
+  const safe = String(name || '').slice(0, 24)
+  if (!safe) return null
+  let canvas
+  try { canvas = canvasFactory() } catch (err) { return null }
+  if (!canvas || !canvas.getContext) return null
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  canvas.width = 256
+  canvas.height = 64
+  ctx.clearRect(0, 0, 256, 64)
+  ctx.font = 'bold 40px monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = 'rgba(8,12,20,0.55)'
+  ctx.fillRect(0, 0, 256, 64)
+  ctx.fillStyle = '#cfe3ff'
+  ctx.fillText(safe, 128, 34)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.needsUpdate = true
+  return tex
+}
+
 export class RemotePlayer {
   /**
    * @param {THREE.Scene} scene
-   * @param {string} id player id (used for a stable tint)
+   * @param {string} id player id (used for a stable tint + outfit)
+   * @param {object} [opts] { name, canvasFactory } — v3 T11 display name +
+   *        optional canvas factory for the name label (browser only)
    */
-  constructor(scene, id) {
+  constructor(scene, id, opts = {}) {
     this.id = id
     this.group = new THREE.Group()
     const color = tintFor(id)
@@ -40,20 +92,37 @@ export class RemotePlayer {
     // scene (a plain MeshStandardMaterial box group read as a black blob).
     const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85, emissive: color, emissiveIntensity: 0.45 })
     this._mat = mat
-    const mk = (geo, x, y, z) => {
-      const m = new THREE.Mesh(geo, mat)
-      m.position.set(x, y, z)
-      this.group.add(m)
-      return m
+    // v3 T11: shared outfit materials (tops/bottoms) so the avatar is clothed
+    // like the single-player bodies. These are SHARED — never disposed here.
+    const outfit = outfitFor(id)
+    const topMat = OUTFITMATS.tops[outfit]
+    const bottomMat = OUTFITMATS.bottoms[outfit]
+    const mk = (geo, x, y, z, m) => {
+      const mesh = new THREE.Mesh(geo, m)
+      mesh.position.set(x, y, z)
+      this.group.add(mesh)
+      return mesh
     }
-    this.torso = mk(GEO.torso, 0, 1.1, 0)
-    this.head = mk(GEO.head, 0, 1.75, 0)
-    this.armL = mk(GEO.arm, -0.36, 1.1, 0)
-    this.armR = mk(GEO.arm, 0.36, 1.1, 0)
-    this.legL = mk(GEO.leg, -0.12, 0.45, 0)
-    this.legR = mk(GEO.leg, 0.12, 0.45, 0)
+    this.torso = mk(GEO.torso, 0, 1.1, 0, topMat)
+    this.head = mk(GEO.head, 0, 1.75, 0, mat)
+    this.armL = mk(GEO.arm, -0.36, 1.1, 0, mat)
+    this.armR = mk(GEO.arm, 0.36, 1.1, 0, mat)
+    this.legL = mk(GEO.leg, -0.12, 0.45, 0, bottomMat)
+    this.legR = mk(GEO.leg, 0.12, 0.45, 0, bottomMat)
     this._parts = [this.torso, this.head, this.armL, this.armR, this.legL, this.legR]
+    this._outfitMats = [topMat, bottomMat] // shared; tracked for the dead-swap restore
     this._walkPhase = 0
+    // v3 T11: name label sprite (browser only; headless skips it). A Sprite is
+    // not counted as a mesh, so the budget is unchanged.
+    this._label = null
+    const tex = makeNameTexture(opts.canvasFactory, opts.name)
+    if (tex) {
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+      this._label = new THREE.Sprite(spriteMat)
+      this._label.scale.set(1.6, 0.4, 1)
+      this._label.position.set(0, 2.15, 0) // above the head, in group (feet) space
+      this.group.add(this._label)
+    }
     scene.add(this.group)
   }
 
@@ -64,7 +133,12 @@ export class RemotePlayer {
    */
   apply(p, dt = 0) {
     if (!p) return
-    this.group.position.set(p.x, p.y, p.z)
+    // v3 T11: the snapshot y is the EYE height; the group origin is the FEET, so
+    // subtract the standing eye height to plant the feet on the ground plane.
+    // When the player jumps (p.y rises) the feet lift with it, and crouching
+    // (p.y drops) lowers them — the avatar stays grounded instead of hovering.
+    const eye = p.y != null ? p.y : STAND_EYE
+    this.group.position.set(p.x, eye - STAND_EYE, p.z)
     this.group.rotation.y = p.yaw || 0
     const moving = !p.dead && (Math.abs(p.x - (this._lastX ?? p.x)) + Math.abs(p.z - (this._lastZ ?? p.z))) > 0.001
     this._lastX = p.x; this._lastZ = p.z
@@ -78,19 +152,37 @@ export class RemotePlayer {
     } else {
       this.armL.rotation.x = this.armR.rotation.x = this.legL.rotation.x = this.legR.rotation.x = 0
     }
-    // Dead avatars go dark + sink slightly.
+    // Dead avatars go dark + sink slightly (feet drop below the ground plane).
     if (p.dead) {
-      for (const m of this._parts) m.material = DEAD_MAT
-      this.group.position.y = (p.y ?? 1.7) - 0.6
+      this.torso.material = DEAD_MAT
+      this.legL.material = DEAD_MAT
+      this.legR.material = DEAD_MAT
+      this.head.material = DEAD_MAT
+      this.armL.material = DEAD_MAT
+      this.armR.material = DEAD_MAT
+      this.group.position.y = (eye - STAND_EYE) - 0.6
+      if (this._label) this._label.visible = false
     } else {
-      for (const m of this._parts) m.material = this._mat
+      this.torso.material = this._outfitMats[0]
+      this.legL.material = this._outfitMats[1]
+      this.legR.material = this._outfitMats[1]
+      this.head.material = this._mat
+      this.armL.material = this._mat
+      this.armR.material = this._mat
+      if (this._label) this._label.visible = true
     }
   }
 
   dispose() {
-    // Materials are per-instance (tinted); geometry + DEAD_MAT are shared and
-    // must NOT be disposed here.
+    // The per-instance tint material + the name-label sprite material/texture are
+    // owned here; the outfit materials + geometry + DEAD_MAT are shared and must
+    // NOT be disposed.
     this._mat.dispose()
+    if (this._label) {
+      if (this._label.material) this._label.material.dispose()
+      if (this._label.material && this._label.material.map) this._label.material.map.dispose()
+      this._label = null
+    }
     if (this.group.parent) this.group.parent.remove(this.group)
     this.group.clear()
   }
