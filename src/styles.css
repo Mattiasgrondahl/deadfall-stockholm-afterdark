@@ -622,18 +622,26 @@ html, body {
   color: var(--banner);
 }
 
-/* title-screen difficulty picker (NIGHT / FRENZY) */
+/* title-screen difficulty picker (NIGHT / FRENZY / NIGHTMARE) */
 .difficulty-row { margin-top: 18px; }
 .difficulty-label { font-size: 12px; letter-spacing: 0.12em; opacity: 0.85; margin-bottom: 6px; color: var(--ink); }
+/* Unselected options read as clearly "off": dim text, muted border, no fill. */
 .difficulty-row .toggle {
   border: 1px solid var(--panel-edge);
-  color: var(--ink);
+  color: var(--ink-dim);
+  background: transparent;
   margin: 0 6px 6px 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
+.difficulty-row .toggle:hover { color: var(--ink); border-color: var(--accent); }
+/* The selected option is unmistakable: a solid accent fill with dark ink text
+   (high contrast, readable) + a bright border + a soft glow. */
 .difficulty-row .toggle.on {
-  background: rgba(110, 168, 255, 0.2);
-  border-color: var(--accent);
-  color: var(--banner);
+  background: var(--accent);
+  border-color: var(--banner);
+  color: #0b1220;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(110, 168, 255, 0.55);
 }
 
 /* co-op join row (title screen): room code + name inputs + JOIN button */

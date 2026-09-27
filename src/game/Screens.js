@@ -414,8 +414,13 @@ export class Screens {
   // Clicking FRENZY downgrades nightmare to plain frenzy; NIGHT resets.
   _setDifficulty(name) {
     this._game.difficulty = name
+    // v8: exactly one difficulty is highlighted as the active selection — the
+    // picker is a single-choice control, so NIGHTMARE does not also light up
+    // FRENZY (that made two buttons look selected at once). The stacking of
+    // nightmare-on-frenzy is a gameplay concern handled by the preset, not the
+    // UI state.
     this._nightBtn.classList.toggle('on', name === 'normal')
-    this._frenzyBtn.classList.toggle('on', name === 'frenzy' || name === 'nightmare')
+    this._frenzyBtn.classList.toggle('on', name === 'frenzy')
     this._nightmareBtn.classList.toggle('on', name === 'nightmare')
   }
 

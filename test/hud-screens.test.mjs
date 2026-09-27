@@ -265,6 +265,39 @@ function makeGame(doc, hud) {
   screens.dispose()
 }
 {
+  // v8: the difficulty picker is a single-choice control — exactly one option
+  // carries the 'on' (selected) class at a time, so the active mode is
+  // unmistakable. NIGHTMARE no longer also lights up FRENZY.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  const toggles = []
+  const collect = (el) => { for (const c of el.children) { if (c.classList.contains('toggle')) toggles.push(c); collect(c) } }
+  collect(title)
+  const byName = (t) => toggles.find((b) => b.textContent === t)
+  const night = byName('NIGHT'), frenzy = byName('FRENZY'), nightmare = byName('NIGHTMARE')
+  assert.ok(night && frenzy && nightmare, 'all three difficulty toggles exist')
+  const onCount = () => toggles.filter((b) => b.classList.contains('on')).length
+  // Default load: FRENZY is the shipped default and is the only selected option.
+  assert.equal(frenzy.classList.contains('on'), true, 'frenzy selected by default')
+  assert.equal(onCount(), 1, 'exactly one option selected on load')
+  // Picking NIGHTMARE selects ONLY nightmare (frenzy no longer double-lights).
+  nightmare.click()
+  assert.equal(game.difficulty, 'nightmare', 'game difficulty set')
+  assert.equal(nightmare.classList.contains('on'), true, 'nightmare selected')
+  assert.equal(frenzy.classList.contains('on'), false, 'frenzy NOT lit when nightmare chosen')
+  assert.equal(onCount(), 1, 'still exactly one selected')
+  // Picking NIGHT clears the others.
+  night.click()
+  assert.equal(game.difficulty, 'normal')
+  assert.equal(night.classList.contains('on'), true)
+  assert.equal(onCount(), 1, 'night is the sole selection')
+  screens.dispose()
+}
+{
   const doc = makeDocument()
   const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
   const game = makeGame(doc, hud)
@@ -705,6 +738,12 @@ function fakeWave(o) {
   assert.ok(panel(warn) >= 0.60, 'warn (high score) on panel C=' + panel(warn).toFixed(3))
   assert.ok(panel(accent) >= 0.60, 'accent (subtitle / keys) on panel C=' + panel(accent).toFixed(3))
   assert.ok(panel(ink, 0.85) >= 0.60, 'difficulty label (ink@0.85) C=' + panel(ink, 0.85).toFixed(3))
+  // v8: the SELECTED difficulty option is a solid accent fill with dark ink text
+  // — it must stay readable (high contrast) over the accent background, and the
+  // fill must clearly separate it from the dim unselected options.
+  const SEL_TEXT = hex('#0b1220')
+  assert.ok(C(SEL_TEXT, accent) >= 0.60, 'selected-difficulty text on accent fill C=' + C(SEL_TEXT, accent).toFixed(3))
+  assert.ok(C(accent, PANEL) >= 0.30, 'accent fill stands out from the panel C=' + C(accent, PANEL).toFixed(3))
   assert.ok(panel(inkDim, 0.8) >= 0.60, 'weapon name (ink-dim@0.8) C=' + panel(inkDim, 0.8).toFixed(3))
   assert.ok(panel(inkDim, 0.85) >= 0.60, 'tagline.dim (ink-dim@0.85) C=' + panel(inkDim, 0.85).toFixed(3))
   // The lines the player must act on are the clearest thing on their screen.
