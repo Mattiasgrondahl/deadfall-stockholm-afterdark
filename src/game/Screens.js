@@ -169,6 +169,21 @@ export class Screens {
     bg.className = 'title-bg'
     bg.style.backgroundImage = `url('${bgUrl}assets/posters/menu_bg.jpg')`
     this._title.appendChild(bg)
+    // v4 VISUALS (D1): looping muted attract clip over the static plate. The
+    // <video> is browser-only (this whole file is), plays muted+looped+autoplay
+    // so it needs no user gesture, and sits above the plate but below the panel
+    // (z-index). If the mp4 is missing the video is transparent and the plate
+    // shows through — no broken-image box. dispose() pauses + unloads it.
+    const vid = d.createElement('video')
+    vid.className = 'title-video'
+    vid.muted = true
+    vid.autoplay = true
+    vid.loop = true
+    vid.playsInline = true
+    vid.preload = 'metadata'
+    vid.src = `${bgUrl}assets/posters/attract.mp4`
+    this._titleVideo = vid
+    this._title.appendChild(vid)
     this._title.appendChild(panelT)
     this._root.appendChild(this._title)
 
@@ -578,6 +593,15 @@ export class Screens {
     }
     this._hsRefresh = null
     if (this._bannerTimer) clearTimeout(this._bannerTimer)
+    // v4 VISUALS (D1): stop the attract clip + release its media resource so
+    // the decoded buffer / network stream are freed, not just the DOM node.
+    if (this._titleVideo) {
+      try { this._titleVideo.pause() } catch (e) { /* headless-safe */ }
+      if (this._titleVideo.removeAttribute) this._titleVideo.removeAttribute('src')
+      else this._titleVideo.src = ''
+      try { this._titleVideo.load() } catch (e) { /* headless-safe */ }
+      this._titleVideo = null
+    }
     while (this._root.firstChild) this._root.removeChild(this._root.firstChild)
   }
 }

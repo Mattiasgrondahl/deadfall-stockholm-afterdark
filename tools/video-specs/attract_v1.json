@@ -1,0 +1,14 @@
+{
+  "kind": "video",
+  "model_type": "hunyuan_1_5_480_i2v_step_distilled",
+  "name": "attract_v1",
+  "first_frame": "/home/mgr/Workspace/Zombie/.research/attract_first.png",
+  "prompt": "Slow cinematic push-in down a rain-slicked Stockholm alley at night. Wet asphalt reflects flickering amber streetlamps. Thin fog drifts across the frame, snow flutters through the cold blue air. A distant sodium lamp buzzes and flickers. Moody, desaturated, cinematic horror atmosphere, gentle camera motion, no people, no text.",
+  "negative_prompt": "people, text, watermark, bright daylight, fast motion, cartoon",
+  "resolution": "832x480",
+  "duration_seconds": 4,
+  "fps": 25,
+  "steps": 12,
+  "cfg": 3.5,
+  "seed": 7
+}

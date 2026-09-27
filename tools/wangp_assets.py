@@ -62,6 +62,7 @@ WANGP_ROOT = Path(os.environ.get("WANGP_ROOT", "/home/mgr/Wan2GP"))
 IMAGE_MODEL = "qwen_image_21_7B"
 IMAGE_MODEL_ALT = "z_image"
 AUDIO_MODEL = "yue2"
+VIDEO_MODEL = "hunyuan_1_5_480_i2v_step_distilled"
 
 
 def _abs(p):
@@ -78,6 +79,8 @@ def build_settings(session, spec):
         model_type = spec.get("model_type", AUDIO_MODEL)
     elif kind == "image":
         model_type = spec.get("model_type", IMAGE_MODEL)
+    elif kind == "video":
+        model_type = spec.get("model_type", VIDEO_MODEL)
     else:
         raise ValueError(f"unknown kind {kind!r}")
 
@@ -130,6 +133,32 @@ def build_settings(session, spec):
                 settings["video_prompt_type"] = vpt + "A"
         if "image_prompt_type" in spec:
             settings["image_prompt_type"] = str(spec["image_prompt_type"])
+        if "model_mode" in spec:
+            settings["model_mode"] = spec["model_mode"]
+
+    if kind == "video":
+        # Image-to-video: first frame comes from `first_frame` (an image_refs
+        # entry with video_prompt_type "I"). `video_length` is in frames
+        # (25 fps); a seconds value is converted via apply_video_length_duration
+        # downstream. Resolution must be a WxH string the model supports.
+        settings["prompt"] = spec.get("prompt", settings.get("prompt", ""))
+        settings["negative_prompt"] = spec.get("negative_prompt", settings.get("negative_prompt", " "))
+        settings["resolution"] = str(spec.get("resolution", settings.get("resolution", "832x480")))
+        if "steps" in spec:
+            settings["num_inference_steps"] = int(spec["steps"])
+        if "cfg" in spec:
+            settings["guidance_scale"] = float(spec["cfg"])
+        if "frames" in spec:
+            settings["video_length"] = int(spec["frames"])
+        elif "duration_seconds" in spec:
+            settings["video_length"] = f"{int(spec['duration_seconds'])}s"
+        if "fps" in spec:
+            settings["force_fps"] = int(spec["fps"])
+        ff = _abs(spec.get("first_frame"))
+        if ff:
+            settings["image_start"] = ff
+            settings["image_mode"] = 3
+            settings["video_prompt_type"] = "I"
         if "model_mode" in spec:
             settings["model_mode"] = spec["model_mode"]
 
