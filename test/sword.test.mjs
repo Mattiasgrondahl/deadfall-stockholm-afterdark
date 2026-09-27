@@ -26,10 +26,10 @@ test('stats: contract values exact', () => {
   assert.equal(sword.dmg, 45)
   assert.equal(sword.headMultiplier, 2)
   assert.equal(sword.headRange, 0.7)
-  assert.equal(sword.range, 1.8)
+  assert.equal(sword.range, 2.4)   // v3 T3: longer reach (was 1.8)
   assert.equal(sword.arc, 0.8)
-  assert.equal(sword.cooldown, 1.15)
-  assert.equal(sword.swingTime, 0.32)
+  assert.equal(sword.cooldown, 0.8) // v3 T3: faster swings (was 1.15)
+  assert.equal(sword.swingTime, 0.26) // v3 T3: shorter swing cycle (was 0.32)
   assert.equal(sword.infiniteAmmo, true)
   sword.dispose()
 })
@@ -38,13 +38,13 @@ test('arc hit: forward zombie hit, side and far untouched', () => {
   const player = fakePlayer(0, 0, 0) // yaw 0 faces -Z
   const front = new Zombie(new THREE.Scene(), 'walker', 0, -1.0, 1)
   const side = new Zombie(new THREE.Scene(), 'walker', 1.5, 0, 1)
-  const far = new Zombie(new THREE.Scene(), 'walker', 0, -2.0, 1)
+  const far = new Zombie(new THREE.Scene(), 'walker', 0, -2.9, 1)
   const { sword } = makeSetup(player, [front, side, far])
   sword.update(0.016, player)
   assert.equal(sword.swing(), true)
   assert.equal(front.health, front.maxHealth - 45) // body
   assert.equal(side.health, side.maxHealth)        // outside the 0.8 rad arc
-  assert.equal(far.health, far.maxHealth)          // 2 m > 1.8 m reach
+  assert.equal(far.health, far.maxHealth)          // 2.9 m > 2.4 m reach (v3 T3)
   sword.dispose()
 })
 

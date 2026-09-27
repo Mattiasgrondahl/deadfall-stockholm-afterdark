@@ -14,19 +14,24 @@ import * as THREE from 'three'
 const DMG = 45
 const HEAD_MULT = 2
 const HEAD_RANGE = 0.7 // headshot only within this horizontal distance
-const RANGE = 1.8      // max horizontal reach of the swing
+const RANGE = 2.4      // v3 T3: max horizontal reach of the swing (was 1.8)
 const ARC = 0.8        // half-width of the swing arc, radians
-const COOLDOWN = 1.15
-const SWING_TIME = 0.32
+const COOLDOWN = 0.8   // v3 T3: faster swings (was 1.15)
+const SWING_TIME = 0.26 // v3 T3: shorter swing cycle (was 0.32)
 const SWING_START = -1.1
 const SWING_END = 1.3
-// Slash animation (fractions of SWING_TIME): windup [0, WINDUP],
-// strike [WINDUP, STRIKE_END], recovery [STRIKE_END, 1]. During the strike the
-// view pitches forward (SLASH_PITCH) and translates toward the target
-// (SLASH_FWD), so the blade travels through the arc instead of spinning in
-// place; a fading arc trail sells the whoosh. Deterministic easing throughout.
+// v3 T3 overhead diagonal: the windup RAISES the blade overhead (negative
+// pitch = up), then the strike comes DOWN through forward while ROLLING
+// diagonally across the target, so the sword cleaves on a diagonal. Slash
+// animation (fractions of SWING_TIME): windup [0, WINDUP], strike [WINDUP,
+// STRIKE_END], recovery [STRIKE_END, 1]. During the strike the view pitches
+// from the raised windup pose through a forward dip (SLASH_PITCH) and
+// translates toward the target (SLASH_FWD), so the blade travels through the
+// arc instead of spinning in place; a fading arc trail sells the whoosh.
+// Deterministic easing throughout.
 const WINDUP = 0.12
 const STRIKE_END = 0.45
+const RAISE_PITCH = 0.8  // v3 T3: rad of overhead raise during the windup
 const SLASH_PITCH = 0.5  // rad of forward dip at mid-strike
 const SLASH_FWD = 0.14   // m of forward push (camera-local -z) at mid-strike
 // Diagonal slash: the blade ROLLS (camera-local Z) through the strike so it
@@ -128,8 +133,10 @@ export class Sword {
         this.view.position.copy(this._viewBase)
         this._trailMat.opacity = 0
       } else if (k < WINDUP) {
+        // v3 T3: raise the blade overhead — pitch back up (negative X) and
+        // pull it back as the windup, so the strike can come down from above.
         const s = smoothstep(k / WINDUP)
-        this.view.rotation.set(0, SWING_START * s, 0)
+        this.view.rotation.set(-RAISE_PITCH * s, SWING_START * s, 0)
         this.view.position.set(this._viewBase.x, this._viewBase.y, this._viewBase.z - 0.04 * s)
         this._trailMat.opacity = 0
       } else if (k < STRIKE_END) {
@@ -139,7 +146,10 @@ export class Sword {
         // through the strike so it slashes across the target diagonally. The
         // sign alternates each swing (right-to-left, then left-to-right).
         const roll = SLASH_ROLL * mid * this._slashDir
-        this.view.rotation.set(-SLASH_PITCH * mid, SWING_START + (SWING_END - SWING_START) * s, roll)
+        // v3 T3: come down from the overhead windup (pitch swings from the
+        // raised back pose through the forward dip) so the cut is overhead→down.
+        const pitch = -RAISE_PITCH * (1 - mid) - SLASH_PITCH * mid
+        this.view.rotation.set(pitch, SWING_START + (SWING_END - SWING_START) * s, roll)
         this.view.position.set(this._viewBase.x, this._viewBase.y, this._viewBase.z - SLASH_FWD * mid)
         this._trailMat.opacity = TRAIL_OPACITY * mid
       } else {

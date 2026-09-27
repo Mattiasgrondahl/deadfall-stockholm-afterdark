@@ -12,19 +12,24 @@ import * as THREE from 'three'
 const DMG = 25
 const HEAD_MULT = 2
 const HEAD_RANGE = 0.6 // headshot only within this horizontal distance
-const RANGE = 1.5      // max horizontal reach of the swing
+const RANGE = 2.1      // v3 T3: max horizontal reach of the swing (was 1.5)
 const ARC = 0.7        // half-width of the swing arc, radians
-const COOLDOWN = 0.9
-const SWING_TIME = 0.25
+const COOLDOWN = 0.6   // v3 T3: faster swings (was 0.9)
+const SWING_TIME = 0.2 // v3 T3: shorter swing cycle (was 0.25)
 const SWING_START = -0.9
 const SWING_END = 1.1
-// Slash animation (fractions of SWING_TIME): windup [0, WINDUP],
+// v3 T3 overhead diagonal: the windup RAISES the axe overhead (negative pitch
+// = up), then the strike sweeps down and across the body with a diagonal ROLL
+// (camera-local Z) so the axe cleaves the zombie on a diagonal instead of
+// slicing flat. Slash animation (fractions of SWING_TIME): windup [0, WINDUP],
 // strike [WINDUP, STRIKE_END], recovery [STRIKE_END, 1]. The axe is faster
 // than the sword, so its strike is shorter and the forward push smaller.
 const WINDUP = 0.15
 const STRIKE_END = 0.5
+const RAISE_PITCH = 0.7  // v3 T3: rad of overhead raise during the windup
 const SLASH_PITCH = 0.4
 const SLASH_FWD = 0.12
+const SLASH_ROLL = 0.6   // v3 T3: rad of diagonal roll at mid-strike (the cut)
 const TRAIL_OPACITY = 0.45
 const KNOCKBACK = 3      // m/s stagger applied to hit zombies
 const smoothstep = (v) => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t) }
@@ -116,14 +121,20 @@ export class Axe {
         this.view.position.copy(this._viewBase)
         this._trailMat.opacity = 0
       } else if (k < WINDUP) {
+        // v3 T3: raise the axe overhead — pitch back up (negative X) and pull
+        // it back as the windup, so the strike can come down from above.
         const s = smoothstep(k / WINDUP)
-        this.view.rotation.set(0, SWING_START * s, 0)
+        this.view.rotation.set(-RAISE_PITCH * s, SWING_START * s, 0)
         this.view.position.set(this._viewBase.x, this._viewBase.y, this._viewBase.z - 0.04 * s)
         this._trailMat.opacity = 0
       } else if (k < STRIKE_END) {
         const s = smoothstep((k - WINDUP) / (STRIKE_END - WINDUP))
         const mid = Math.sin(Math.PI * s) // 0 at windup/strike edges, 1 at mid-strike
-        this.view.rotation.set(-SLASH_PITCH * mid, SWING_START + (SWING_END - SWING_START) * s, 0)
+        // v3 T3: come down from overhead (pitch swings from the raised back
+        // pose through forward) while ROLLING diagonally across the body, so
+        // the axe cleaves on a diagonal rather than slicing flat.
+        const pitch = -RAISE_PITCH * (1 - mid) - SLASH_PITCH * mid
+        this.view.rotation.set(pitch, SWING_START + (SWING_END - SWING_START) * s, SLASH_ROLL * mid)
         this.view.position.set(this._viewBase.x, this._viewBase.y, this._viewBase.z - SLASH_FWD * mid)
         this._trailMat.opacity = TRAIL_OPACITY * mid
       } else {

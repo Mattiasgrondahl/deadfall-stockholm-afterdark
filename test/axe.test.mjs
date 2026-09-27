@@ -22,10 +22,10 @@ test('stats: contract values exact', () => {
   assert.equal(axe.dmg, 25)
   assert.equal(axe.headMultiplier, 2)
   assert.equal(axe.headRange, 0.6)
-  assert.equal(axe.range, 1.5)
+  assert.equal(axe.range, 2.1)   // v3 T3: longer reach (was 1.5)
   assert.equal(axe.arc, 0.7)
-  assert.equal(axe.cooldown, 0.9)
-  assert.equal(axe.swingTime, 0.25)
+  assert.equal(axe.cooldown, 0.6) // v3 T3: faster swings (was 0.9)
+  assert.equal(axe.swingTime, 0.2) // v3 T3: shorter swing cycle (was 0.25)
   assert.equal(axe.infiniteAmmo, true)
   axe.dispose()
 })
@@ -34,13 +34,13 @@ test('arc hit: forward zombie hit, side and far untouched', () => {
   const player = fakePlayer(0, 0, 0) // yaw 0 faces -Z
   const front = new Zombie(new THREE.Scene(), 'walker', 0, -1.0, 1)
   const side = new Zombie(new THREE.Scene(), 'walker', 1.0, 0, 1)
-  const far = new Zombie(new THREE.Scene(), 'walker', 0, -2.0, 1)
+  const far = new Zombie(new THREE.Scene(), 'walker', 0, -2.6, 1)
   const { axe } = makeSetup(player, [front, side, far])
   axe.update(0.016, player)
   assert.equal(axe.swing(), true)
   assert.equal(front.health, front.maxHealth - 25) // body
   assert.equal(side.health, side.maxHealth)        // 90 deg right, outside arc
-  assert.equal(far.health, far.maxHealth)          // 2 m > 1.5 m reach
+  assert.equal(far.health, far.maxHealth)          // 2.6 m > 2.1 m reach (v3 T3)
   axe.dispose()
 })
 
@@ -62,7 +62,7 @@ test('cooldown blocks rapid swings', () => {
   axe.update(0.016, player)
   assert.equal(axe.swing(), true)
   assert.equal(axe.swing(), false) // still in cooldown
-  for (let i = 0; i < 55; i++) axe.update(1 / 60, player) // ~0.917 s
+  for (let i = 0; i < 37; i++) axe.update(1 / 60, player) // ~0.617 s > 0.6 s (v3 T3)
   assert.equal(axe.swing(), true)
   axe.dispose()
 })
@@ -72,11 +72,13 @@ test('swing animation: windup, forward slash strike, recovery to rest', () => {
   const { axe } = makeSetup(player, [])
   axe.update(0.016, player)
   axe.swing()
-  // Mid-strike (cumulative ~0.086 s, k~0.34): the head pitches forward,
-  // translates toward the target, and the trail flashes on.
+  // Mid-strike (cumulative ~0.086 s, k~0.35): the axe comes DOWN from the
+  // overhead windup (pitch through forward), ROLLS diagonally across the body
+  // (v3 T3), translates toward the target, and the trail flashes on.
   axe.update(0.07, player)
   assert.ok(axe.view.rotation.y > -0.9 && axe.view.rotation.y < 1.1)
-  assert.ok(axe.view.rotation.x < -0.3, `forward pitch ${axe.view.rotation.x.toFixed(3)}`)
+  assert.ok(axe.view.rotation.x < -0.3, `down-pitch ${axe.view.rotation.x.toFixed(3)}`)
+  assert.ok(Math.abs(axe.view.rotation.z) > 0.3, `diagonal roll ${axe.view.rotation.z.toFixed(3)}`)
   assert.ok(axe.view.position.z < -0.5, `forward push ${axe.view.position.z.toFixed(3)}`)
   assert.ok(axe._trailMat.opacity > 0.2, `trail ${axe._trailMat.opacity.toFixed(3)}`)
   // Recovery settles back to the exact rest pose once swingTime elapses.
@@ -84,6 +86,7 @@ test('swing animation: windup, forward slash strike, recovery to rest', () => {
   assert.equal(axe._swinging, false)
   assert.equal(axe.view.rotation.y, 0)
   assert.equal(axe.view.rotation.x, 0)
+  assert.equal(axe.view.rotation.z, 0)
   assert.equal(axe.view.position.z, -0.5)
   assert.equal(axe._trailMat.opacity, 0)
   axe.dispose()
