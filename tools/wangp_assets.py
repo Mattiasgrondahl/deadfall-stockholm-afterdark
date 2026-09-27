@@ -153,11 +153,10 @@ def build_settings(session, spec):
         elif "duration_seconds" in spec:
             settings["video_length"] = f"{int(spec['duration_seconds'])}s"
         if "fps" in spec:
-            settings["force_fps"] = int(spec["fps"])
+            settings["force_fps"] = str(spec["fps"])
         ff = _abs(spec.get("first_frame"))
         if ff:
             settings["image_start"] = ff
-            settings["image_mode"] = 3
             settings["video_prompt_type"] = "I"
         if "model_mode" in spec:
             settings["model_mode"] = spec["model_mode"]
