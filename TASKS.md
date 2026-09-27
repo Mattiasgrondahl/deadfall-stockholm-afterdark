@@ -4,6 +4,7 @@ Internal task tracking (git-ignored). Reconstructed after a workspace corruption
 the original; state below is recovered from git history + probe evidence.
 
 ## Status overview
+- **v12 co-op match-end + disconnect grace + health bars + kill feed (Sep 27, branch `v3`, HEAD `d2ca51d`)**: the four remaining MULTIPLAYER_PLAN §14 items are done. (1) The server's `matchEnd` event (wave-5 cleared / 15-min time cap / all-dead) is now consumed: `Multiplayer` latches it once (`matchEnded`/`endReason`/`finalScoreboard`, scoreboard falls back to the live one) and calls `Game._endCoopRun()`, which stops the run and shows the shared game-over screen with the server-authoritative wave. (2) `Match.removePlayer` no longer frees the slot on socket close — it flags the slot `disconnected` and holds it for `DISCONNECT_GRACE` (5 s); `addPlayer` with the same id reclaims the held slot (score/kills/position survive), `_flow` disposes+frees it when the window elapses, and `_allDeadNoRespawn` counts only connected players. (3) The co-op scoreboard paints a compact health bar under every row (green/amber/red by HP, empty+dark when dead). (4) A rolling 5-line kill feed (`Killer ▸ TYPE`, `(HEAD)` flagged, `X DIED` for player deaths) renders under the rows. `Match._recordKill` now rides `head: z.lastHitHead` on kill events; `scoreboard()` rows carry display names. Tests 365/365 (+8: match-flow grace/reclaim/all-dead/named-board, multiplayer feed/bars/matchEnd), verify 81/0/0, pages build ok (`index-BmM6-i8-.js` committed to dist), check-assets 39/0, secrets clean. Browser E2E re-run green 18 PASS / 0 FAIL, and the v12 browser probes pass: two-client co-op live (each client renders the other, scoreboard 6 rows) + `tools/_probe-coop-end3.mjs` (a server `matchEnd` snapshot ends BOTH clients into the visible YOU DIED screen, "Wave 5" stat line, one-shot latch). Deployed: gh-pages `3229970` + live host (see round entry below).
 - **v11 title screen (Sep 27, branch `v2`, HEAD `af5d53f`)**: the two redundant name fields (solo "PLAYER" + co-op "your name") are merged into ONE input that feeds both the high score and co-op, so the same generated handle is used everywhere (`_startSolo` and `_joinCoop` both read `_nameInput`); the title panel is widened (max-width 620→720px) and the overlay now scrolls (`overflow-y: auto` + panel `margin: auto`) so START/JOIN stay reachable when the panel is taller than the viewport. Tests 357/357, verify 81/0/0, build ok, check-assets 39/0, secrets clean, E2E 18/18. Deployed to the live host (`zombie-game.service` :8080 → Caddy zombie.p4ppse3n.top), bundle `index-BIzs3D4b.js`.
 - **v10 boss + highscore + co-op fixes (Sep 27, branch `v2`, HEAD `216a8fe`)**: high score now always submitted to the hosted board (`Score.submitRun`, not gated on a local record); wave-5 boss spawns quicker (`BOSS_DELAY` 1.5→0.5 s), is 2× larger (`BOSS_SCALE` 1.4→2.8) and 10× HP (520→5200); new `brute-face.jpg` boss face; non-music ambient wind bed removed (only the mp3 soundtrack plays); co-op zombies now damage the local player and co-op death works (authoritative snapshot health synced to the local player + `onSelfDeath` respawn banner). Tests 357/357, verify 81/0/0, build ok, check-assets 39/0, secrets clean, E2E 18/18. Deployed to the live host (`zombie-game.service` :8080 → Caddy zombie.p4ppse3n.top), bundle `index-f_-eI_zd.js`.
 - **Version 2**: COMPLETE — zero open code items; E2E 18/18; headless suite green.
@@ -1836,6 +1837,67 @@ randomize the player name instead of the default "player".
 - **Wider start screen** (`src/styles.css`): `.panel` max-width 620→720px. Because the taller panel could push START below the fold, `.screen` now scrolls (`overflow-y: auto`) and `.panel` centers via `margin: auto` (instead of flex `align-items: center`), so the buttons stay reachable on short viewports — this also fixed the E2E START click that had started failing at 1280×720.
 - Tests: `test/hud-screens.test.mjs` updated — asserts exactly one `your name` input (the merge), the name helper mentions high score + co-op, and the co-op row keeps only the room-code helper.
 - Verification: `npm test` 357/357; `npm run verify` 81 ok / 0 fail; `npm run build` ok; `check-assets` 39/0; `secrets-scan` clean (209 files); browser E2E 18/18 PASS against :5173. Deployed to the live host, bundle `index-BIzs3D4b.js`.
+
+## v12 co-op match-end + disconnect grace + health bars + kill feed (Sep 27 2026)
+
+Implements MULTIPLAYER_PLAN §14 remaining-work items 1–4 (item 5, server-URL lobby
+field, stays deferred for the single-origin deployment).
+
+- **Co-op match end surfaced** (`src/net/Multiplayer.js` + `src/game/Game.js`):
+  `Multiplayer._sync` consumes the server `matchEnd` event once (one-shot latch:
+  `matchEnded`/`endReason`/`finalScoreboard`, falling back to the live
+  `scoreboard(snap)`), and calls the `onMatchEnd` hook. `Game._wireMpHooks` wires
+  `onMatchEnd` → new `Game._endCoopRun()`, which stops the run (state
+  GAMEOVER, pointer-lock exit, ambient stop, `score.submitRun()`) and shows the
+  shared game-over screen with the server-authoritative wave from
+  `multiplayer.lastSnap.wave` (the local WaveManager is unused in co-op).
+- **Disconnect grace used, not just declared** (`src/net/Match.js`):
+  `removePlayer` flags the slot `disconnected` and schedules `_graceAt = time +
+  DISCONNECT_GRACE` (5 s) instead of deleting it; the snapshot roster drops the
+  graced player; `addPlayer` with the same id inside the window reclaims the
+  held slot (`_reclaim`, score/kills/position survive); `_flow` disposes
+  weapon+player and frees the slot when the grace elapses; `_allDeadNoRespawn`
+  counts only connected players (a graced slot neither keeps the match alive nor
+  forces the end). `scoreboard()` rows now carry display `name`s (graced slots
+  included).
+- **Per-player health bars + kill feed** (`src/net/Multiplayer.js` +
+  `src/styles.css`): `scoreboard()` rows carry `health`/`dead` from the snapshot
+  roster; `_renderScoreboard` paints a 4 px `.mp-hp` bar under each row (fill
+  width = HP %, green >50 / amber >25 / red ≤25, dead = empty dark-red).
+  `_pushKill` keeps a 5-line most-recent-first feed (`Killer ▸ VICTIM`,
+  ` (HEAD)` flagged, `VICTIM DIED` for death events); `.mp-killfeed` styles
+  added. `Match._recordKill` now pushes `head: z.lastHitHead` on kill events.
+- Tests: `test/match-flow.test.mjs` +5 (grace hold→free, reconnect reclaim
+  keeps score/kills, all-dead ignores graced slot, graced slot keeps match
+  alive while another lives, named scoreboard rows); `test/multiplayer.test.mjs`
+  +3 (kill feed order/flags/cap + death events don't pollute, health-bar
+  painting incl. dead/critical colors, matchEnd ends the Game + one-shot latch);
+  `test/server-room.test.mjs` leave test rewritten for the grace hold (slot
+  flagged on leave, freed after 5.5 s of ticks) — committed separately
+  (`d2ca51d`). Deployed: gh-pages `3229970` + live host (see Status overview).
+- Verification: `node --test "test/**/*.test.mjs"` 365/365; `npm run verify`
+  81 ok / 0 fail / 0 skipped; `npm run pages` ok (bundle
+  `index-BmM6-i8-.js`, css `index-SNJvBVL4.css`, GLTFLoader `CDuWspmG` —
+  committed to tracked dist, old `index-DHiFV2J-` bundle removed);
+  `check-assets` 39/0 (dist carries every referenced asset); `secrets-scan`
+  clean (209 files). Browser E2E re-run against :5173: 18 PASS / 0 FAIL
+  (PLAYWRIGHT_BROWSERS_PATH=`.browsers`).
+- Browser co-op probes (dev :5173 proxying `/ws` → local :8090 server):
+  `tools/_probe-coop-live3.mjs` two-client PASS (Ada+Bob in one room, each
+  client renders the other's avatar, scoreboard 6 children = 2 rows + feed);
+  `tools/_probe-coop-end3.mjs` PASS — a synthetic server `matchEnd` snapshot
+  (`reason:'waves'`) drives BOTH clients to `gameover` with the visible
+  YOU DIED screen showing "Wave 5 — … pts", `matchEnded` latched once.
+  (Note: headless p1 joins paused on pointer-lock loss — the probe resumes it
+  first; real browsers lock normally.)
+- **Deployed (Sep 27)**: gh-pages `3229970` (build of `d2ca51d`, bundle
+  `index-BmM6-i8-.js`, CDN live-verified: index + css 200) + live host
+  `zombie.p4ppse3n.top` (`~/zombie-app/dist` synced — backup `dist.bak.1790532641` —
+  + `server/server.js` + `package.json`, `zombie-game.service` restarted, active
+  PID 1113492; :8080 serves `index-BmM6-i8-.js`, css/brute-face 200,
+  `/api/highscore` live, `/ws` handshake OK via `tools/_probe-live-mp.mjs`
+  two-client PASS). `origin/v3` pushed to `d2ca51d`.
+- NEXT: none — v12 verified in-browser (E2E 18/18 + co-op live/end probes PASS).
 
 ## Conventions (unchanged)
 - No `Math.random` in src (deterministic LCG / fixed seeds).

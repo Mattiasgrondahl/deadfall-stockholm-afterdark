@@ -277,7 +277,10 @@ clients predict their own movement and interpolate everyone else.
   title screen and press **JOIN CO-OP** — every client in that room shares one
   server-run wave. Works on :8080 (built bundle, same-origin) and on the Vite
   dev server (:5173, which proxies `/ws` to the game server; set `MP_SERVER`
-  to point the proxy at another host).
+  to point the proxy at another host). The co-op scoreboard shows per-player
+  health bars and a rolling kill feed, and the match ends (wave-5 boss cleared,
+  time cap, or every player dead) with a game-over screen. A brief disconnect
+  or page refresh reclaims your slot within a 5-second grace window.
 - **Join a room:** a client opens a `WebSocket` to `ws://<host>:8080/ws`, sends
   a `hello` frame, receives a `welcome` with its assigned `pid`, then streams
   `input` frames and consumes `snap` frames. `src/net/NetClient.js` implements
