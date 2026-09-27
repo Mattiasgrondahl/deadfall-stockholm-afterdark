@@ -45,11 +45,18 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v2` @ `df8a963`)**: v6 audio (8) playlist, v6
+- **Current (Sep 26, branch `v3` @ `0426df4`)**: v6 audio (8) playlist, v6
   tooling (1)+(2), v6 visuals (11) Wan2GP image pass, and **v6 hosting (1)
-  hosted global high score** (`906a6af`) are committed AND pushed. Battery
-  green: **npm test 314/314, verify-game 81 ok / 0 fail / 0 skipped, build
-  green, check-assets 34/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
+  hosted global high score** (`906a6af`) are committed AND pushed. **v3 T1
+  dismemberment chain DONE (`82398f1`)**, **v3 T3 melee faster+longer reach+
+  overhead diagonal DONE (`b256c86`)**, **v3 T6/T6b named high score +
+  co-op field helpers DONE (`0a42dbe`)**, **v3 T12 persistent achievements
+  DONE (`716ca01`)**, **v3 co-op cluster T9/T10/T11 DONE (`afe04e1`)**, and
+  **v3 visuals T7 moon + T13 snow footprints + T14 irregular blood DONE
+  (`0426df4`)** (T15 wanted posters already shipped on the center building).
+  Battery
+  green: **npm test 348/348, verify-game 81 ok / 0 fail / 0 skipped, build
+  green, check-assets 35/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
   0 console errors.**
   **Deployed**: gh-pages `f8b5cb7` (build of `3ee5c90`) — live-verified: index
   references `index-CqBq1X8l.js` + `index-ttUmrf6J.css` (200), poster.jpg +
@@ -1790,3 +1797,199 @@ the original; state below is recovered from git history + probe evidence.
     (currently `best: 900`, not the 4242 from earlier probes — it is running
     a build predating the file-store wiring); restart `npm run server` before
     trusting live probes. The dev :5173 proxy reaches the :8080 API.
+
+- **Ralph round 60 — v3 chain: make the red suite green DONE**: the working
+  tree carried an unlogged "v3 T1 / gameplay (2)" dismemberment-chain WIP
+  (Zombie `_chainShot`/`hitLimbAt` rewrite, DroppedLimbPool.js +
+  test/dismember.test.mjs, Game/Match/Multiplayer/RemoteZombie wiring, weapon
+  chain hooks) with **3 red tests**. Root causes found and fixed:
+  (1) `LIMB_R2` was 0.47² (0.2209) — too large: the dead-centre torso point
+  (0, 1.2, 0) sits 0.417 m from the arm sockets, so torso hits severed an arm
+  instead of nothing. Lowered to 0.416² (0.173056): the largest radius that
+  keeps the torso centre outside the sever disc while still clipping arms on
+  chest-aim shell impacts (measured 0.40–0.46 m from sockets across the
+  pistol's spread). (2) `_chainKill` only applied lethal damage; it now
+  severs one surviving limb (leg preferred, then arm) before the damage, so
+  the 4th round always drops three limbs even when geometry missed the legs.
+  (3) Pistol called `damage()` before `_chainShot`, so a shambler at 12 HP
+  died to the 26-damage round before `_chainKill` could fire — reordered to
+  `hitLimbAt` → `_chainShot` → `damage` so the chain kill resolves first.
+  Shotgun drain-before-step (`_chainTargets`) and Zombie fallback removal were
+  already in place from the prior session. Changed files: `src/game/Zombie.js`
+  (`_limbAt` radius + `_chainKill` limb sever), `src/game/Pistol.js` (chain
+  before damage). Focused: `node --test test/dismember.test.mjs
+  test/zombie.test.mjs test/shotgun.test.mjs` → 63/63. Full `npm test` →
+  331/331. `npm run verify` → 81 ok / 0 fail / 0 skipped. `npm run build` ✓.
+  Reviewer verdict: **SAFE TO COMMIT** — all checks PASS (torso null margin
+  0.000944; no double-sever; headshot/boss gates intact). Follow-ups noted:
+  RemoteZombie mirror radii stale (0.3/0.34 vs 0.416 — pre-existing,
+  self-corrects via snapshots), `Sniper.js` still damage-before-chain
+  (harmless at 90 dmg), `_regrowLimb` `_parts` index latent bug (no
+  production caller), `dist/` needs rebuild before deploy.
+- **Ralph round 61 — v3 chain: sync RemoteZombie sever geometry DONE**: round
+  60's review flagged the client-prediction proxy as out of sync. Fixed
+  `src/net/RemoteZombie.js` `hitLimbAt`: the `near()` helper ignored the arm
+  sockets' z-offset (±0.1, vs Zombie._limbAt which includes it) and used the
+  stale pre-fix radii 0.3/0.34 — now a single `R = 0.416` with socket offsets
+  (-0.34, 1.42, ±0.1 arms; ±0.16, 0.47, 0 legs), so the proxy severs on
+  exactly the impacts the server-side Zombie severs. Added focused test
+  "proxy sever geometry matches the server Zombie" in
+  `test/multiplayer.test.mjs`: dead-centre torso hit (d² 0.164 < 0.173056 at
+  z=0 vs the arm socket's z=0.1) severs nothing; a 0.42 m chest-aim clip
+  severs the left arm + spawns a falling piece + advances `_chainShots`.
+  Note: the proxy counts the round inside `hitLimbAt` (its own mirror); the
+  server Zombie counts via `_chainShot` from the weapon — the snapshot's
+  authoritative limbs re-sync either way. Focused: `node --test
+  test/multiplayer.test.mjs` → 16/16. Full `npm test` → 332/332. `npm run
+  verify` → 81 ok / 0 fail / 0 skipped. `npm run build` ✓. NEXT: remaining
+  round-60 follow-ups — align `Sniper.js` chain ordering with Pistol, fix
+  `_regrowLimb` `_parts` indexing, rebuild `dist/` before deploy.
+
+- **Ralph round 62 — v3 gameplay (3) T1 dismemberment chain DONE + committed
+  (`82398f1`)**: the round-61 sniper test stayed red because its premise was
+  wrong, not the code. The chain is FOUR landed body rounds (arm→arm→leg→kill),
+  and `_chainShot` correctly fires `_chainKill` only on the round after
+  `_chainShots` reaches 3. The old test raised HP to 200 and aimed at the
+  zombie centre, so the sniper's 90-dmg rounds drained it to death on round 3
+  (arms 1, legs 0) before the chain gate could fire. Fix is test-only: raise
+  HP to 400 (survives four 90-dmg rounds) and re-aim per shot at the surviving
+  arm socket (left on round 1, right once `armsLost >= 1`) so both arms sever
+  cleanly; round 3 clips no limb but spends the chain, round 4 chain-kills and
+  severs a leg. Result: shots 4, armsLost 2, legsLost 1, `game.limbs.count` 3,
+  kill counted. No source change was needed — the round-60/61 ordering +
+  radius 0.416 were already correct. Verified: `node --test
+  test/dismember.test.mjs` 11/11, full `npm test` 333/333, `npm run verify`
+  81/0/0, `npm run build` ✓, `check-assets` 0 problems, `secrets-scan` clean.
+  Deleted `/tmp/snipprobe*.mjs` scratch probes. NEXT: T3 melee, T6 name+
+  high-score, T12 Achievements, then co-op T9/T10/T11, T7 moon, T13-T15, T16
+  close-out (rebuild `dist/` before deploy).
+
+- **Ralph round 63 — v3 gameplay (4) T3 melee faster + longer reach + overhead
+  diagonal DONE + committed (`b256c86`)**: Axe reach 1.5→2.1 m, cooldown
+  0.9→0.6 s, swingTime 0.25→0.2 s; Sword reach 1.8→2.4 m, cooldown 1.15→0.8 s,
+  swingTime 0.32→0.26 s. Both weapons RAISE overhead during the windup (new
+  `RAISE_PITCH` negative pitch) then come DOWN through the forward dip while
+  ROLLING diagonally across the target — the strike pitch is now
+  `-RAISE_PITCH*(1-mid) - SLASH_PITCH*mid`, so the cut is an overhead→down
+  diagonal cleave. The Axe gained a diagonal roll (`SLASH_ROLL` 0.6, was flat);
+  the Sword already alternated its roll sign. Tests updated: stats contract
+  (new reach/cooldown/swingTime), far-zombie pushed past the new reach
+  (2.6/2.9 m), cooldown loop 55→37 frames (axe), mid-strike asserts
+  `|rotation.z| > 0.3` (diagonal) + recovery clears roll to 0. Verified:
+  `node --test test/axe.test.mjs` 6/6, `test/sword.test.mjs` 9/9,
+  `test/weaponbank.test.mjs` 11/11, full `npm test` 333/333, `npm run verify`
+  81/0/0, `npm run build` ✓. NEXT: T6 player name + hosted XSS-safe high score
+  (+T6b co-op lobby field descriptions), then T12 Achievements.
+
+- **Ralph round 64 — v3 gameplay (5) T6 named high score + T6b co-op field
+  helpers DONE + committed (`0a42dbe`)**: the hosted record is now NAMED.
+  `Score.js` gains `sanitizeName` (strip C0/DEL control chars via an
+  escape-only regex so the source stays ASCII, collapse whitespace, clamp 24),
+  `setName` (persisted under `deadfall-player-name`), and `bestName`;
+  `submitBest` POSTs `{score, name}`, `adoptBest` reads `{best, name}` and
+  re-sanitizes the holder name. `server/server.js` stores `{best, name}`,
+  re-sanitizes server-side on POST (a hostile `<img src=x onerror=...>` payload
+  is clamped to 24 + control-stripped before it can poison the shared record),
+  and serves it back as JSON text; boot seeding ignores the on-disk name when a
+  test seeds `opts.highScore` (avoids cross-test file bleed). `Screens.js`:
+  title HIGH SCORE renders `HIGH SCORE: NAME — SCORE` via `_hsLabel`
+  (textContent only → zero markup nodes even for the XSS payload), a solo
+  PLAYER-name input feeds `score.setName` through `_startSolo`, and the game-over
+  record line shows `NAME — SCORE`. T6b: the co-op room-code + name inputs get
+  short `textContent` helper lines (room = shared game name everyone types to
+  land in one session; name = shown to other players + on the scoreboard).
+  Tests: `highscore-api` asserts `{best,name}` shape + server-side XSS clamp;
+  `score-hosted` asserts the POST body carries `name`; `hud-screens` adds a T6
+  block (named label, zero-markup XSS render via a real `Score`, T6b helper
+  lines). Fixed a binary-file slip: the control-char regex class was written
+  with literal control bytes (made two files `data`); replaced with
+  `new RegExp('[\\u0000-\\u001f\\u007f]')` via python byte-patch. Verified:
+  `hud-screens` 1/1, `highscore-api` 4/4, `score-hosted` 3/3, full `npm test`
+  334/334, `npm run verify` 81/0/0, `npm run build` ✓, `check-assets` 0
+  problems, `secrets-scan` clean. NEXT: T12 Achievements.js (<350 lines,
+  kills 10/20/50/100, lamps 10-50, headshots 25/75/100, per-run waves 5-30,
+  bosses 1-30, localStorage persistence, per-run waves reset on restart).
+
+- **Ralph round 65 — v3 gameplay (6) T12 persistent achievements DONE +
+  committed (`716ca01`)**: new `src/game/Achievements.js` (143 lines, pure
+  bookkeeping — no THREE objects, DOM only via an injected `onUnlock`). Five
+  ladders: SLAYER kills 10/20/50/100, LAMP LIGHTER lamps 10/20/30/40/50,
+  BULLSEYE headshots 25/50/75/100, SURVIVOR waves 5/10/15/20/25/30, GIANT
+  SLAYER bosses 1/5/10/15/20/25/30. The unlocked set persists in localStorage
+  (`deadfall-achievements`) so earned tiers survive restarts; the per-run
+  counters reset on restart (user decision — waves survived + every other
+  counter are per-run progress). Headless / storage-less degrade to an
+  in-memory set without throwing (mirrors Settings.js/Score.js). Game.js
+  wiring all inside WIRING regions + the debug reader + dispose: construct in
+  WIRING:SCORE with the Screens banner toast as `onUnlock`; feed kills/
+  headshots/bosses from WIRING:SPAWNER `onKill` (`z.lastHitHead`/`z.type`),
+  waves from WIRING:WAVE `onWaveCleared`, lamps from WIRING:LAMPS via a new
+  `Lamps.onBreak` hook; reset per-run counters in WIRING:RESET; drop the
+  callback in `dispose`. `debug.achievements()` reader added for tests.
+  `test/achievements.test.mjs` (7 tests): one-shot unlock + toast, no
+  duplicate toast for an earned tier, persistence across a fresh instance vs
+  per-run counter reset, per-category ladders, `add()` clamping + unknown-id
+  no-op, corrupt/missing storage, dispose. Verified: `achievements` 7/7, full
+  `npm test` 341/341, `npm run verify` 81/0/0, `npm run build` ✓,
+  `check-assets` 0 problems, `secrets-scan` clean. NEXT: co-op T9 (swarm
+  targets nearest *living* player), T10 (co-op zombie visual parity: skinned
+  GLB + faces, grounded feet), T11 (RemotePlayer outfit textures + name label
+  + grounded), then T7 moon (Wan2GP GPU 2), T13-T15, T16 close-out.
+
+- **Ralph round 66 — v3 co-op (7) T9/T10/T11 DONE + committed (`afe04e1`)**:
+  T9 was already satisfied — `WorldCore.nearestAlivePlayer` skips `isDead`
+  players and `Match._flow` respawns via `player.reset()` after the 3 s delay,
+  so steering always reads the nearest *living* player; single-player (one
+  player) is unchanged. Covered by `test/match.test.mjs` retarget-on-death
+  (10/10). T10: `RemoteZombie` already builds its body with the shared
+  `buildPrimitiveBody` (clothes + face + eyes + hair + accessories) — the same
+  primitive-body-always-on visual single-player uses (the skinned rig root is
+  hidden in single-player too), and it grounds feet at group y 0; added a
+  grounding assertion to `test/multiplayer.test.mjs`. T11 (`src/game/RemotePlayer.js`):
+  torso/legs now wear the shared `OUTFITMATS` (deterministic per-id pick) while
+  head/arms keep the per-id tint so players stay distinguishable; a canvas-texture
+  name-label Sprite floats above the head (browser only — headless has no canvas
+  factory so it is skipped, and a Sprite is not a mesh so the budget is
+  unchanged); the group origin is now the FEET (eye height subtracted) so avatars
+  are grounded instead of hovering a body above the ground, and a jump lifts the
+  feet while death sinks them. The snapshot now carries the hello display name:
+  `Match.addPlayer(id, x, z, name)` stores `slot.name` and `snapshot()` emits
+  `name`; `server.js` `room.join(socket, name)` forwards the hello name.
+  `Multiplayer._sync` passes `{ name, canvasFactory }` to each RemotePlayer.
+  Extended `test/remote-player.test.mjs` (grounding, outfit-vs-tint materials,
+  deterministic outfit, jump lift, headless label skip, canvas label). Verified:
+  co-op cluster 42/42 (remote-player/match/match-flow/multiplayer/server-room),
+  full `npm test` 342/342, `npm run verify` 81/0/0, `npm run build` ✓,
+  `check-assets` 34/0, `secrets-scan` clean. NEXT: T7 moon (Wan2GP GPU 2),
+  T13 snow ground + footprints, T14 irregular blood on snow, T15 wanted posters,
+  T16 close-out (rebuild `dist/` before deploy).
+
+- **Ralph round 67 — v3 visuals (8) T7 moon + T13 snow footprints + T14 irregular
+  blood DONE + committed (`0426df4`)**:
+  **T7** — generated a photoreal moon texture via Wan2GP (qwen_image, GPU 2,
+  background job, seed 7) → `public/assets/sky/moon.jpg` (also copied to
+  `.research/assets-candidates/`); `src/world/sky.js` now renders the moon as a
+  larger camera-facing `CircleGeometry` disc (r 15 vs the old r-7 sphere) set at
+  a LOWER elevation (22° vs the moonlight's ~42°, same NW azimuth) with the
+  texture loaded browser-only (headless keeps the flat pale disc); `update()`
+  turns the disc to face the player each frame. `test/sky.test.mjs` updated for
+  the new moon math + a T7 elevation/azimuth/size test (9/9). `check-assets` now
+  pins `assets/sky/moon.jpg` (35 refs).
+  **T13** — new `src/game/Footprints.js` (single InstancedMesh, 64 prints, one
+  draw call): the player + every zombie stamp alternating left/right prints along
+  their travel path (gait keyed per walker via an object-keyed Map so corpses
+  never reuse a stride), aging out over 6 s by shrinking toward the ground;
+  headless has no canvas alpha map so prints stay plain dark ovals. Wired in
+  Game.js WIRING regions (construct in WIRING:BLOOD, step+update in the update
+  loop, dispose in dispose). `test/footprints.test.mjs` (5). `test/fog.test.mjs`
+  dispose mesh-delta updated 2→3 for the extra footprint mesh. Budget: +1 mesh.
+  **T14** — `src/game/Blood.js` ground stains are now an irregular LCG-jittered
+  blob polygon (not a CircleGeometry), stretched per-instance with a non-uniform
+  aspect (0.6–1.4) + spin so no two stains share a silhouette, and darker
+  (r 0.11–0.21) for contrast on snow; `test/blood.test.mjs` extended (non-circular
+  geometry + varied aspect). **T15** wanted posters were already shipped on the
+  center building (cityDressing.addWantedPoster + poster.jpg + city.test).
+  Verified: `sky` 9/9, `footprints` 5/5, `blood` 1/1, `fog` 4/4, full `npm test`
+  348/348, `npm run verify` 81/0/0, `npm run build` ✓, `check-assets` 35/0,
+  `secrets-scan` clean. NEXT: T16 close-out (rebuild `dist/` via `npm run pages`,
+  E2E 18/18 on :5173, co-op probe, look-metrics, push `v3`).
