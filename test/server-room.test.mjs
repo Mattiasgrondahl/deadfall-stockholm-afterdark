@@ -74,13 +74,21 @@ test('Room tick advances the sim and broadcasts a 10 Hz snapshot', () => {
   assert.ok(snap.players.every((p) => typeof p.x === 'number' && typeof p.health === 'number'), 'player fields present')
 })
 
-test('leave removes the player slot', () => {
+test('leave holds the player slot in disconnect grace, then frees it', () => {
+  // v12 (MULTIPLAYER_PLAN §14 item 2): a socket close no longer deletes the
+  // slot outright — it is flagged disconnected and held for DISCONNECT_GRACE so
+  // a refresh can reconnect. The Room's socket map drops it immediately.
   const room = new Room()
   const s = fakeSocket()
   const id = room.join(s)
   assert.ok(room.match.getPlayer(id))
   room.leave(s)
-  assert.equal(room.match.getPlayer(id), null, 'player removed on leave')
+  const slot = room.match.getPlayer(id)
+  assert.ok(slot && slot.disconnected, 'slot held in grace, flagged disconnected')
+  assert.equal(room.sockets.get(s), undefined, 'socket mapping removed on leave')
+  // Drive ticks past the 5 s grace window: the slot is finally freed.
+  for (let i = 0; i < 110; i++) room.tick(SERVER_TICK) // 5.5 s
+  assert.equal(room.match.getPlayer(id), null, 'slot freed once the grace elapses')
 })
 
 test('input validation blocks a malformed frame', () => {
