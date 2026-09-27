@@ -11,6 +11,8 @@
 // granted the lock. Enter/click resume re-locks when possible and falls back
 // to a direct state resume when the lock is unavailable (headless, denied).
 
+import { VERSION } from '../version.js'
+
 export class Screens {
   constructor(root, game) {
     this._doc = root.ownerDocument
@@ -35,6 +37,9 @@ export class Screens {
     const titleEl = d.createElement('div'); titleEl.className = 'game-title'; titleEl.textContent = 'DEADFALL'
     const sub = d.createElement('div'); sub.className = 'game-title sub'; sub.textContent = 'Stockholm Afterdark'
     const tag = d.createElement('div'); tag.className = 'tagline'; tag.textContent = 'The city fell at midnight.'
+    // v3: a version stamp so players and the deployed host can tell which build
+    // is live. Rendered via textContent (XSS-safe, like every other label here).
+    const ver = d.createElement('div'); ver.className = 'version'; ver.textContent = 'v' + VERSION
     const hs = d.createElement('div'); hs.className = 'highscore'; this._highScoreText = hs; hs.textContent = 'HIGH SCORE: 0'
     const grid = d.createElement('div'); grid.className = 'controls-grid'
     // The full live control contract (matches Input.js key bindings exactly).
@@ -53,7 +58,7 @@ export class Screens {
     }
     const settingsBtn = d.createElement('button'); settingsBtn.className = 'btn'; settingsBtn.textContent = 'SETTINGS'
     settingsBtn.addEventListener('click', () => this.showSettings())
-    panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs)
+    panelT.appendChild(titleEl); panelT.appendChild(sub); panelT.appendChild(tag); panelT.appendChild(hs); panelT.appendChild(ver)
     // v3 difficulty (1): FRENZY is the DEFAULT mode (2× speed + flat 50 HP);
     // NIGHT is the old baseline; NIGHTMARE stacks on frenzy (3× speed, same
     // flat HP, run starts at wave 3) — enabling it turns frenzy on, and

@@ -4,6 +4,7 @@ import assert from 'node:assert'
 import { HUD } from '../src/game/HUD.js'
 import { Screens } from '../src/game/Screens.js'
 import { Score } from '../src/game/Score.js'
+import { VERSION } from '../src/version.js'
 
 // ---- fake DOM ---------------------------------------------------------
 function makeElement(ownerDoc, tag = 'div') {
@@ -246,6 +247,11 @@ function makeGame(doc, hud) {
   assert(title.classList.contains('visible'))
   assert(find(title, 'game-title'))
   assert(find(title, 'tagline'))
+  // v3: the title screen stamps the game version (single source of truth in
+  // src/version.js), rendered via textContent so it is XSS-safe.
+  const verEl = find(title, 'version')
+  assert(verEl, 'title screen shows a version element')
+  assert.strictEqual(verEl.textContent, 'v' + VERSION, 'version label matches src/version.js')
   assert.strictEqual(find(title, 'controls-grid').children.length, 13) // Phase 1: full live control contract
   const btns = []
   const collectBtns = (el) => { for (const c of el.children) { if (c.classList.contains('btn')) btns.push(c); collectBtns(c) } }

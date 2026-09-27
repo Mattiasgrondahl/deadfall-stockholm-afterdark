@@ -1,7 +1,7 @@
 {
   "name": "deadfall-stockholm-afterdark",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "Deadfall: Stockholm Afterdark - a first-person zombie survival shooter built with Three.js and Vite.",
   "scripts": {
