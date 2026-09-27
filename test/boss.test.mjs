@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, EYEMAT, FACEMAT, POSE2, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME, ATTACK_RANGE } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, EYEMAT, FACEMAT, POSE2, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME, ATTACK_RANGE, SLEEVE_MATS } from '../src/game/Zombie.js'
 import { WaveManager } from '../src/game/WaveManager.js'
 import { Score } from '../src/game/Score.js'
 import { HUD } from '../src/game/HUD.js'
@@ -115,9 +115,11 @@ test('brute wave scaling uses the same 1.12^wave curve', () => {
 test('brute visuals: own skin/eye/face materials, hulking pose', () => {
   const { zombie } = makeZombie('brute', 1, 1, 5)
   const head = zombie.group.children[1]
-  // Torso wears the outfit pair (like every type); head + arms carry the brute skin.
+  // Torso wears the outfit pair (like every type); head carries the brute skin.
+  // v6 visuals (11): arms wear the shared per-outfit SLEEVE materials (clones of
+  // the outfit top) so they read as clothed, not bare brute skin.
   assert.equal(head.material, MAT2.brute)
-  assert.equal(zombie.group.children[2].material, MAT2.brute)
+  assert.ok(SLEEVE_MATS.includes(zombie.group.children[2].material), 'brute arm is a shared sleeve material')
   assert.ok(FACEMAT.brute.includes(head.children[2].material))
   for (const eye of head.children.slice(0, 2)) assert.equal(eye.material, EYEMAT.brute)
   assert.ok(POSE2.brute.torsoS[0] > 1 && POSE2.brute.torsoS[2] > 1, 'torso wider than a walker')

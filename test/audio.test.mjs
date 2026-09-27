@@ -628,18 +628,23 @@ function bankWithFakeCtx() {
   assert.equal(bank2._musicEl.src, 'x1.mp3', 'playlist starts with the first song')
   assert.equal(bank2._musicLen, 90, 'playlist length drives the loop watchdog')
   assert.equal(endedHandlers.length, 2, 'playlist adds one ended advance handler')
+  // v3 fix: with a playlist active the known-end watchdog ADVANCES to the next
+  // song (sequential playback) instead of rewinding the same track. Firing the
+  // watchdog advances once; the native `ended` is a second, independent advance.
   bank2._musicEl.currentTime = 89.9
-  timeHandlers[0]() // known-end rewind -> ended fires
-  endedHandlers[1]()
-  assert.equal(bank2._musicEl.src, 'x2.mp3', 'ended advances to the second song')
+  timeHandlers[0]() // known-end -> advance to the second song
+  assert.equal(bank2._musicEl.src, 'x2.mp3', 'watchdog advances to the second song')
   assert.equal(bank2._musicEl.currentTime, 0, 'advance restarts from the top')
-  endedHandlers[1]()
+  endedHandlers[1]() // ended is an independent advance -> third song
   assert.equal(bank2._musicEl.src, 'x3.mp3', 'ended advances to the third song')
   endedHandlers[1]()
   assert.equal(bank2._musicEl.src, 'x1.mp3', 'playlist wraps back to the first song')
-  endedHandlers[1]()
+  bank2._musicEl.currentTime = 89.9
+  timeHandlers[0]() // watchdog advances again (sequential, no same-track loop)
   assert.equal(bank2._musicEl.src, 'x2.mp3', 'the set repeats over and over')
   bank2.stopMusic()
+  bank2._musicEl.currentTime = 89.9
+  timeHandlers[0]() // stopped: the watchdog must be inert
   endedHandlers[1]() // stopped: the advance handler must be inert
   assert.equal(bank2._musicEl.src, 'x2.mp3', 'no advance once the music is stopped')
   bank2.playPlaylist([], 90) // empty playlist is a no-op, keeps the last src
@@ -667,6 +672,20 @@ function bankWithFakeCtx() {
   endedHandlers[1]()
   assert.equal(bank2._musicEl.src, 'q2.mp3', 'scalar playlist advances')
   assert.equal(bank2._musicLen, 60, 'scalar length replicates across the list')
+  // v3: skip-to-next advances the playlist immediately (player-initiated).
+  bank2.skipPlaylistTrack()
+  assert.equal(bank2._musicEl.src, 'q1.mp3', 'skip wraps to the first song')
+  bank2.skipPlaylistTrack()
+  assert.equal(bank2._musicEl.src, 'q2.mp3', 'skip advances again')
+  // v3 boss fight: playBossMusic pauses the playlist and swaps in the boss
+  // track; stopBossMusic resumes the playlist where it left off.
+  bank2.playBossMusic('boss.mp3', 150)
+  assert.equal(bank2._plPaused, true, 'boss music pauses the playlist')
+  assert.equal(bank2._musicEl.src, 'boss.mp3', 'boss track replaces the playlist src')
+  assert.equal(bank2._musicLen, 150, 'boss track length drives the watchdog')
+  bank2.stopBossMusic()
+  assert.equal(bank2._plPaused, false, 'leaving the boss fight unpauses the playlist')
+  assert.equal(bank2._musicEl.src, 'q2.mp3', 'playlist resumes at the paused song')
   bank2.stopMusic()
   assert.equal(bank2._musicOn, false)
   bank2.dispose()

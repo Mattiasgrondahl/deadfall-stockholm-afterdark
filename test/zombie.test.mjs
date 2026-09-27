@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
-import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACEMAT, POSE2, OUTFITMATS } from '../src/game/Zombie.js'
+import { Zombie, TABLE, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACEMAT, POSE2, OUTFITMATS, SLEEVE_MATS } from '../src/game/Zombie.js'
 
 function fakePlayer(x, z) {
   return {
@@ -143,8 +143,12 @@ test('shared geometry/materials; dispose detaches only the group', () => {
     if (i === 1) {
       assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
     } else if (i === 2 || i === 3) {
-      // Bare arms: both spawns are walkers, so arm identity holds.
-      assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
+      // v6 visuals (11): arms wear per-outfit SLEEVE materials (clones of the
+      // outfit top) so they read as clothed, not bare skin. Both spawns are
+      // walkers but pick different outfits, so per-part identity is NOT
+      // expected; membership in the shared sleeve pool is the guarantee.
+      assert.ok(SLEEVE_MATS.includes(ma), 'a arm is a shared sleeve material')
+      assert.ok(SLEEVE_MATS.includes(mb), 'b arm is a shared sleeve material')
     } else if (i === 0) {
       assert.ok(OUTFITMATS.tops.includes(ma), 'a torso is a shared top material')
       assert.ok(OUTFITMATS.tops.includes(mb), 'b torso is a shared top material')
@@ -356,8 +360,8 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
     const o = z.getOutfit()
     const [torso, head, armL, armR, legL, legR] = z._parts
     assert.equal(torso.material, OUTFITMATS.tops[o])
-    assert.equal(armL.material, MAT2[z.type]) // bare arms keep the type skin color
-    assert.equal(armR.material, MAT2[z.type])
+    assert.equal(armL.material, SLEEVE_MATS[o]) // v6 visuals (11): arms wear the outfit sleeve twin
+    assert.equal(armR.material, SLEEVE_MATS[o])
     assert.equal(legL.material, OUTFITMATS.bottoms[o])
     assert.equal(legR.material, OUTFITMATS.bottoms[o])
     assert.equal(head.material, MAT2[z.type]) // head keeps the type skin color
@@ -370,8 +374,8 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   a.update(0.2, null, [], null, null)
   assert.equal(a._parts[0].material, OUTFITMATS.tops[1])
   assert.equal(a._parts[1].material, MAT2.walker)
-  assert.equal(a._parts[2].material, MAT2.walker) // bare arm restored to skin color
-  assert.equal(a._parts[3].material, MAT2.walker)
+  assert.equal(a._parts[2].material, SLEEVE_MATS[1]) // sleeve restored, not bare skin
+  assert.equal(a._parts[3].material, SLEEVE_MATS[1])
   assert.equal(a._parts[4].material, OUTFITMATS.bottoms[1])
 
   // Death behavior unchanged: every part (including clothing) -> DEADMAT

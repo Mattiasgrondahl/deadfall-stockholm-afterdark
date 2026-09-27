@@ -187,6 +187,33 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   assert.strictEqual(st.flashlight, false)
 }
 
+// --- v3: mouse-wheel weapon scroll edges (only while pointer-locked) ---
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  // Unlocked: the wheel must be ignored (title-screen scroll must not switch).
+  mouse(env, 'wheel', { deltaY: -100, preventDefault() {} })
+  assert.strictEqual(st.scrollUp, false, 'wheel ignored while unlocked')
+  env.canvas.requestPointerLock()
+  mouse(env, 'wheel', { deltaY: -100, preventDefault() {} })
+  assert.strictEqual(st.scrollUp, true, 'scroll up sets the up edge while locked')
+  assert.strictEqual(st.scrollDown, false)
+  mouse(env, 'wheel', { deltaY: 120, preventDefault() {} })
+  assert.strictEqual(st.scrollDown, true, 'scroll down sets the down edge while locked')
+  input.dispose()
+  assert.strictEqual(st.scrollUp, false, 'dispose clears scroll edges')
+  assert.strictEqual(st.scrollDown, false)
+}
+
+// --- v3: B key emits a musicSkip event ---
+{
+  const env = makeEnv(); const { input } = makeInput(env)
+  let skips = 0
+  input.on('musicSkip', () => skips++)
+  key(env, 'KeyB', 'keydown')
+  assert.strictEqual(skips, 1, 'B emits one musicSkip edge')
+  input.dispose()
+}
+
 // --- headless safety + dispose removes listeners
 {
   const st = freshState()

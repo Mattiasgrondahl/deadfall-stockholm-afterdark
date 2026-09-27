@@ -166,8 +166,22 @@ export class WeaponBank {
       if (st.switch3) { st.switch3 = false; this.switchTo('pistol') }
       if (st.switch4) { st.switch4 = false; this.switchTo('sword') }
       if (st.switch5) { st.switch5 = false; this.switchTo('sniper') }
+      // v3: mouse-wheel weapon cycling. Scroll down advances to the next weapon
+      // in the bank order; scroll up goes to the previous one.
+      if (st.scrollDown) { st.scrollDown = false; this.cycle(1) }
+      if (st.scrollUp) { st.scrollUp = false; this.cycle(-1) }
     }
     this.current.update(dt, player)
+  }
+
+  /** Cycle to the next (dir=+1) or previous (dir=-1) weapon in the bank order,
+   *  wrapping around. Respects the swap lockout via switchTo. */
+  cycle(dir) {
+    const order = [this.axe, this.shotgun, this.pistol, this.sword, this.sniper]
+    const i = order.indexOf(this.current)
+    if (i < 0) return false
+    const next = order[((i + dir) % order.length + order.length) % order.length]
+    return this.switchTo(next.name)
   }
 
   reset() {

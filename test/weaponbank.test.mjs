@@ -233,3 +233,24 @@ test('dispose detaches all five view models; double-safe', () => {
   assert.equal(camera.children.length, 0)
   bank.dispose() // second call must not throw
 })
+
+test('v3 mouse-wheel scroll cycles weapons forward/backward through the bank', () => {
+  const { bank } = makeBank(fakePlayer(0, 0), [])
+  bank.inputState.scrollUp = false
+  bank.inputState.scrollDown = false
+  bank.switchTo('shotgun') // start on the default weapon
+  bank.update(0.3, null)   // clear the swap lockout
+  assert.equal(bank.current.name, 'shotgun')
+  // Scroll down advances to the next weapon (shotgun -> pistol).
+  bank.inputState.scrollDown = true
+  bank.update(1 / 60, null)
+  assert.equal(bank.inputState.scrollDown, false, 'scroll edge consumed')
+  assert.equal(bank.current.name, 'pistol', 'scroll down advances to the next weapon')
+  bank.update(0.3, null)
+  // Scroll up goes back (pistol -> shotgun).
+  bank.inputState.scrollUp = true
+  bank.update(1 / 60, null)
+  assert.equal(bank.inputState.scrollUp, false, 'scroll edge consumed')
+  assert.equal(bank.current.name, 'shotgun', 'scroll up returns to the previous weapon')
+  bank.dispose()
+})

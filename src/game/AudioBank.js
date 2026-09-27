@@ -69,6 +69,7 @@ export class AudioBank {
     this._musicUrl = null
     this._musicOn = false
     this._musicMuted = false
+    this._plPaused = false // boss-fight pause flag for the mp3 playlist
     // Procedural soundtrack (additive to the mp3 layer above): three
     // oscillator-scheduled tracks owned by MusicEngine. Created always, even
     // headless, so music state is observable without an AudioContext. Its
@@ -1066,9 +1067,11 @@ export class AudioBank {
         const len = this._musicLen || (this._musicEl.duration || 0)
         if (len <= 0) return
         const t = this._musicEl.currentTime || 0
-        // Reached the known end -> rewind and replay the whole track.
+        // Reached the known end. With a playlist active, advance to the NEXT
+        // song (sequential playback); otherwise loop the single track.
         if (t >= len - 0.25) {
-          try { this._musicEl.currentTime = 0; this._musicEl.play().catch(() => {}) } catch (err) {}
+          if (this._plUrls && this._plUrls.length > 1) this._advancePlaylist()
+          else { try { this._musicEl.currentTime = 0; this._musicEl.play().catch(() => {}) } catch (err) {} }
         }
       }
       this._onMusicEnded = () => {
@@ -1125,22 +1128,69 @@ export class AudioBank {
       if (this._onPlaylistAdvance) {
         try { this._musicEl.removeEventListener('ended', this._onPlaylistAdvance) } catch (err) {}
       }
-      this._onPlaylistAdvance = () => {
-        if (!this._musicOn || !this._plUrls || this._plUrls.length < 2) return
-        this._plIndex = (((this._plIndex || 0) + 1) % this._plUrls.length)
-        const url = this._plUrls[this._plIndex]
-        // The watchdog length follows the new song so its own known end drives
-        // the next advance.
-        const len = this._plLens ? this._plLens[this._plIndex] : 0
-        if (Number.isFinite(len) && len > 0) this._musicLen = len
-        if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
-        try { this._musicEl.currentTime = 0 } catch (err) {}
-        this._musicEl.play().catch(() => {})
-      }
+      this._onPlaylistAdvance = () => { this._advancePlaylist() }
       if (typeof this._musicEl.addEventListener === 'function') {
         this._musicEl.addEventListener('ended', this._onPlaylistAdvance)
       }
     }
+  }
+
+  /** Move the playlist to the next song (mod length) and start it. Shared by
+   *  the known-end watchdog, the native `ended` event, and skipPlaylistTrack.
+   *  No-op when no playlist is active or the music bus is off. */
+  _advancePlaylist() {
+    if (!this._musicOn || !this._plUrls || this._plUrls.length < 2) return
+    this._plIndex = (((this._plIndex || 0) + 1) % this._plUrls.length)
+    const url = this._plUrls[this._plIndex]
+    // The watchdog length follows the new song so its own known end drives the
+    // next advance.
+    const len = this._plLens ? this._plLens[this._plIndex] : 0
+    if (Number.isFinite(len) && len > 0) this._musicLen = len
+    if (this._musicEl) {
+      if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
+      try { this._musicEl.currentTime = 0 } catch (err) {}
+      this._musicEl.play().catch(() => {})
+    }
+  }
+
+  /** Skip to the next song in the playlist right now (player-initiated). */
+  skipPlaylistTrack() { this._advancePlaylist() }
+
+  /** Temporarily pause the mp3 playlist (e.g. for a boss fight) while keeping
+   *  the playlist state so resumePlaylistTrack can continue the same song. */
+  pausePlaylistTrack() {
+    if (this._musicEl && this._musicOn) { try { this._musicEl.pause() } catch (err) {} }
+  }
+
+  /** Resume the mp3 playlist after pausePlaylistTrack / playBossMusic: restore
+   *  the playlist's current song src (the boss track overwrote it) and play. */
+  resumePlaylistTrack() {
+    if (!this._musicEl || !this._musicOn) return
+    if (this._plUrls && this._plUrls.length > 0) {
+      const url = this._plUrls[this._plIndex || 0]
+      const len = this._plLens ? this._plLens[this._plIndex || 0] : 0
+      if (Number.isFinite(len) && len > 0) this._musicLen = len
+      if (this._musicUrl !== url) { this._musicUrl = url; this._musicEl.src = url }
+    }
+    this._musicEl.play().catch(() => {})
+  }
+
+  /** Dedicated boss-fight music: pause the mp3 playlist and play a single boss
+   *  track (mystical / slow / scary) on the same music bus. `url` is a
+   *  caller-resolved URL; `seconds` its known length. No-op headless. */
+  playBossMusic(url, seconds) {
+    if (!url || !this.ctx || typeof Audio === 'undefined') return
+    this._plPaused = true
+    this.pausePlaylistTrack()
+    this.playMusic(url, seconds)
+  }
+
+  /** Leave the boss fight: stop the boss track and resume the mp3 playlist
+   *  where it left off. No-op headless. */
+  stopBossMusic() {
+    if (!this._plPaused) return
+    this._plPaused = false
+    this.resumePlaylistTrack()
   }
 
   /** Per-level music: pick a track for a boss-cycle (a "level" = every 5 waves)

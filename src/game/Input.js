@@ -30,10 +30,14 @@ export class Input {
     this.inputState.jump = false
     this.inputState.crouch = false
     this.inputState.zoom = false // held while right mouse (or Q) is down: sniper scope
+    // v3: mouse-wheel weapon cycling. scrollUp/scrollDown are press-edges
+    // (one per wheel notch) that WeaponBank consumes to cycle weapons.
+    this.inputState.scrollUp = false
+    this.inputState.scrollDown = false
     this.down = {}                          // e.code -> true while physically held
     this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, switch5: false, flashlight: false, jump: false }
     this._listeners = null                  // [target, event, handler] triples
-    this._events = { lock: [], unlock: [], mute: [], musicMute: [] }
+    this._events = { lock: [], unlock: [], mute: [], musicMute: [], musicSkip: [] }
     this._wasLocked = false
     this._lastX = 0
     this._lastY = 0
@@ -51,7 +55,8 @@ export class Input {
       [doc, 'mousedown', (e) => this._onMouse(e, true)],
       [doc, 'mouseup', (e) => this._onMouse(e, false)],
       [win, 'keydown', (e) => this._onKey(e, true)],
-      [win, 'keyup', (e) => this._onKey(e, false)]
+      [win, 'keyup', (e) => this._onKey(e, false)],
+      [doc, 'wheel', (e) => this._onWheel(e)]
     ]
     for (const [t, ev, fn] of this._listeners) t.addEventListener(ev, fn)
   }
@@ -80,6 +85,8 @@ export class Input {
     st.jump = false
     st.crouch = false
     st.zoom = false
+    st.scrollUp = false
+    st.scrollDown = false
     st.turnX = 0
     st.turnY = 0
   }
@@ -143,6 +150,7 @@ export class Input {
         else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = true; this._edgeHeld.pause = true }
         else if (code === 'KeyM') this._emit('mute')
         else if (code === 'KeyN') this._emit('musicMute')
+        else if (code === 'KeyB') this._emit('musicSkip')
         else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
         else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }
         else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true }
@@ -200,6 +208,16 @@ export class Input {
       this.inputState.turnX += dx
       this.inputState.turnY += dy
     }
+  }
+
+  /** Mouse wheel cycles weapons while pointer-locked (in-game). Scroll up =
+   *  previous weapon, scroll down = next weapon. One edge per event; the
+   *  wheel is suppressed (preventDefault) so it does not scroll the page. */
+  _onWheel(e) {
+    if (!this.locked()) return
+    if (e.deltaY < 0) this.inputState.scrollUp = true
+    else if (e.deltaY > 0) this.inputState.scrollDown = true
+    if (typeof e.preventDefault === 'function') e.preventDefault()
   }
 
   _syncMovement() {

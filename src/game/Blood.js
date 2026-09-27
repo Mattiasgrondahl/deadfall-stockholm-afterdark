@@ -70,10 +70,13 @@ export class Blood {
       this._spin.push(new THREE.Quaternion())
       this._color.push(new THREE.Color())
     }
-    // One mesh for all droplets: tiny tetrahedra, unlit (cheap). A white base
-    // material so per-instance color (varied arterial/venous reds) multiplies in.
-    this._geo = new THREE.TetrahedronGeometry(0.05)
-    this._mat = new THREE.MeshBasicMaterial({ color: 0xffffff })
+    // One mesh for all droplets: flat blood flecks (a thin disc), unlit (cheap).
+    // v3: a flat CircleGeometry instead of a 3D tetrahedron so airborne blood
+    // reads as flat splatter, not a chunky 3D object with height off the ground.
+    // A white base material so per-instance color (varied arterial/venous reds)
+    // multiplies in.
+    this._geo = new THREE.CircleGeometry(0.05, 6)
+    this._mat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
     this._mesh = new THREE.InstancedMesh(this._geo, this._mat, MAX)
     this._mesh.count = 0
     this._mesh.frustumCulled = false
@@ -109,7 +112,6 @@ export class Blood {
     this._m = new THREE.Matrix4()
     this._q = new THREE.Quaternion()
     this._s = new THREE.Vector3()
-    this._axis = new THREE.Vector3()
     this._upY = new THREE.Vector3(0, 1, 0)
   }
 
@@ -153,8 +155,10 @@ export class Blood {
       this._age[i] = 0
       this._life[i] = LIFE * (0.7 + this._rng() * 0.6)
       this._scale[i] = 0.6 + this._rng() * 0.9
-      // Tumble spin so droplets read as wet, tumbling fragments.
-      this._spin[i].set(this._rng() * 2 - 1, this._rng() * 2 - 1, this._rng() * 2 - 1, 1).normalize()
+      // v3: droplets are flat flecks that lie face-up and only spin in-plane
+      // (about world Y), so airborne blood reads as flat splatter rather than a
+      // 3D chunk with height off the ground.
+      this._spin[i].set(0, 0, 0, 1)
       // Arterial-to-venous red variation (bright red → deep maroon).
       const t = this._rng()
       this._color[i].setRGB(0.55 + t * 0.35, 0.02 + t * 0.05, 0.02 + t * 0.04)
@@ -245,18 +249,17 @@ export class Blood {
       }
     }
     // Integrate + write instance matrices (scale fades to 0 as they age; the
-    // droplet tumbles about its spin axis while airborne).
-    this._axis.set(0, 1, 0)
+    // flat fleck spins in-plane about world Y while airborne).
     for (let i = 0; i < this.count; i++) {
       const v = this._vel[i]
       v.y += GRAVITY * dt
       const p = this._pos[i]
       p.addScaledVector(v, dt)
       if (p.y < 0) { p.y = 0; v.y = 0; v.x *= 0.6; v.z *= 0.6 } // settle
-      // Tumble: rotate the droplet about its spin axis while it is airborne.
+      // v3: spin the flat fleck about the world Y axis only (in-plane), so it
+      // never tips edge-on and reads as a flat splat for its whole flight.
       if (p.y > 0.02) {
-        this._axis.copy(this._spin[i])
-        this._q.setFromAxisAngle(this._axis, dt * 12)
+        this._q.setFromAxisAngle(this._upY, dt * 6)
         this._spin[i].premultiply(this._q).normalize()
       }
       const s = this._scale[i] * (1 - this._age[i] / this._life[i])

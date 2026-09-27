@@ -207,6 +207,92 @@ const OUTFITMATS = {
 // 18-alive ceiling with the sniper as a fifth weapon. null = none.
 const OUTFIT_ACC = ['tie', 'cap', 'helmet', 'stripe', null, 'tie', 'cap', null, 'helmet']
 const OUTFIT_COUNT = OUTFITMATS.tops.length
+
+// v6 visuals (11): fabric weave normal map + clothed arms. The primitive bodies
+// were flat-colored boxes: even after the outfit albedo landed, torso/legs had
+// no normalMap at all, and the arms + head wore the bare per-type skin material
+// (MAT2), so roughly half of every visible body had no texture whatsoever.
+// Two fixes, both shared-module-level so they cost no extra meshes:
+//  (a) one lazily-built 64x64 fabric-weave NORMAL DataTexture (tangent-space,
+//      so colorSpace stays NoColorSpace — a normal map must never be sRGB
+//      decoded) assigned as normalMap of every outfit top/bottom plus the sleeve
+//      materials, with normalScale 0.6 so the weave reads without looking like
+//      canvas plating;
+//  (b) per-outfit SLEEVE materials that clone the outfit top (its albedo map,
+//      color and roughness are copied when the texture lands — see
+//      loadOutfitTextures) so arms read as clothed sleeves instead of bare
+//      skin. The head keeps MAT2 skin so the face decal still reads.
+// DataTexture (not CanvasTexture) keeps this headless-safe: no document/window
+// touch, and the same deterministic result under Node and in the browser.
+const FABRIC_N_SIZE = 64
+let FABRIC_NORMAL = null
+let FABRIC_REFS = 0 // live zombies; the shared weave map is released at zero
+/** Standard seeded LCG (see AmmoDrops._rand) — no Math.random anywhere. */
+function lcg(s) { return (s = (Math.imul(s, 48271) >>> 0) % 65537) / 65537 }
+/** Build the shared weave normal map once per module load. A plain 2x2 twill
+ *  (warp column + weft row per 8px cell) with a seeded per-cell jitter, so the
+ *  shading breaks up the box faces instead of reading as a printed grid. */
+function buildFabricNormal() {
+  const n = FABRIC_N_SIZE
+  const data = new Uint8Array(n * n * 4)
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two independent seeded streams per texel (fixed 32-bit states derived
+      // from the fixed seed below, so the output never depends on iteration
+      // order and never touches Math.random).
+      const sx = ((x * 31 + y * 17 + 7) >>> 0) ^ 20261
+      const sy = ((y * 29 + x * 13 + 11) >>> 0) ^ 48271
+      const jx = lcg(sx) - 0.5
+      const jy = lcg(sy) - 0.5
+      // Warp (vertical) threads tilt the normal along x, weft (horizontal)
+      // threads along y; the thread centre is steepest, the crossing flat.
+      const warp = Math.sin((x / 8) * Math.PI * 2) * 0.55 + jx * 0.25
+      const weft = Math.sin((y / 8) * Math.PI * 2) * 0.55 + jy * 0.25
+      const len = Math.sqrt(warp * warp + weft * weft + 1)
+      const i = (y * n + x) * 4
+      data[i] = ((warp / len) * 0.5 + 0.5) * 255
+      data[i + 1] = ((weft / len) * 0.5 + 0.5) * 255
+      data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255
+      data[i + 3] = 255
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 2) // a box face spans ~2 weave tiles, not one stretched grid
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.generateMipmaps = true
+  tex.needsUpdate = true
+  return tex
+}
+/** Shared weave normal map, built on first use and never disposed per-zombie
+ *  (it is module-level, like GEO2/MAT2). dispose() releases it once the whole
+ *  game is torn down. */
+function fabricNormal() {
+  if (FABRIC_NORMAL === null) {
+    FABRIC_NORMAL = buildFabricNormal()
+    FABRIC_REFS = 0
+  }
+  return FABRIC_NORMAL
+}
+// Per-outfit sleeve materials: one per archetype, cloned from that archetype's
+// top so sleeves always match the jacket/shirt they belong to. Swapped in by
+// reference for the arm meshes; shared across zombies, never disposed per-body.
+const SLEEVE_MATS = OUTFITMATS.tops.map((m) => {
+  const s = m.clone()
+  s.map = m.map
+  s.color.copy(m.color)
+  s.roughness = m.roughness
+  s.normalMap = fabricNormal()
+  s.normalScale = new THREE.Vector2(0.6, 0.6)
+  s.needsUpdate = true
+  return s
+})
+for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) {
+  m.normalMap = fabricNormal()
+  m.normalScale = new THREE.Vector2(0.6, 0.6)
+  m.needsUpdate = true
+}
 // Shared accessory geometry + materials (built once, reused across zombies;
 // cheap boxes so the mesh budget is unaffected). tie = thin dark strip on the
 // chest; cap = flat police cap on the head; helmet = rounded fireman helmet;
@@ -294,12 +380,19 @@ function loadOutfitTextures() {
         mat.color.set(0xffffff)
         mat.map = tex
         mat.needsUpdate = true
+        // The sleeve clone was built from the flat top material, so hand the
+        // albedo (and the now-white tint) to its twin as well — otherwise the
+        // arms stay a flat jacket color while the torso wears the texture.
+        const sleeve = SLEEVE_MATS[i]
+        sleeve.color.set(0xffffff)
+        sleeve.map = tex
+        sleeve.needsUpdate = true
       }, () => console.warn(`outfit texture failed to load; keeping flat color (${file})`))
     }
   }
 }
 
-export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, SLEEVE_MATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
 
 // --- Browser-only skinned-mesh layer (v5 upgrade) ---------------------------
 // When a rigged+animated GLB is available (browser only), a zombie's primitive
@@ -466,6 +559,7 @@ export function buildPrimitiveBody(type, phase) {
   const outfit = Math.floor((((phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
   const topMat = OUTFITMATS.tops[outfit]
   const bottomMat = OUTFITMATS.bottoms[outfit]
+  const sleeveMat = SLEEVE_MATS[outfit]
   const parts = []
   const torso = new THREE.Mesh(GEO2.torso, topMat)
   torso.position.set(0, 1.2, 0)
@@ -493,8 +587,8 @@ export function buildPrimitiveBody(type, phase) {
   const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
   hair.position.set(0, 0.17, 0)
   head.add(hair)
-  const armL = new THREE.Mesh(GEO2.arm, mat); armL.position.set(-0.34, 1.42, 0.1); armL.rotation.x = pose.armRest; parts.push(armL)
-  const armR = new THREE.Mesh(GEO2.arm, mat); armR.position.set(0.34, 1.42, 0.1); armR.rotation.x = pose.armRest; parts.push(armR)
+  const armL = new THREE.Mesh(GEO2.arm, sleeveMat); armL.position.set(-0.34, 1.42, 0.1); armL.rotation.x = pose.armRest; parts.push(armL)
+  const armR = new THREE.Mesh(GEO2.arm, sleeveMat); armR.position.set(0.34, 1.42, 0.1); armR.rotation.x = pose.armRest; parts.push(armR)
   const legL = new THREE.Mesh(GEO2.leg, bottomMat); legL.position.set(-0.16, 0.47, 0); legL.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legL)
   const legR = new THREE.Mesh(GEO2.leg, bottomMat); legR.position.set(0.16, 0.47, 0); legR.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legR)
   // Outfit accessory (tie/cap/helmet/stripe) so the silhouette reads a trade.
@@ -511,7 +605,7 @@ export function buildPrimitiveBody(type, phase) {
   const group = new THREE.Group()
   group.add(...parts)
   for (const p of parts) p.castShadow = true
-  const restMats = [topMat, mat, mat, mat, bottomMat, bottomMat]
+  const restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
   return { group, parts, head, face, eyes, hair, acc, armL, armR, legL, legR, restMats, outfit }
 }
 
@@ -669,6 +763,7 @@ export class Zombie {
     this._outfit = outfit
     const topMat = OUTFITMATS.tops[outfit]
     const bottomMat = OUTFITMATS.bottoms[outfit]
+    const sleeveMat = SLEEVE_MATS[outfit]
     const parts = []
     const torso = new THREE.Mesh(GEO2.torso, topMat)
     torso.position.set(0, 1.2, 0)
@@ -710,9 +805,10 @@ export class Zombie {
     head.add(hair)
     this._hair = hair
     for (const side of [-1, 1]) {
-      // Bare arms: the top texture/color is torso-only; arms keep the
-      // per-type skin color so the cloth reads as a jacket/shirt on the body.
-      const arm = new THREE.Mesh(GEO2.arm, mat)
+      // Sleeved arms: the outfit top's twin material (same albedo/color as the
+      // jacket, plus the shared weave normal map) so the arms read as clothed
+      // rather than bare flat skin. The head keeps MAT2 skin for the face decal.
+      const arm = new THREE.Mesh(GEO2.arm, sleeveMat)
       arm.position.set(0.34 * side, 1.42, 0.1)
       arm.rotation.x = pose.armRest
       parts.push(arm)
@@ -748,15 +844,16 @@ export class Zombie {
     for (const p of parts) p.castShadow = true
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
-    this._restMats = [topMat, mat, mat, mat, bottomMat, bottomMat]
+    this._restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
     // v3 chain: parallel rest materials for the four limbs only (indices 2-5
     // of _parts). A severed limb must NOT be repainted by the hit-flash
     // recovery while a corpse repaints it to DEADMAT, so _sever* removes the
     // limb from _parts and keeps its rest material here for revive().
-    this._limbRest = { armL: mat, armR: mat, legL: bottomMat, legR: bottomMat }
+    this._limbRest = { armL: sleeveMat, armR: sleeveMat, legL: bottomMat, legR: bottomMat }
     this._flashT = 0
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
+    FABRIC_REFS++ // one more live zombie holding the shared weave map
     // v5: try to swap in a rigged skinned mesh (browser-only, async). Until it
     // arrives the primitive body above is the visual; headless never swaps.
     this._skin = null // { root, skinned, mixer, clips, actions, current }
@@ -1503,7 +1600,10 @@ export class Zombie {
   }
 
   /** Detach only the per-zombie group. Shared GEO/MAT are module-level and
-   *  shared across all zombies — never dispose them here. */
+   *  shared across all zombies — never dispose them here. The shared weave
+   *  normal map is module-level too, so it is released only when the last live
+   *  zombie goes away (Game.dispose disposes every zombie); the rebuild is
+   *  lazy, so dispose fully reverses. */
   dispose() {
     this.scene.remove(this.group)
     // Release the per-instance mixer (stops its actions). The cloned skinned
@@ -1513,6 +1613,10 @@ export class Zombie {
       this._skin.mixer.stopAllAction()
       this._skin.mixer.uncacheRoot(this._skin.mixer.getRoot())
       this._skin = null
+    }
+    if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
+      FABRIC_NORMAL.dispose()
+      FABRIC_NORMAL = null
     }
   }
 }

@@ -41,16 +41,22 @@ export const LEVEL_TRACKS = [
 ]
 // v6 audio (8): the shipped mp3 layer — three Wan2GP/YuE2 power-metal songs
 // generated locally (tools/audio-specs/df_{javelin_sv,hord_en,matsubou_ja}.json),
-// anime-opening inspired (Attack on Titan "Shinzou wo Sasageyo"): one Swedish,
-// one English, one Japanese. Played as one deterministic playlist via
-// AudioBank.playPlaylist: song 1 -> song 2 -> song 3 -> back to song 1, forever.
-// Per-track known lengths drive the rotation (each song rewinds at its own end).
+// anime-opening inspired (Attack on Titan "Shinzou wo Sasageyo"). Played as one
+// deterministic playlist via AudioBank.playPlaylist: each song plays to its own
+// known end, then the playlist advances to the NEXT song (EN -> JP -> SV -> EN,
+// forever). The player can skip ahead with the B key. Per-track known lengths
+// drive the rotation (each song advances at its own end, no same-track loop).
 export const SONG_PLAYLIST = [
-  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3',
   ASSET_BASE + 'assets/audio/song_hord_en.mp3',
-  ASSET_BASE + 'assets/audio/song_matsubou_ja.mp3'
+  ASSET_BASE + 'assets/audio/song_matsubou_ja.mp3',
+  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3'
 ]
-export const SONG_PLAYLIST_SECONDS = [180, 71, 86]
+export const SONG_PLAYLIST_SECONDS = [71, 86, 180]
+// v3 boss fight: a dedicated mystical / slow / scary track (Wan2GP
+// tools/audio-specs/df_boss.json) that replaces the mp3 playlist for the
+// duration of a boss fight, then the playlist resumes.
+export const BOSS_TRACK = ASSET_BASE + 'assets/audio/song_boss.mp3'
+export const BOSS_TRACK_SECONDS = 105
 // Known true length of each track (seconds). Some browsers misreport an mp3's
 // `duration` and fire `ended` early, so the loop is driven off this explicit
 // length instead of the element's unreliable `duration`.
@@ -165,6 +171,9 @@ export class Game {
     this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
     this._boss = null
+    // v3 boss fight: true while the dedicated boss track is playing (the mp3
+    // playlist is paused); cleared when the boss falls.
+    this._bossFightActive = false
 
     // Live entity lists (zombies live here; bounded by WaveManager).
     this.zombies = []
@@ -383,6 +392,8 @@ export class Game {
       this.audio.toggleMusicMuted()
       if (this.hud) this.hud.setMusicMuted(this.audio._musicMuted)
     })
+    // v3: B skips the mp3 playlist to the next song (player-initiated advance).
+    if (this.input) this.input.on('musicSkip', () => { if (this.audio) this.audio.skipPlaylistTrack() })
     // WIRING:WEAPON
     this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
     this.weapon.getZombies = () => (this.multiplayer ? this.zombies.concat(this.multiplayer.getTargets()) : this.zombies)
@@ -406,6 +417,12 @@ export class Game {
         if (this.audio) this.audio.playWaveCleared?.(w)
         if (this.musicDirector) this.musicDirector.onWaveCleared(w)
         if (this.achievements) this.achievements.onWaveCleared() // v3 T12
+        // v3 boss fight: the boss just fell, so leave the dedicated boss track
+        // and resume the mp3 playlist where it paused.
+        if (this._bossFightActive) {
+          this._bossFightActive = false
+          if (this.audio) this.audio.stopBossMusic()
+        }
         // Threat preview: tell the player what the next wave brings while the
         // intermission is running (composition + boss warning).
         const p = this.waveManager ? this.waveManager.nextWavePreview : null
@@ -420,7 +437,13 @@ export class Game {
       },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
       onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
-      onBossSpawn: () => { if (this.screens) this.screens.showBanner('THE BRUTE') }
+      onBossSpawn: () => {
+        if (this.screens) this.screens.showBanner('THE BRUTE')
+        // v3 boss fight: mute the mp3 playlist and play the dedicated
+        // mystical / slow / scary boss track for the duration of the fight.
+        this._bossFightActive = true
+        if (this.audio && !this.audio._musicMuted) this.audio.playBossMusic(BOSS_TRACK, BOSS_TRACK_SECONDS)
+      }
     }, { startWave: DIFFICULTY[this.difficulty]?.startWave ?? 1 })
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
@@ -634,6 +657,8 @@ export class Game {
     if (this.achievements) this.achievements.resetRun() // v3 T12: per-run counters reset; unlocks persist
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
+    // v3 boss fight: a restart ends any live boss fight and resumes the playlist.
+    if (this._bossFightActive) { this._bossFightActive = false; if (this.audio) this.audio.stopBossMusic() }
     this.timeInGame = 0
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
