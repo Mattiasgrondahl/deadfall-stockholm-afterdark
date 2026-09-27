@@ -370,17 +370,17 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   assert.deepEqual(city2.getFacadeVariants(), city.getFacadeVariants(), 'facade variants deterministic')
   const vs = city.getFacadeVariants()
   assert.equal(vs.length, 67, 'one variant per building')
-  for (const v of vs) assert.ok(v >= 0 && v <= 3, 'variant in 0..3, got ' + v)
-  assert.ok(new Set(vs).size >= 2, 'more than one variant used')
+  for (const v of vs) assert.ok(v >= 0 && v <= 7, 'variant in 0..7, got ' + v)
+  assert.ok(new Set(vs).size >= 3, 'multiple facade variants used')
   city.dispose()
   city2.dispose()
 })
 
-test('roof detail + car glass/lights: 4 InstancedMeshes, deterministic, headless-safe maps', () => {
+test('roof detail + car glass/lights: 5 InstancedMeshes, deterministic, headless-safe maps', () => {
   const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   const inst = []
   c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
-  assert.equal(inst.length, 4, 'exactly 4 InstancedMeshes (clutter + cornice + contact-shadow + car glass/lights), got ' + inst.length)
+  assert.equal(inst.length, 5, 'exactly 5 InstancedMeshes (clutter + cornice + contact-shadow + car glass/lights + v4 facade-trim), got ' + inst.length)
   // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
@@ -454,7 +454,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 388, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow + 1 car glass/lights, got ' + meshes)
+  assert.equal(meshes, 389, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow + 1 car glass/lights + 1 facade-trim, got ' + meshes)
   assert.equal(collision.aabbs.length, 127, 'dressing adds no collision (lamps do: 127)')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

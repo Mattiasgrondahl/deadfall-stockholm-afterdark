@@ -136,7 +136,7 @@ test('hierarchy: no scenery surface out-shines the darkest body in the rough ban
 test('hierarchy: the changes cost no meshes, lights, or points', () => {
   let meshes = 0, lights = 0
   city.group.traverse((o) => { if (o.isMesh) meshes++; if (o.isLight) lights++ })
-  assert.equal(meshes, 388, `city mesh count must stay 388, got ${meshes}`)
+  assert.equal(meshes, 389, `city mesh count must stay 389 (388 v6 + 1 v4 facade-trim), got ${meshes}`)
   assert.equal(lights, 0, `city group must add no lights, got ${lights}`)
 })
 

@@ -1,9 +1,10 @@
 import * as THREE from 'three'
 import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture, makeGroundImageTexture } from './cityDressing.js'
 import { createSnow } from './snow.js'
+import { addFacadeTrim } from './FacadeTrim.js'
 
-const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246]
-const TINTS = [1.12, 1.0, 0.9, 0.78]
+const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246, 0x2e3140, 0x3a3644]
+const TINTS = [1.12, 1.0, 0.9, 0.78, 1.05, 0.86]
 const SPAWNS = [
   [-85, 0], [85, 0], [0, -85], [0, 85],
   [-85, -85], [85, -85], [-85, 85], [85, 85],
@@ -145,7 +146,7 @@ function makeFacadeTextures(env) {
   if (typeof factory !== 'function') return null
   if (!factory()) return null // unit tests pass a factory returning null
   const pairs = []
-  for (let v = 0; v < 4; v++) {
+  for (let v = 0; v < 8; v++) {
     pairs.push({
       map: drawFacadeTexture(factory(), v, false),
       emissiveMap: drawFacadeTexture(factory(), v, true),
@@ -257,7 +258,7 @@ export class City {
 
     const buildings = []
     const building = (x, z, w, d, h, zone) => {
-      const color = new THREE.Color(PALETTE[Math.floor(rnd() * 4)]).multiplyScalar(TINTS[zone])
+      const color = new THREE.Color(PALETTE[Math.floor(rnd() * 6)]).multiplyScalar(TINTS[zone])
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
         // v6 visuals (10): roughness 0.88 -> 0.62 so the untextured building
@@ -316,7 +317,7 @@ export class City {
     const variants = []
     this._flickerMats = []
     for (const b of buildings) {
-      const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 4)
+      const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 8)
       variants.push(v)
       const facade = new THREE.MeshStandardMaterial({
         // v6 visuals (10): roughness 0.88 -> 0.62 (see the building-body note). The
@@ -366,6 +367,9 @@ export class City {
     this._facadeVariants = variants
     // Realism pass (tier 2): rooftop clutter + cornices (2 InstancedMeshes).
     addRoofDetail(group, buildings)
+    // v4 VISUALS (C1): instanced window trim/sills (+1 InstancedMesh) so the
+    // flat facade boxes gain real geometric relief up close.
+    addFacadeTrim(group, buildings)
     // Realism pass (tier 3): soft contact-shadow decals under vehicles +
     // barricades (1 InstancedMesh) so props read as resting on the pavement.
     addContactShadows(group)
