@@ -163,9 +163,9 @@ export class Sky {
       depthWrite: false,
       fog: false,
       uniforms: {
-        topColor: { value: new THREE.Color(0x04070f) },
-        horizonColor: { value: new THREE.Color(0x0d1626) },
-        glowColor: { value: new THREE.Color(0x2a3446) }
+        topColor: { value: new THREE.Color(0x070b16) },
+        horizonColor: { value: new THREE.Color(0x18253a) },
+        glowColor: { value: new THREE.Color(0x3a4a63) }
       },
       vertexShader: `
         varying vec3 vPos;
@@ -181,10 +181,12 @@ export class Sky {
           vec3 d = normalize(vPos);
           float h = d.y; // -1 (below horizon) .. 1 (zenith)
           vec3 c = mix(horizonColor, topColor, smoothstep(-0.02, 0.9, h));
-          // Cool horizon glow (city sky glow).
-          c += glowColor * exp(-h * h * 144.0) * 0.35;
-          // Warm light-pollution haze just above the horizon line.
-          c += vec3(0.016, 0.011, 0.006) * exp(-max(h, 0.0) * 5.0);
+          // Cool horizon glow (city sky glow). v4 VISUALS (C2): 0.35 -> 0.55 so the
+          // horizon reads brighter, narrowing the sky-vs-ground luminance gap.
+          c += glowColor * exp(-h * h * 144.0) * 0.55;
+          // Warm light-pollution haze just above the horizon line. v4 (C2):
+          // brighter + wider band so the skyline base glows like a real city.
+          c += vec3(0.030, 0.021, 0.011) * exp(-max(h, 0.0) * 3.5);
           // Below the horizon, beyond the city edge: dark ground haze.
           c = mix(c, vec3(0.005, 0.007, 0.011), smoothstep(0.0, -0.35, h));
           gl_FragColor = vec4(c, 1.0);
@@ -224,7 +226,9 @@ export class Sky {
     // City skyline silhouettes near the dome edge: 12 boxes on a ring
     // (deterministic LCG; no Math.random). All share ONE geometry and ONE
     // material; per-silhouette size lives in mesh.scale.
-    const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x0a0f14, fog: false })
+    // v4 VISUALS (C2): lifted from pure 0x0a0f14 black to a dim blue-grey so the
+    // distant skyline reads as a lit city catching the sky glow, not a black void.
+    const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x141c28, fog: false })
     const silhouetteGeo = new THREE.BoxGeometry(1, 1, 1)
     const silhouettes = []
     const rnd = makeLCG(0x9E3779B9)

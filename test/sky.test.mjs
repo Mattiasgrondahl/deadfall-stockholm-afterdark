@@ -46,9 +46,9 @@ test('dome: ShaderMaterial with BackSide, radius 420, spec uniform colors', () =
   assert.ok(sky.domeMat instanceof THREE.ShaderMaterial)
   assert.equal(sky.domeMat.side, THREE.BackSide)
   assert.equal(sky.domeGeo.parameters.radius, 420)
-  assert.ok(sky.domeMat.uniforms.topColor.value.equals(new THREE.Color(0x04070f)))
-  assert.ok(sky.domeMat.uniforms.horizonColor.value.equals(new THREE.Color(0x0d1626)))
-  assert.ok(sky.domeMat.uniforms.glowColor.value.equals(new THREE.Color(0x2a3446)))
+  assert.ok(sky.domeMat.uniforms.topColor.value.equals(new THREE.Color(0x070b16)))
+  assert.ok(sky.domeMat.uniforms.horizonColor.value.equals(new THREE.Color(0x18253a)))
+  assert.ok(sky.domeMat.uniforms.glowColor.value.equals(new THREE.Color(0x3a4a63)))
   sky.dispose()
 })
 
