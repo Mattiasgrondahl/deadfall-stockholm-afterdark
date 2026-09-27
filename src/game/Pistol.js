@@ -168,10 +168,21 @@ export class Pistol {
       }
     }
     const bob = Math.sin(this._bobPhase) * 0.008
+    // Lateral bob (90° out of phase) so the view model sways side-to-side with
+    // the walk, not just up-down — reads as hands carrying the gun while moving.
+    const sway = Math.sin(this._bobPhase * 0.5) * 0.006
+    // Recoil now pitches + rolls the view model up/twisted, on top of the
+    // backward slide, then recovers with _recoil. Deterministic (driven by the
+    // decaying _recoil scalar), no per-frame allocation.
+    const rk = this._recoil / RECOIL_KICK
+    const pitch = rk * 0.16
+    const roll = rk * 0.05
     // Reload dip (gameplay 5): deterministic sin(π·p) envelope, no RNG.
     const p = this.isReloading ? Math.min(1, 1 - this._reloadT / RELOAD_TIME) : 0
     const dip = Math.sin(Math.PI * p)
-    this.view.position.set(0.2, -0.24 + bob + DIP_Y * dip, -0.55 + this._recoil + DIP_Z * dip)
+    this.view.position.set(0.2 + sway, -0.24 + bob + DIP_Y * dip, -0.55 + this._recoil + DIP_Z * dip)
+    this.view.rotation.x = pitch
+    this.view.rotation.z = roll
     if (this._flashT > 0) {
       this._flashT -= dt
       const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
@@ -277,6 +288,7 @@ export class Pistol {
     this.flash.visible = false
     this.flashLight.intensity = 0
     this._recoil = 0
+    this.view.rotation.set(0, 0, 0)
     this._fireT = this._time
   }
 

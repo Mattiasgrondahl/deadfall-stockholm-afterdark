@@ -33,6 +33,7 @@ export class WeaponBank {
     this._onDecapitate = null
     this._owner = null
     this._swapT = 0
+    this._swapFrom = null
     this.current = this.shotgun
     // Only the current weapon's view model is visible.
     this.axe.view.visible = false
@@ -124,9 +125,16 @@ export class WeaponBank {
       name === 'sniper' ? this.sniper : null
     if (!target || target === this.current || this._swapT > 0) return false
     this._swapT = SWAP_TIME
+    this._swapFrom = this.current
     this.current = target
+    // During the swap both the outgoing and incoming views stay visible so the
+    // change reads as a raise/lower instead of a hard visibility pop. The
+    // incoming view scales up from 0 and the outgoing scales down across
+    // SWAP_TIME (scale is owned here; each weapon's update() owns position/
+    // rotation, so there is no conflict). Deterministic, no allocation.
     for (const w of [this.axe, this.shotgun, this.pistol, this.sword, this.sniper]) {
-      w.view.visible = (w === target)
+      w.view.visible = (w === target || w === this._swapFrom)
+      if (w === target) w.view.scale.setScalar(0.001)
     }
     this.audio?.weaponSwitch?.() // voice lands with the audio task; null-safe
     return true
@@ -158,7 +166,23 @@ export class WeaponBank {
   }
 
   update(dt, player = null) {
-    if (this._swapT > 0) this._swapT = Math.max(0, this._swapT - dt)
+    if (this._swapT > 0) {
+      this._swapT = Math.max(0, this._swapT - dt)
+      // Ease the incoming view up and the outgoing view down over the swap.
+      const t = 1 - this._swapT / SWAP_TIME // 0..1 across the swap
+      const e = t * t * (3 - 2 * t) // smoothstep
+      if (this._swapFrom) this._swapFrom.view.scale.setScalar(Math.max(0.001, 1 - e))
+      this.current.view.scale.setScalar(Math.max(0.001, e))
+      if (this._swapT === 0) {
+        // Swap finished: hide the outgoing view, snap the incoming to full size.
+        if (this._swapFrom) {
+          this._swapFrom.view.visible = false
+          this._swapFrom.view.scale.setScalar(1)
+        }
+        this.current.view.scale.setScalar(1)
+        this._swapFrom = null
+      }
+    }
     const st = this._inputState
     if (st) {
       if (st.switch1) { st.switch1 = false; this.switchTo('axe') }
@@ -195,6 +219,10 @@ export class WeaponBank {
       w.view.visible = (w === this.shotgun)
     }
     this._swapT = 0
+    this._swapFrom = null
+    for (const w of [this.axe, this.shotgun, this.pistol, this.sword, this.sniper]) {
+      w.view.scale.setScalar(1)
+    }
   }
 
   dispose() {

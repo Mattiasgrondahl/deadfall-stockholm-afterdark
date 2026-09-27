@@ -56,11 +56,15 @@ test('switch with 0.25 s lockout', () => {
   assert.equal(bank.switchTo('axe'), true)
   assert.equal(bank.current, bank.axe)
   assert.equal(bank.axe.view.visible, true)
-  assert.equal(bank.shotgun.view.visible, false)
+  // v4 swap raise/lower: the outgoing view stays visible during the swap so the
+  // change reads as a lower, not a hard pop. It hides only when _swapT reaches 0.
+  assert.equal(bank.shotgun.view.visible, true)
   assert.equal(audio.counts.weaponSwitch, 1)
   assert.equal(bank.switchTo('shotgun'), false) // inside lockout
   assert.equal(bank.switchTo('axe'), false)     // same weapon
   for (let i = 0; i < 16; i++) bank.update(1 / 60, null) // ~0.27 s
+  assert.equal(bank.shotgun.view.visible, false) // swap finished: outgoing hidden
+  assert.equal(bank.axe.view.scale.x, 1)         // incoming eased to full size
   assert.equal(bank.switchTo('shotgun'), true)
   bank.dispose()
 })
@@ -107,9 +111,11 @@ test('switch3/switch4 input edges route to pistol and sword', () => {
   assert.equal(bank.inputState.switch3, false)
   assert.equal(bank.current, bank.pistol)
   assert.equal(bank.pistol.view.visible, true)
-  assert.equal(bank.shotgun.view.visible, false)
+  // v4 swap raise/lower: outgoing shotgun view stays visible during the swap.
+  assert.equal(bank.shotgun.view.visible, true)
   assert.equal(audio.counts.weaponSwitch, 1)
   bank.update(0.3, null) // clear the swap lockout
+  assert.equal(bank.shotgun.view.visible, false) // swap finished: hidden
   bank.inputState.switch4 = true
   bank.update(1 / 60, null)
   assert.equal(bank.inputState.switch4, false)
