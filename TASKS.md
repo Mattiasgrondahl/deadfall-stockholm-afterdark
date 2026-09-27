@@ -4,6 +4,7 @@ Internal task tracking (git-ignored). Reconstructed after a workspace corruption
 the original; state below is recovered from git history + probe evidence.
 
 ## Status overview
+- **v10 boss + highscore + co-op fixes (Sep 27, branch `v2`, HEAD `216a8fe`)**: high score now always submitted to the hosted board (`Score.submitRun`, not gated on a local record); wave-5 boss spawns quicker (`BOSS_DELAY` 1.5→0.5 s), is 2× larger (`BOSS_SCALE` 1.4→2.8) and 10× HP (520→5200); new `brute-face.jpg` boss face; non-music ambient wind bed removed (only the mp3 soundtrack plays); co-op zombies now damage the local player and co-op death works (authoritative snapshot health synced to the local player + `onSelfDeath` respawn banner). Tests 357/357, verify 81/0/0, build ok, check-assets 39/0, secrets clean, E2E 18/18. Deployed to the live host (`zombie-game.service` :8080 → Caddy zombie.p4ppse3n.top), bundle `index-f_-eI_zd.js`.
 - **Version 2**: COMPLETE — zero open code items; E2E 18/18; headless suite green.
 - **Deployed**: GitHub Pages (mattiasgrondahl.github.io/deadfall-stockholm-afterdark) —
   live at gh-pages `3648a7c` (build of task-6 commit `0b9fc8b`, built from the committed
