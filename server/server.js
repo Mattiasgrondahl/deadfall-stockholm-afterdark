@@ -80,6 +80,23 @@ function sanitizeName(raw) {
 // clients; POST inserts a qualifying score and keeps the best HS_TOP.
 const HS_TOP = 10
 
+// v8: a fresh board (no persisted file, or an empty one) starts from a seeded
+// ladder of 10 named ranks at 1000, 900 … 100 so the title screen always shows
+// a full top-10. A new score that beats the lowest rank bumps the rest down a
+// step and drops the 11th, keeping exactly the 10 highest (normalizeTop).
+const DEFAULT_TOP = [
+  { name: 'REAPER', score: 1000 },
+  { name: 'GRIM', score: 900 },
+  { name: 'ROT', score: 800 },
+  { name: 'SHAMBLER', score: 700 },
+  { name: 'HORDE', score: 600 },
+  { name: 'CRAWLER', score: 500 },
+  { name: 'BLOATER', score: 400 },
+  { name: 'SPITTER', score: 300 },
+  { name: 'WALKER', score: 200 },
+  { name: 'SETTOR', score: 100 }
+]
+
 /** Coerce one stored/hosted entry to a clean {name, score}; null when junk. */
 function cleanEntry(e) {
   if (!e || typeof e !== 'object') return null
@@ -109,14 +126,19 @@ function hsFileFor(room) {
 }
 
 /** Read the persisted leaderboard for `room`. v6: the file is {top:[…]}; a
- *  legacy {best, name} file is migrated into a one-entry list. Returns {top}. */
+ *  legacy {best, name} file is migrated into a one-entry list. v8: a missing or
+ *  empty board falls back to the seeded DEFAULT_TOP ladder so a fresh room shows
+ *  a full top-10 instead of nothing. Returns {top}. */
 function readHighScore(room = DEFAULT_ROOM) {
   try {
     const j = JSON.parse(fs.readFileSync(hsFileFor(room), 'utf8'))
-    if (Array.isArray(j.top)) return { top: normalizeTop(j.top) }
+    if (Array.isArray(j.top)) {
+      const top = normalizeTop(j.top)
+      return { top: top.length ? top : DEFAULT_TOP.slice() }
+    }
     const c = cleanEntry({ score: j.best, name: j.name })
-    return { top: c ? [c] : [] }
-  } catch { return { top: [] } }
+    return { top: c ? [c] : DEFAULT_TOP.slice() }
+  } catch { return { top: DEFAULT_TOP.slice() } }
 }
 
 /** Persist the leaderboard for `room`; failures are swallowed (memory stands). */

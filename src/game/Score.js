@@ -197,7 +197,10 @@ export class Score {
 
   /** Submit the current best + holder name to the hosted backend (POST
    *  /api/highscore). Best-effort: any failure is swallowed — the local best
-   *  already stands. The name is sent sanitized; the server re-validates. */
+   *  already stands. The name is sent sanitized; the server re-validates.
+   *  v8: the POST response carries the room's updated top-10 board, so we adopt
+   *  it here — a run that beats the lowest listed score now shows the player's
+   *  own name on the board immediately, without waiting for a reload/adoptBest. */
   async submitBest(fetchFn) {
     const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
     if (!f || !(this.best > 0)) return false
@@ -207,7 +210,27 @@ export class Score {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ score: this.best, name: this.bestName || this.name || '', room: this.room })
       })
-      return !!r && r.ok
+      if (!r || !r.ok) return false
+      // Adopt the server's authoritative board so the title screen reflects the
+      // new entry right away (same defensive sanitize as adoptBest).
+      let updated = false
+      try {
+        const j = await r.json()
+        const rawTop = Array.isArray(j && j.top) ? j.top : []
+        const top = []
+        for (const e of rawTop) {
+          if (!e || typeof e !== 'object') continue
+          const sv = Number(e.score)
+          if (Number.isFinite(sv) && sv > 0) top.push({ name: sanitizeName(e.name), score: Math.floor(sv) })
+        }
+        const topChanged = top.length !== this.top.length ||
+          top.some((e, i) => !this.top[i] || this.top[i].score !== e.score || this.top[i].name !== e.name)
+        if (topChanged) { this.top = top; updated = true }
+        const bv = Number(j && j.best)
+        if (Number.isFinite(bv) && bv > this.best) { this.best = bv; this.bestName = sanitizeName(j && j.name); updated = true }
+      } catch { /* response not JSON — the POST still landed */ }
+      if (updated && this._onBestChange) this._onBestChange()
+      return true
     } catch (err) { return false }
   }
 

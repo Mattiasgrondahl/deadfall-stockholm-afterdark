@@ -104,7 +104,7 @@ test('index.html is served cache-negotiated, not immutable', async () => {
   } finally { s.close() }
 })
 
-test('v7: each room code keeps its own leaderboard, isolated from the default', async () => {
+test('v7/v8: each room keeps its own seeded leaderboard, isolated from the default', async () => {
   // Point the high-score store at a temp file so per-room sibling files do not
   // touch the real server/highscore.json.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-hs-'))
@@ -113,18 +113,26 @@ test('v7: each room code keeps its own leaderboard, isolated from the default', 
   const s = await listen({ highScore: 500, highScoreName: 'Ana' })
   try {
     const post = (body) => fetch(s.base + '/api/highscore', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
-    // Post into room "CRYPT-9": it starts empty (independent of the default board).
+    // v8: a fresh room starts from the seeded 10-rank ladder (REAPER 1000 … SETTOR 100).
     const inRoom = await (await post(JSON.stringify({ score: 300, name: 'Zed', room: 'CRYPT-9' }))).json()
-    assert.deepEqual(inRoom.top, [{ name: 'Zed', score: 300 }], 'room board starts from its own posts')
-    // The default board is untouched by the room post.
+    assert.equal(inRoom.top.length, 10, 'room board holds the full 10-rank ladder')
+    assert.equal(inRoom.best, 1000, 'a fresh room leads with the seeded top rank')
+    // A 300 ties SPITTER (300) and bumps SETTOR (100) off the bottom — the list
+    // keeps only the 10 highest, sorted desc.
+    assert.ok(inRoom.top.some((e) => e.name === 'Zed' && e.score === 300), 'the posted name appears')
+    assert.ok(!inRoom.top.some((e) => e.name === 'SETTOR'), 'the lowest rank is bumped off')
+    assert.deepEqual(inRoom.top.map((e) => e.score), [1000, 900, 800, 700, 600, 500, 400, 300, 300, 200], 'sorted desc, capped at 10')
+    // The default board (seeded one-entry here) is untouched by the room post.
     const def = await (await fetch(s.base + '/api/highscore')).json()
     assert.equal(def.best, 500, 'default board unaffected by room posts')
-    // A second room is separate again.
+    // A second room is separate again — its own seeded ladder, no Zed.
     const b = await (await post(JSON.stringify({ score: 800, name: 'Bo', room: 'HORDE-7' }))).json()
-    assert.deepEqual(b.top, [{ name: 'Bo', score: 800 }], 'room B has its own list')
+    assert.ok(b.top.some((e) => e.name === 'Bo' && e.score === 800), 'room B has its own entry')
+    assert.ok(!b.top.some((e) => e.name === 'Zed'), 'room B does not see room A posts')
     // Reading room A via ?room= returns only room A.
     const a = await (await fetch(s.base + '/api/highscore?room=CRYPT-9')).json()
-    assert.deepEqual(a.top.map((e) => e.score), [300], 'room A read back in isolation')
+    assert.ok(a.top.some((e) => e.name === 'Zed'), 'room A read back in isolation')
+    assert.ok(!a.top.some((e) => e.name === 'Bo'), 'room A does not see room B posts')
     // A blank/missing room resolves to the default board.
     const blank = await (await fetch(s.base + '/api/highscore?room=')).json()
     assert.equal(blank.best, 500, 'blank room falls back to default')

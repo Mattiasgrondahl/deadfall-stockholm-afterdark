@@ -69,3 +69,25 @@ test('submitBest POSTs the best and commitRecord chains both', async () => {
   assert.equal(await idle.submitBest(f), false, 'best 0 submits nothing')
   assert.equal(calls.length, 1, 'no extra call')
 })
+
+test('v8: submitBest adopts the returned board so the scorer appears immediately', async () => {
+  // The POST response carries the room's updated top-10 with the player's new
+  // entry slotted in; submitBest must adopt it so the title board shows the
+  // player's name without waiting for a reload/adoptBest.
+  const s = new Score({ localStorage: makeStorage() }, () => 1)
+  s.name = 'Rex'
+  s.value = 450
+  s.newRecord()
+  let fired = 0
+  s._onBestChange = () => { fired++ }
+  const posted = await s.submitBest(fakeFetch({
+    json: { best: 900, name: 'Zed', top: [
+      { name: 'Zed', score: 900 }, { name: 'Rex', score: 450 }, { name: 'Ana', score: 300 }
+    ] }
+  }))
+  assert.equal(posted, true, 'POST landed')
+  assert.deepEqual(s.top.map((e) => e.name), ['Zed', 'Rex', 'Ana'], 'board adopted from the POST response')
+  assert.equal(s.best, 900, 'higher hosted best adopted')
+  assert.equal(s.bestName, 'Zed', 'holder name adopted')
+  assert.equal(fired, 1, 'change callback fired so the title board re-renders')
+})
