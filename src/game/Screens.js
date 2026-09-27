@@ -126,39 +126,39 @@ export class Screens {
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
     panelT.appendChild(grid); panelT.appendChild(board); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
-    // v3 T6: a display name for the SOLO run. It is sanitized (control chars
-    // stripped, whitespace collapsed, clamped to 24) and attributed to a new
-    // high score, then hosted so every visitor sees the record holder's name.
+    // v11: ONE display name drives both modes. It is sanitized (control chars
+    // stripped, whitespace collapsed, clamped to 24), attributed to a solo high
+    // score AND sent to the co-op room, so the same generated handle appears on
+    // the leaderboard and to other players. (Previously two separate inputs —
+    // "PLAYER" for solo and a second "your name" for co-op — duplicated the same
+    // value.)
     const nameRow = d.createElement('div'); nameRow.className = 'mp-row'
     const nameLabel = d.createElement('div'); nameLabel.className = 'difficulty-label'; nameLabel.textContent = 'PLAYER'
-    this._soloNameInput = d.createElement('input'); this._soloNameInput.className = 'mp-input'
-    this._soloNameInput.type = 'text'; this._soloNameInput.placeholder = 'your name'; this._soloNameInput.value = 'player'
+    this._nameInput = d.createElement('input'); this._nameInput.className = 'mp-input'
+    this._nameInput.type = 'text'; this._nameInput.placeholder = 'your name'; this._nameInput.value = 'player'
     const soloHint = d.createElement('div'); soloHint.className = 'tagline dim'
-    soloHint.textContent = 'Shown on the high score if you set a record.'
-    nameRow.appendChild(nameLabel); nameRow.appendChild(this._soloNameInput); nameRow.appendChild(soloHint)
+    soloHint.textContent = 'Your name — shown on the high score and to other players in co-op.'
+    nameRow.appendChild(nameLabel); nameRow.appendChild(this._nameInput); nameRow.appendChild(soloHint)
     panelT.appendChild(nameRow)
     const startBtn = d.createElement('button'); startBtn.className = 'btn primary'; startBtn.textContent = 'START'
     startBtn.addEventListener('click', () => this._startSolo())
     panelT.appendChild(startBtn)
-    // CO-OP: a room code + display name join the server-authoritative room.
-    // JOIN calls Game.startMultiplayer, which builds the client controller and
-    // renders other players' avatars + a scoreboard from server snapshots.
+    // CO-OP: a room code joins the server-authoritative room; the name above is
+    // reused. JOIN calls Game.startMultiplayer, which builds the client
+    // controller and renders other players' avatars + a scoreboard from server
+    // snapshots.
     const mpRow = d.createElement('div'); mpRow.className = 'mp-row'
     const mpLabel = d.createElement('div'); mpLabel.className = 'difficulty-label'; mpLabel.textContent = 'CO-OP'
     this._roomInput = d.createElement('input'); this._roomInput.className = 'mp-input'
     this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'default'
-    this._nameInput = d.createElement('input'); this._nameInput.className = 'mp-input'
-    this._nameInput.type = 'text'; this._nameInput.placeholder = 'your name'; this._nameInput.value = 'player'
-    // v3 T6b: short helper lines under each co-op field, rendered via
-    // textContent (same XSS rules as the high-score name).
+    // v3 T6b: short helper line under the co-op field, rendered via textContent
+    // (same XSS rules as the high-score name).
     const roomHint = d.createElement('div'); roomHint.className = 'tagline dim'
     roomHint.textContent = 'Room code: the shared game name — everyone who types it lands in the same session.'
-    const nameHint = d.createElement('div'); nameHint.className = 'tagline dim'
-    nameHint.textContent = 'Your name: shown to other players and on the scoreboard.'
     const joinBtn = d.createElement('button'); joinBtn.className = 'btn'; joinBtn.textContent = 'JOIN CO-OP'
     joinBtn.addEventListener('click', () => this._joinCoop())
     mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(roomHint)
-    mpRow.appendChild(this._nameInput); mpRow.appendChild(nameHint); mpRow.appendChild(joinBtn)
+    mpRow.appendChild(joinBtn)
     panelT.appendChild(mpRow)
     // Title-screen backdrop: the Wan2GP-generated alley plate sits behind the
     // panel inside the title overlay (dimmed by the overlay's own rgba wash).
@@ -432,10 +432,11 @@ export class Screens {
     this._game.startMultiplayer({ room, name })
   }
 
-  /** v3 T6: START a solo run, carrying the chosen display name into the score
-   *  so a new record is attributed to it (and hosted). */
+  /** v3 T6 / v11: START a solo run, carrying the chosen display name into the
+   *  score so a new record is attributed to it (and hosted). The same name input
+   *  feeds co-op, so one handle covers both modes. */
   _startSolo() {
-    const name = (this._soloNameInput && this._soloNameInput.value || '').trim()
+    const name = (this._nameInput && this._nameInput.value || '').trim()
     if (this._game.score && name) this._game.score.setName(name)
     this._game.startGame()
   }
@@ -490,7 +491,7 @@ export class Screens {
     if (this._nameRolled) return
     this._nameRolled = true
     const name = randomPlayerName()
-    if (this._soloNameInput && this._soloNameInput.value === 'player') this._soloNameInput.value = name
+    // v11: one name input feeds both solo and co-op, so only it is prefilled.
     if (this._nameInput && this._nameInput.value === 'player') this._nameInput.value = name
     // v7: a random zombie-themed room code so a fresh co-op session lands in a
     // uniquely-named room with its own leaderboard, instead of the shared

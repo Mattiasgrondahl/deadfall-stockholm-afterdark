@@ -813,9 +813,15 @@ function fakeWave(o) {
   collectRows(title)
   const coopRow = mpRows.find((r) => r.children.some((c) => c.classList && c.classList.contains('difficulty-label') && c.textContent === 'CO-OP'))
   assert.ok(coopRow, 'co-op row present')
+  // v11: the co-op row now carries only the room-code helper (the name field was
+  // merged into the PLAYER row). The room helper still describes the shared room.
   const helperTexts = coopRow.children.filter((c) => c.classList.contains('tagline')).map((c) => c.textContent)
   assert.ok(helperTexts.some((t) => /shared game name/i.test(t)), 'room-code helper describes the shared room')
-  assert.ok(helperTexts.some((t) => /scoreboard/i.test(t)), 'name helper mentions the scoreboard')
+  // The single name field now covers both modes: its helper mentions the high
+  // score and other players (co-op).
+  const nameHelper = soloInput.children.filter((c) => c.classList.contains('tagline')).map((c) => c.textContent)
+  assert.ok(nameHelper.some((t) => /high score/i.test(t)), 'name helper mentions the high score')
+  assert.ok(nameHelper.some((t) => /other players|co-op/i.test(t)), 'name helper mentions co-op players')
   screens.dispose()
 }
 
@@ -848,11 +854,13 @@ function fakeWave(o) {
   const r0 = rows[0]
   assert.strictEqual(r0.children.length, 3, 'rank cell keeps only rank/name/score spans')
   assert.ok(r0.textContent.includes('<img'), 'hostile name survives as inert text')
-  // Random name prefill: the solo + co-op inputs no longer hold "player".
+  // Random name prefill: the single merged name input no longer holds "player".
   const nameInputs = []
   const collectInputs = (el) => { for (const c of el.children) { if (String(c.tagName).toLowerCase() === 'input') nameInputs.push(c); collectInputs(c) } }
   collectInputs(title)
-  const soloName = nameInputs.find((c) => c.placeholder === 'your name')
+  const nameFields = nameInputs.filter((c) => c.placeholder === 'your name')
+  assert.strictEqual(nameFields.length, 1, 'v11: the two name fields are merged into one')
+  const soloName = nameFields[0]
   assert.ok(soloName, 'a name input exists')
   assert.notStrictEqual(soloName.value, 'player', 'default name replaced by a random handle')
   assert.ok(/\S \S/.test(soloName.value), 'random handle is "Adjective Noun"')

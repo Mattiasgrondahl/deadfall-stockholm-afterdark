@@ -489,8 +489,10 @@ html, body {
   position: absolute;
   inset: 0;
   display: none;
-  align-items: center;
-  justify-content: center;
+  /* v11: the panel centers itself via `margin: auto` (see .panel) rather than
+     flex centering, so a panel taller than the viewport scrolls to reveal the
+     START / JOIN buttons instead of being clipped at the top. */
+  overflow-y: auto;
   background: rgba(4, 6, 12, 0.78);
   backdrop-filter: blur(3px);
   pointer-events: auto;
@@ -516,7 +518,12 @@ html, body {
   background: var(--panel);
   border: 1px solid var(--panel-edge);
   padding: 42px 56px;
-  max-width: 620px;
+  /* v11: auto margins center the panel in the flex overlay while still letting
+     it scroll into view when it is taller than the viewport. */
+  margin: auto;
+  /* v11: widened from 620px so the merged name/room fields and the TOP-10
+     board sit comfortably without crowding. */
+  max-width: 720px;
   width: calc(100% - 64px);
   text-align: center;
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.7), 0 0 8px rgba(110, 168, 255, 0.15);
