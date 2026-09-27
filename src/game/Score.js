@@ -49,6 +49,10 @@ export class Score {
     // sanitized; render via textContent only.
     this.name = this._loadName()
     this.bestName = ''
+    // v6: the hosted top-10 leaderboard (from GET /api/highscore). Each entry
+    // is {name, score}, already sanitized server-side; rendered via
+    // textContent only. Empty until adoptBest lands.
+    this.top = []
   }
 
   _storage() {
@@ -145,6 +149,19 @@ export class Score {
       const r = await f(this._apiBase() + '/api/highscore')
       if (!r || !r.ok) return this.best
       const j = await r.json()
+      // v6: adopt the hosted top-10 leaderboard. The server returns
+      // {best, name, top:[{name,score}…]}; re-sanitize defensively and keep
+      // only clean entries so a hostile payload renders as inert text.
+      const rawTop = Array.isArray(j && j.top) ? j.top : []
+      const top = []
+      for (const e of rawTop) {
+        if (!e || typeof e !== 'object') continue
+        const sv = Number(e.score)
+        if (Number.isFinite(sv) && sv > 0) top.push({ name: sanitizeName(e.name), score: Math.floor(sv) })
+      }
+      const topChanged = top.length !== this.top.length ||
+        top.some((e, i) => !this.top[i] || this.top[i].score !== e.score || this.top[i].name !== e.name)
+      if (topChanged) this.top = top
       const v = Number(j && j.best)
       if (Number.isFinite(v) && v > this.best) {
         this.best = v
@@ -155,6 +172,8 @@ export class Score {
           const s = this._storage()
           if (s) s.setItem(STORAGE_KEY, String(v))
         } catch (err) { /* storage unavailable — in-memory best still set */ }
+      }
+      if (topChanged || (Number.isFinite(v) && v > 0 && v >= this.best)) {
         if (this._onBestChange) this._onBestChange()
       }
     } catch (err) { /* offline / no backend — keep the local best */ }

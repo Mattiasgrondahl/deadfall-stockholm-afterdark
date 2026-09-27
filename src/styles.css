@@ -280,6 +280,34 @@ html, body {
   color: var(--warn);
 }
 
+/* v6: top-10 leaderboard under the title high-score line */
+.highscore-board {
+  margin-top: 10px;
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 320px;
+}
+.highscore-board .board-title {
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  color: var(--ink-dim);
+  margin-bottom: 4px;
+}
+.highscore-board .board-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+.highscore-board .board-rank { color: var(--ink-dim); width: 22px; text-align: right; }
+.highscore-board .board-name { color: var(--ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.highscore-board .board-score { color: var(--warn); }
+.highscore-board .board-row:first-of-type .board-name { color: var(--warn); }
+
 /* new-record line (game-over screen) */
 .record {
   margin-top: 10px;

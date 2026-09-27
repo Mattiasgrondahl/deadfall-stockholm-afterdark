@@ -38,6 +38,21 @@ test('adoptBest survives offline, bad json, and missing fetch', async () => {
   assert.equal(noFetch.best, 50)
 })
 
+test('v6: adoptBest adopts the hosted top-10 leaderboard', async () => {
+  const s = new Score({ localStorage: makeStorage() }, () => 1)
+  let fired = 0
+  s._onBestChange = () => { fired++ }
+  await s.adoptBest(fakeFetch({ json: { best: 900, name: 'Zed', top: [{ name: 'Zed', score: 900 }, { name: 'Ana', score: 500 }] } }))
+  assert.equal(s.best, 900)
+  assert.equal(s.bestName, 'Zed')
+  assert.deepEqual(s.top, [{ name: 'Zed', score: 900 }, { name: 'Ana', score: 500 }], 'leaderboard adopted')
+  assert.equal(fired, 1, 'change callback fired once')
+  // A hostile name in the list is re-sanitized defensively on the client too
+  // (control chars stripped first, so the newlines vanish entirely).
+  await s.adoptBest(fakeFetch({ json: { best: 10, top: [{ name: '<b>x</b>\n\ny', score: 10 }] } }))
+  assert.equal(s.top[0].name, '<b>x</b>y', 'control chars stripped')
+})
+
 test('submitBest POSTs the best and commitRecord chains both', async () => {
   const calls = []
   const f = async (url, init) => { calls.push({ url, init }); return { ok: true, json: async () => ({ best: 777 }) } }

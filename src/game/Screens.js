@@ -13,6 +13,24 @@
 
 import { VERSION } from '../version.js'
 
+// v6: random player-handle generator. AGENTS.md forbids Math.random in src/,
+// so this uses the standard seeded-LCG shape (see AmmoDrops._rand) seeded from
+// the load time — a fresh name per page load, deterministic within a load so
+// tests can stub Date.now for a fixed expected handle. Adjective + noun keeps
+// the names readable and unique enough for a shared leaderboard.
+const NAME_ADJ = ['Grim', 'Pale', 'Ashen', 'Hollow', 'Feral', 'Silent', 'Crimson', 'Frozen', 'Rotten', 'Midnight', 'Iron', 'Violet', 'Cinder', 'Hollow', 'Wretched', 'Lonely']
+const NAME_NOUN = ['Revenant', 'Stray', 'Nomad', 'Wraith', 'Sentinel', 'Crawler', 'Howler', 'Marauder', 'Pilgrim', 'Ghost', 'Ripper', 'Lurker', 'Warden', 'Vagrant', 'Shade', 'Reaper']
+
+/** Pick a random "Adjective Noun" handle, seeded from the wall clock. Pass a
+ *  fixed seed (tests) to get a stable name. */
+export function randomPlayerName(seed) {
+  let s = (seed == null ? Date.now() : seed) >>> 0
+  const rand = () => { s = (Math.imul(s, 48271) >>> 0) % 65537; return s / 65537 }
+  const a = NAME_ADJ[Math.floor(rand() * NAME_ADJ.length) % NAME_ADJ.length]
+  const n = NAME_NOUN[Math.floor(rand() * NAME_NOUN.length) % NAME_NOUN.length]
+  return a + ' ' + n
+}
+
 export class Screens {
   constructor(root, game) {
     this._doc = root.ownerDocument
@@ -41,6 +59,22 @@ export class Screens {
     // is live. Rendered via textContent (XSS-safe, like every other label here).
     const ver = d.createElement('div'); ver.className = 'version'; ver.textContent = 'v' + VERSION
     const hs = d.createElement('div'); hs.className = 'highscore'; this._highScoreText = hs; hs.textContent = 'HIGH SCORE: 0'
+    // v6: a top-10 leaderboard under the title high-score line. Built once,
+    // repopulated from score.top (server-sourced) whenever it changes. Every
+    // cell is textContent-only, so a hostile name renders as inert text.
+    const board = d.createElement('div'); board.className = 'highscore-board'; this._boardEl = board
+    const boardTitle = d.createElement('div'); boardTitle.className = 'board-title'; boardTitle.textContent = 'TOP 10'
+    board.appendChild(boardTitle)
+    this._boardRows = []
+    for (let i = 0; i < 10; i++) {
+      const row = d.createElement('div'); row.className = 'board-row'
+      const rank = d.createElement('span'); rank.className = 'board-rank'; rank.textContent = (i + 1) + '.'
+      const nm = d.createElement('span'); nm.className = 'board-name'; nm.textContent = ''
+      const sc = d.createElement('span'); sc.className = 'board-score'; sc.textContent = ''
+      row.appendChild(rank); row.appendChild(nm); row.appendChild(sc)
+      board.appendChild(row)
+      this._boardRows.push({ nm, sc })
+    }
     const grid = d.createElement('div'); grid.className = 'controls-grid'
     // The full live control contract (matches Input.js key bindings exactly).
     for (const [k, a] of [
@@ -75,7 +109,7 @@ export class Screens {
     this._nightmareBtn.addEventListener('click', () => this._setDifficulty('nightmare'))
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
-    panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
+    panelT.appendChild(grid); panelT.appendChild(board); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
     // v3 T6: a display name for the SOLO run. It is sanitized (control chars
     // stripped, whitespace collapsed, clamped to 24) and attributed to a new
     // high score, then hosted so every visitor sees the record holder's name.
@@ -398,6 +432,8 @@ export class Screens {
   showTitle() {
     this._hideAll()
     if (this._game.score) this._highScoreText.textContent = this._hsLabel(this._game.score)
+    this._renderBoard()
+    this._prefillRandomName()
     this._title.classList.add('visible')
     // The hosted best may land after boot (GET /api/highscore is async) —
     // refresh the label when it does, without ever lowering what is shown.
@@ -406,9 +442,35 @@ export class Screens {
         if (this._game.score && this._highScoreText.textContent !== this._hsLabel(this._game.score)) {
           this._highScoreText.textContent = this._hsLabel(this._game.score)
         }
+        this._renderBoard()
       }
       this._game.score._onBestChange = this._hsRefresh
     }
+  }
+
+  /** v6: populate the title-screen TOP 10 board from the hosted leaderboard
+   *  (score.top). Empty slots stay blank. textContent-only, so a hostile name
+   *  can never become markup. */
+  _renderBoard() {
+    if (!this._boardRows) return
+    const top = (this._game.score && this._game.score.top) || []
+    for (let i = 0; i < this._boardRows.length; i++) {
+      const e = top[i]
+      this._boardRows[i].nm.textContent = e ? e.name : ''
+      this._boardRows[i].sc.textContent = e ? String(e.score) : ''
+    }
+  }
+
+  /** v6: on the first title screen, replace the default "player" name with a
+   *  random generated one so a fresh visitor starts with a distinct handle.
+   *  Only fills inputs still holding the default, so a returning player's
+   *  saved name is never clobbered. */
+  _prefillRandomName() {
+    if (this._nameRolled) return
+    this._nameRolled = true
+    const name = randomPlayerName()
+    if (this._soloNameInput && this._soloNameInput.value === 'player') this._soloNameInput.value = name
+    if (this._nameInput && this._nameInput.value === 'player') this._nameInput.value = name
   }
 
   /** v3 T6: the title HIGH SCORE label. When the hosted record has a holder

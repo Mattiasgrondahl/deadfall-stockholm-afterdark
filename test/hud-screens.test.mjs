@@ -2,7 +2,7 @@
 // (element + document stubs). No real browser is involved.
 import assert from 'node:assert'
 import { HUD } from '../src/game/HUD.js'
-import { Screens } from '../src/game/Screens.js'
+import { Screens, randomPlayerName } from '../src/game/Screens.js'
 import { Score } from '../src/game/Score.js'
 import { VERSION } from '../src/version.js'
 
@@ -775,6 +775,48 @@ function fakeWave(o) {
   const helperTexts = coopRow.children.filter((c) => c.classList.contains('tagline')).map((c) => c.textContent)
   assert.ok(helperTexts.some((t) => /shared game name/i.test(t)), 'room-code helper describes the shared room')
   assert.ok(helperTexts.some((t) => /scoreboard/i.test(t)), 'name helper mentions the scoreboard')
+  screens.dispose()
+}
+
+{
+  // v6: the title screen renders a TOP 10 leaderboard from score.top, and the
+  // name inputs are prefilled with a random handle instead of "player".
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const score = new Score({ localStorage: null }, () => 1)
+  score.best = 900
+  score.bestName = 'Zed'
+  score.top = [{ name: 'Zed', score: 900 }, { name: 'Ana', score: 500 }, { name: 'Kai', score: 120 }]
+  game.score = score
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  const board = find(title, 'highscore-board')
+  assert.ok(board, 'title screen has a leaderboard')
+  assert.ok(board.textContent.includes('TOP 10'), 'board has a heading')
+  const rows = board.children.filter((c) => c.classList.contains('board-row'))
+  assert.strictEqual(rows.length, 10, 'exactly ten rows')
+  assert.ok(rows[0].textContent.includes('Zed') && rows[0].textContent.includes('900'), 'rank 1 filled')
+  assert.ok(rows[1].textContent.includes('Ana') && rows[1].textContent.includes('500'), 'rank 2 filled')
+  assert.ok(rows[2].textContent.includes('Kai'), 'rank 3 filled')
+  assert.ok(!rows[3].textContent.includes('Zed'), 'empty rank 4 has no stale name')
+  // textContent-only: a hostile name adds no markup nodes to the row.
+  score.top = [{ name: '<img src=x>', score: 5 }]
+  screens._renderBoard()
+  const r0 = rows[0]
+  assert.strictEqual(r0.children.length, 3, 'rank cell keeps only rank/name/score spans')
+  assert.ok(r0.textContent.includes('<img'), 'hostile name survives as inert text')
+  // Random name prefill: the solo + co-op inputs no longer hold "player".
+  const nameInputs = []
+  const collectInputs = (el) => { for (const c of el.children) { if (String(c.tagName).toLowerCase() === 'input') nameInputs.push(c); collectInputs(c) } }
+  collectInputs(title)
+  const soloName = nameInputs.find((c) => c.placeholder === 'your name')
+  assert.ok(soloName, 'a name input exists')
+  assert.notStrictEqual(soloName.value, 'player', 'default name replaced by a random handle')
+  assert.ok(/\S \S/.test(soloName.value), 'random handle is "Adjective Noun"')
+  // Deterministic: randomPlayerName with a fixed seed is stable.
+  assert.strictEqual(randomPlayerName(1234), randomPlayerName(1234), 'seeded name is deterministic')
   screens.dispose()
 }
 

@@ -48,29 +48,70 @@ function sanitizeName(raw) {
     .slice(0, HS_MAX_NAME)
 }
 
-/** Read the persisted high score + holder name ({best, name}; 0/'' when
- *  missing/corrupt). v3 T6: the record is now named. */
+// Top-10 leaderboard: the hosted record is now a ranked list of entries
+// rather than a single best. GET returns {best, name, top:[{name,score}…]}
+// where best/name mirror top[0] for backward compatibility with older
+// clients; POST inserts a qualifying score and keeps the best HS_TOP.
+const HS_TOP = 10
+
+/** Coerce one stored/hosted entry to a clean {name, score}; null when junk. */
+function cleanEntry(e) {
+  if (!e || typeof e !== 'object') return null
+  const v = Number(e.score)
+  if (!Number.isFinite(v) || v <= 0) return null
+  return { name: sanitizeName(e.name), score: Math.floor(v) }
+}
+
+/** Normalize a top list: drop junk, sort by score desc (ties keep insertion
+ *  order), clamp to HS_TOP. */
+function normalizeTop(list) {
+  const out = []
+  for (const e of Array.isArray(list) ? list : []) {
+    const c = cleanEntry(e)
+    if (c) out.push(c)
+  }
+  out.sort((a, b) => b.score - a.score)
+  return out.slice(0, HS_TOP)
+}
+
+/** Read the persisted leaderboard. v6: the file is now {top:[…]}; a legacy
+ *  {best, name} file is migrated into a one-entry list. Returns {top}. */
 function readHighScore() {
   try {
     const j = JSON.parse(fs.readFileSync(HS_FILE, 'utf8'))
-    const v = Number(j.best)
-    const best = Number.isFinite(v) && v > 0 ? Math.floor(v) : 0
-    return { best, name: sanitizeName(j.name) }
-  } catch { return { best: 0, name: '' } }
+    if (Array.isArray(j.top)) return { top: normalizeTop(j.top) }
+    const c = cleanEntry({ score: j.best, name: j.name })
+    return { top: c ? [c] : [] }
+  } catch { return { top: [] } }
 }
 
-/** Persist the high score + holder name; failures are swallowed (in-memory
- *  value stands). v3 T6: stores {best, name}. */
-function writeHighScore(best, name) {
-  try { fs.writeFileSync(HS_FILE, JSON.stringify({ best: Math.floor(best), name: sanitizeName(name) })) } catch { /* read-only fs */ }
+/** Persist the leaderboard; failures are swallowed (in-memory value stands). */
+function writeHighScore(top) {
+  try { fs.writeFileSync(HS_FILE, JSON.stringify({ top })) } catch { /* read-only fs */ }
 }
 
-/** Handle /api/highscore: GET returns {best, name}, POST {score, name} raises
- *  it (name re-validated server-side). v3 T6. */
+/** Insert a score into the leaderboard if it qualifies (any entry that fits
+ *  within the top HS_TOP ranks is kept, even below the current best). Returns
+ *  the new list. */
+function insertTop(top, score, name) {
+  const c = cleanEntry({ score, name })
+  if (!c) return top
+  const next = top.slice()
+  next.push(c)
+  return normalizeTop(next)
+}
+
+/** Handle /api/highscore: GET returns {best, name, top}, POST {score, name}
+ *  inserts into the top-10 list (name re-validated server-side). v6. */
 function serveHighScore(req, res, state) {
+  const payload = () => {
+    const top = state.top
+    const lead = top[0]
+    return { best: lead ? lead.score : 0, name: lead ? lead.name : '', top }
+  }
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-    res.end(JSON.stringify({ best: state.best, name: state.name }))
+    res.end(JSON.stringify(payload()))
     return
   }
   if (req.method === 'POST') {
@@ -80,15 +121,14 @@ function serveHighScore(req, res, state) {
       let v = NaN, nm = ''
       try { const j = JSON.parse(body); v = Number(j.score); nm = j.name } catch { /* bad json -> NaN */ }
       if (Number.isFinite(v) && v >= 0 && v <= 1e9) {
-        const next = Math.floor(v)
-        if (next > state.best) {
-          state.best = next
-          state.name = sanitizeName(nm)
-          writeHighScore(next, state.name)
+        const next = insertTop(state.top, v, nm)
+        if (next !== state.top) {
+          state.top = next
+          writeHighScore(next)
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      res.end(JSON.stringify({ best: state.best, name: state.name }))
+      res.end(JSON.stringify(payload()))
       return
     })
     return
@@ -230,17 +270,18 @@ export function startServer(opts = {}) {
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0'
   const room = new Room(opts.difficulty)
   // Shared high-score state, attached to every request so serveStatic can see
-  // it without module-level mutable state (tests get a fresh store). v3 T6: the
-  // record is named; opts.highScore overrides the best, opts.highScoreName the
-  // holder name (used by tests).
+  // it without module-level mutable state (tests get a fresh store). v6: the
+  // record is a top-10 list; opts.highScore seeds a one-entry leaderboard and
+  // opts.highScoreName its holder name (used by tests).
   const boot = readHighScore()
-  const hsState = {
-    best: Number.isFinite(opts.highScore) ? Math.floor(opts.highScore) : boot.best,
-    // When a test seeds the best via opts.highScore, ignore the on-disk holder
-    // name (it may carry a value from a prior run) unless one is given.
-    name: opts.highScoreName != null ? sanitizeName(opts.highScoreName)
-      : (Number.isFinite(opts.highScore) ? '' : boot.name)
+  let top
+  if (Number.isFinite(opts.highScore)) {
+    const c = cleanEntry({ score: opts.highScore, name: opts.highScoreName })
+    top = c ? [c] : []
+  } else {
+    top = boot.top
   }
+  const hsState = { top }
   const httpServer = http.createServer((req, res) => { req._hsState = hsState; serveStatic(req, res) })
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
