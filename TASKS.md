@@ -45,7 +45,7 @@ the original; state below is recovered from git history + probe evidence.
   in a real browser. Superseded `walker.glb`/`walker-rigged.glb` removed; only
   `walker-final.glb` remains. See `docs/perf-baseline.md` §7 + `.research/perf-skin-gate-round9.md`
   + `.research/pixal3d-walker-round10-report.md`.
-- **Current (Sep 26, branch `v3` @ `2a5692e`, pushed to origin/v3)**: v6 audio (8) playlist, v6
+- **Current (Sep 27, branch `v3` @ `4c50cb8`, pushed to origin/v3)**: v6 audio (8) playlist, v6
   tooling (1)+(2), v6 visuals (11) Wan2GP image pass, and **v6 hosting (1)
   hosted global high score** (`906a6af`) are committed AND pushed. **v3 T1
   dismemberment chain DONE (`82398f1`)**, **v3 T3 melee faster+longer reach+
@@ -59,7 +59,14 @@ the original; state below is recovered from git history + probe evidence.
   green: **npm test 348/348, verify-game 81 ok / 0 fail / 0 skipped, build
   green, check-assets 35/0, secrets-scan clean, E2E 18/18 PASS on :5173 with
   0 console errors.**
-  **Deployed**: gh-pages `9ce2d5f` (build of `v3` `71c11a0`) — live-verified Sep 27:
+  **Deployed (prod, `zombie.p4ppse3n.top`)**: the live host is the user-systemd
+  `zombie-game.service` (`~/zombie-app`, `node server/server.js` :8080, behind
+  root Caddy on :80/:443). Deployed the version-stamped `npm run pages` build
+  (bundle `index-FenwMKjv.js`, version `3.0.0`) Sep 27 — restarted the service
+  (active, PID 97666); verified on :8080: index serves the new bundle, `3.0.0`
+  present, `moon.jpg` 200, `/api/highscore` live, `/ws` handshake OK. This host
+  also runs the hosted high score + co-op WS (which Pages cannot).
+  **Deployed (gh-pages)**: `9ce2d5f` (build of `v3` `71c11a0`) — live-verified Sep 27:
   index references `index-C9g9DVzo.js` (200), `assets/sky/moon.jpg` serves 200,
   CDN propagated (~60 s). This Pages build carries the full v3 overhaul (T7 moon,
   T13 footprints, T14 blood, T15 poster, T16 close-out). (Supersedes `f8b5cb7`,
@@ -1995,3 +2002,25 @@ the original; state below is recovered from git history + probe evidence.
   348/348, `npm run verify` 81/0/0, `npm run build` ✓, `check-assets` 35/0,
   `secrets-scan` clean. NEXT: T16 close-out (rebuild `dist/` via `npm run pages`,
   E2E 18/18 on :5173, co-op probe, look-metrics, push `v3`).
+
+- **Ralph round 68 — deploy v3 to prod + game version stamp (`4c50cb8`)**:
+  **Prod deploy** — the live host is a user-systemd unit `zombie-game.service`
+  (`~/.config/systemd/user/zombie-game.service`, WorkingDirectory `~/zombie-app`,
+  `node server/server.js`, PORT=8080, HOST=0.0.0.0 via the `prod.conf` drop-in,
+  Restart=on-failure) behind a root **Caddy** reverse proxy on :80/:443 for
+  `zombie.p4ppse3n.top`. Deployed the fresh `npm run pages` build (bundle
+  `index-FenwMKjv.js`) by backing up `~/zombie-app/dist` → `dist.bak.<ts>`,
+  copying the new `dist/` + `server/server.js` + `package.json` into `~/zombie-app`,
+  and `systemctl --user restart zombie-game.service` (now active, PID 97666).
+  Verified on :8080: index serves `index-FenwMKjv.js`, bundle contains `3.0.0`,
+  `assets/sky/moon.jpg` 200, `/api/highscore` live (`{"best":4242,"name":""}`),
+  `/ws` responds 400 (expected non-WS GET). The domain 000s from this sandbox
+  (network isolation), but the :8080 host is confirmed serving the new build.
+  **Version stamp** — new `src/version.js` (`export const VERSION = '3.0.0'`,
+  single source of truth, headless-safe pure data); `Screens.js` imports it and
+  renders a small `v3.0.0` line on the title screen via `textContent` (XSS-safe);
+  `.version` CSS rule added; `package.json` bumped 1.0.0 → 3.0.0;
+  `test/hud-screens.test.mjs` asserts the title `.version` element shows
+  `v` + VERSION. Full `npm test` 348/348, `npm run pages` ✓, check-assets 35/0.
+  NEXT: gh-pages redeploy already done earlier this session (`9ce2d5f`); the
+  version-stamped build is live on the p4ppse3n host.
