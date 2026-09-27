@@ -26,6 +26,7 @@ import { AudioBank } from './AudioBank.js'
 import { MusicDirector } from './MusicDirector.js'
 import { PostFX } from './PostFX.js'
 import { Settings } from './Settings.js'
+import { Achievements } from './Achievements.js'
 
 // Soundtrack mp3s (YuE2 hard-rock zombie songs), served from public/. Resolved
 // against Vite's BASE_URL in the browser; the AudioBank no-ops headless. The
@@ -181,6 +182,7 @@ export class Game {
       zombiesAlive: () => this.zombies.filter(z => !z.isDead).length,
       zombiesRemaining: () => this.waveManager ? this.waveManager.remaining : 0,
       kills: () => this.kills,
+      achievements: () => this.achievements, // v3 T12: read the live tracker in tests
       setPlayerPos: (x, z) => { if (this.player) this.player.position.set(x, 1.7, z) },
       setPlayerHealth: (n) => { if (this.player) this.player.health = Math.max(0, Math.min(this.player.maxHealth, n)) },
       damagePlayer: (n) => { if (this.player) this.player.damage(n, 'debug') },
@@ -402,6 +404,7 @@ export class Game {
         if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED')
         if (this.audio) this.audio.playWaveCleared?.(w)
         if (this.musicDirector) this.musicDirector.onWaveCleared(w)
+        if (this.achievements) this.achievements.onWaveCleared() // v3 T12
         // Threat preview: tell the player what the next wave brings while the
         // intermission is running (composition + boss warning).
         const p = this.waveManager ? this.waveManager.nextWavePreview : null
@@ -423,6 +426,11 @@ export class Game {
     // Hosted high score: seed the stored best from the backend so a fresh
     // browser still shows the global record (best-effort; silent offline).
     if (!this.headless) this.score.adoptBest()
+    // WIRING:ACHIEVEMENTS (v3 T12): persistent unlock set + per-run counters.
+    // A new unlock toasts on the Screens banner; the counters reset each run.
+    this.achievements = new Achievements(this.env, (label) => {
+      if (this.screens) this.screens.showBanner('ACHIEVEMENT — ' + label)
+    })
     // WIRING:BLOOD (V10) — every weapon sprays blood
     this.blood = new Blood(this.scene)
     // WIRING:BULLETHOLES — gun shots that hit a wall leave a scorch decal.
@@ -432,6 +440,8 @@ export class Game {
     this.lamps = new Lamps(this.city ? this.city.lamps : [])
     this.lamps.audio = this.audio
     this.lamps.shards = this.glassShards
+    // v3 T12: every broken streetlamp counts toward the LAMP LIGHTER ladder.
+    this.lamps.onBreak = () => { if (this.achievements) this.achievements.onLamp() }
     if (this.weapon) {
       this.weapon.shotgun.blood = this.blood
       this.weapon.axe.blood = this.blood
@@ -487,6 +497,13 @@ export class Game {
         if (this.hud) this.hud.killMarker(z.lastHitHead ? 'head' : 'body')
         if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
         if (this.audio) this.audio.playKill?.(z.lastHitHead === true)
+        // v3 T12: feed the achievement counters (kills always; headshots when
+        // the killing blow was to the head; bosses when the kill was a brute).
+        if (this.achievements) {
+          this.achievements.onKill()
+          if (z.lastHitHead === true) this.achievements.onHeadshot()
+          if (z.type === 'brute') this.achievements.onBoss()
+        }
       },
       onDropPickup: (d) => {
         if (d && d.kind === 'battery') {
@@ -610,6 +627,7 @@ export class Game {
     if (this.lamps) this.lamps.reset()
     if (this.headPool) this.headPool.clear()
     if (this.limbs) this.limbs.clear() // v3 T1: dropped limbs do not survive a restart
+    if (this.achievements) this.achievements.resetRun() // v3 T12: per-run counters reset; unlocks persist
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
     this.timeInGame = 0
@@ -915,6 +933,8 @@ export class Game {
     this.haze.near.material.dispose()
     this.haze.far.material.dispose()
     this.haze = null
+    // v3 T12: drop the achievement → banner callback so nothing retains Screens.
+    if (this.achievements) this.achievements.dispose()
   }
 
   render() {

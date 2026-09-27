@@ -15,6 +15,7 @@ export class Lamps {
     this.lamps = lamps || []
     this.audio = null // optional AudioBank for the glass-break voice
     this.shards = null // optional shard-burst pool (set by Game)
+    this.onBreak = null // v3 T12: optional (lamp) hook, fired once per break
   }
 
   /**
@@ -46,6 +47,7 @@ export class Lamps {
     if (lamp.shaft) lamp.shaft.visible = false
     this.audio?.glassBreak?.()
     this.shards?.burst?.(lamp.x, 5.2, lamp.z)
+    if (this.onBreak) { try { this.onBreak(lamp) } catch (err) { /* a bad listener must not break the shot */ } }
   }
 
   _relight(lamp) {
