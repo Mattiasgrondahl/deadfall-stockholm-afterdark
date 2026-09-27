@@ -204,7 +204,14 @@ export class Axe {
       // Guard: no lights here, but keep the pattern uniform with Shotgun.
       if (m.geometry && m.material) {
         m.geometry.dispose()
-        m.material.dispose()
+        // v4 VISUALS (B): the textured head swaps in a material ARRAY
+        // ([steel,steel,steel,steel,texMat,texMat]); dispose every entry and
+        // free the loaded texture map so it does not leak (matches Sword).
+        const mats = Array.isArray(m.material) ? m.material : [m.material]
+        for (const mat of mats) {
+          if (mat.map) mat.map.dispose()
+          mat.dispose()
+        }
       }
     }
   }

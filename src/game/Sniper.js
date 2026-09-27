@@ -77,6 +77,29 @@ export class Sniper {
     // No muzzle-flash sprite/light: the bolt-action report is carried by the
     // audio voice, and dropping the flash keeps the scene inside the mesh and
     // light budgets with the sniper as a fifth weapon.
+    // v4 VISUALS (B3): muzzle-flash sprite + short point light at the muzzle.
+    // A Sprite is not a mesh (no mesh-budget cost) and the light is within the
+    // 40-light budget. Headless keeps no sprite (no document); the report is
+    // still carried by the audio voice.
+    let flashMap = null
+    if (typeof document !== 'undefined') {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64
+      const g = c.getContext('2d')
+      const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30)
+      grad.addColorStop(0, 'rgba(255, 236, 190, 1)')
+      grad.addColorStop(0.4, 'rgba(255, 205, 140, 0.7)')
+      grad.addColorStop(1, 'rgba(255, 185, 110, 0)')
+      g.fillStyle = grad; g.fillRect(0, 0, 64, 64)
+      flashMap = new THREE.CanvasTexture(c)
+    }
+    this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffd9a0, map: flashMap, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }))
+    this.flash.position.set(0, 0.02, -0.68)
+    this.flash.scale.setScalar(0.24)
+    this.flash.visible = false
+    this.view.add(this.flash)
+    this.flashLight = new THREE.PointLight(0xffc988, 0, 7, 2)
+    this.flashLight.position.copy(this.flash.position)
+    this.view.add(this.flashLight)
     this.camera.add(this.view)
     scene.add(this.camera)
     this._loadSkin()
@@ -115,6 +138,15 @@ export class Sniper {
     const vy = scoped ? -0.5 : -0.22 + bob
     this.view.position.set(vx, vy, -0.6 + this._recoil)
     this.view.visible = !scoped
+    // v4 VISUALS (B3): muzzle-flash sprite + light decay over FLASH_TIME.
+    if (this._flashT > 0) {
+      this._flashT -= dt
+      const f = this._flashT > 0 ? this._flashT / FLASH_TIME : 0
+      this.flash.material.opacity = 0.95 * f
+      this.flash.scale.setScalar(0.1 + 0.16 * f)
+      this.flashLight.intensity = 260 * f
+      if (this._flashT <= 0) { this.flash.visible = false; this.flashLight.intensity = 0 }
+    }
     // Ease the camera FOV toward the scoped/normal target (deterministic).
     const target = scoped ? SCOPE_FOV : this._baseFov
     const step = SCOPE_LERP * dt
@@ -147,6 +179,7 @@ export class Sniper {
     this._recoil = RECOIL_KICK
     if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
+    this.flash.visible = true
     this.camera.getWorldDirection(this._dir)
     this._right.crossVectors(this._dir, UP)
     if (this._right.lengthSq() < 1e-8) this._right.set(1, 0, 0)
@@ -232,6 +265,8 @@ export class Sniper {
     this._recoil = 0
     this._fireT = this._time
     this.scoped = false
+    if (this.flash) { this.flash.visible = false; this.flash.material.opacity = 0 }
+    if (this.flashLight) this.flashLight.intensity = 0
     this._fov = this._baseFov
     if (Math.abs(this.camera.fov - this._baseFov) > 1e-4) {
       this.camera.fov = this._baseFov
@@ -247,6 +282,12 @@ export class Sniper {
         if (m.material.map) m.material.map.dispose()
         m.material.dispose()
       }
+    }
+    // v4 VISUALS (B3): the muzzle-flash sprite shares the view group but is a
+    // Sprite (no geometry) — free its material + map explicitly.
+    if (this.flash) {
+      if (this.flash.material.map) this.flash.material.map.dispose()
+      this.flash.material.dispose()
     }
   }
 }
