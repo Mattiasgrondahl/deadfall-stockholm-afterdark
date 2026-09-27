@@ -13,6 +13,7 @@ import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
 import { BulletHoles } from './BulletHoles.js'
+import { Footprints } from './Footprints.js'
 import { Lamps } from './Lamps.js'
 import { GlassShards } from './GlassShards.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
@@ -435,6 +436,9 @@ export class Game {
     this.blood = new Blood(this.scene)
     // WIRING:BULLETHOLES — gun shots that hit a wall leave a scorch decal.
     this.bulletHoles = new BulletHoles(this.scene)
+    // WIRING:FOOTPRINTS (v3 T13): the player + every zombie leave fading prints
+    // in the snow. One InstancedMesh; stepped from the update loop below.
+    this.footprints = new Footprints(this.scene)
     // WIRING:LAMPS — shootable streetlamps that break dark and relight after 60 s.
     this.glassShards = new GlassShards(this.scene)
     this.lamps = new Lamps(this.city ? this.city.lamps : [])
@@ -772,6 +776,20 @@ export class Game {
     if (this.headPool) this.headPool.update(dt)
     // WIRING:DISMEMBER (v3 T1): tumble + settle the limbs dropped this frame.
     if (this.limbs) this.limbs.update(dt)
+    // WIRING:FOOTPRINTS (v3 T13): stamp prints along each walker's path, then
+    // age the pool. The player tracks by yaw; zombies face their heading.
+    if (this.footprints) {
+      if (this.player && !this.player.isDead) {
+        this.footprints.step('player', this.player.position.x, this.player.position.z, this.player.yaw)
+      }
+      // Zombies have no exposed facing; the print's long axis follows the travel
+      // delta inside step(), so a fixed yaw is enough for the lateral offset.
+      // Key each walker by its object so corpses/respawns never reuse a stride.
+      for (const z of this.zombies) {
+        if (!z.isDead) this.footprints.step(z, z.position.x, z.position.z, 0)
+      }
+      this.footprints.update(dt)
+    }
     // WIRING:LAMPS — advance relight timers + shard animation.
     if (this.lamps) this.lamps.update(dt)
     if (this.glassShards) this.glassShards.update(dt)
@@ -935,6 +953,8 @@ export class Game {
     this.haze = null
     // v3 T12: drop the achievement → banner callback so nothing retains Screens.
     if (this.achievements) this.achievements.dispose()
+    // v3 T13: remove the footprint decal pool from the scene.
+    if (this.footprints) this.footprints.dispose()
   }
 
   render() {

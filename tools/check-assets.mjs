@@ -59,6 +59,8 @@ const skinBlock = zombieSrc.match(/const SKIN_ASSET = \{[^}]*\}/)
 if (skinBlock) for (const m of skinBlock[0].matchAll(/'([^']+)'/g)) addRef(`assets/zombies/${m[1]}`, 'src/game/Zombie.js (SKIN_ASSET)')
 // Outfit textures: OUTFIT* maps in Zombie.js list file stems.
 for (const m of zombieSrc.matchAll(/'([a-z0-9-]+)-(top|pants|skirt)'/g)) addRef(`assets/outfits/${m[1]}-${m[2]}.jpg`, 'src/game/Zombie.js (outfits)')
+// v3 T7: moon texture (loaded via ASSET_BASE + 'assets/sky/moon.jpg' in sky.js).
+addRef('assets/sky/moon.jpg', 'src/world/sky.js (moon)')
 
 // ---- Known audio lengths from Game.js -------------------------------------
 const gameSrc = read('src/game/Game.js') || ''

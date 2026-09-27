@@ -23,6 +23,30 @@ const MAX_DROPS_PER_BURST = 20
 const MAX_STAINS = 120
 const STAIN_Y = 0.01      // just above the ground plane (no z-fight)
 
+// v3 T14: build one irregular "splat" disc — a fan-triangulated polygon whose
+// vertex radii are jittered by a seeded LCG (no Math.random), so the silhouette
+// reads as a viscous blood blob instead of a clean circle. All stains share this
+// geometry; per-instance non-uniform scale + spin vary its look (see _writeStain).
+function makeSplatGeometry() {
+  let s = 1337
+  const rnd = () => (s = (Math.imul(s, 48271) >>> 0) % 65537) / 65537
+  const SEG = 14
+  const base = 0.5
+  const pos = [0, 0, 0] // center vertex
+  const idx = []
+  for (let i = 0; i < SEG; i++) {
+    const a = (i / SEG) * Math.PI * 2
+    const r = base * (0.62 + rnd() * 0.6) // radius jitter → lumpy edge
+    pos.push(Math.cos(a) * r, 0, Math.sin(a) * r)
+    idx.push(0, i + 1, ((i + 1) % SEG) + 1)
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
+  return geo
+}
+
 export class Blood {
   constructor(scene) {
     this.scene = scene || null
@@ -62,15 +86,20 @@ export class Blood {
     this._stainScale = []
     this._stainColor = []
     this._stainRot = []
+    this._stainAspect = []
     for (let i = 0; i < MAX_STAINS; i++) {
       this._stainPos.push(new THREE.Vector3())
       this._stainScale.push(1)
       this._stainColor.push(new THREE.Color())
       this._stainRot.push(0)
+      this._stainAspect.push(1)
     }
-    const stainGeo = new THREE.CircleGeometry(0.5, 12)
+    // v3 T14: stains are irregular viscous splats, not perfect discs. One shared
+    // blob polygon (LCG-jittered radii) is stretched non-uniformly + spun per
+    // instance, so no two stains read alike. Headless-safe (plain geometry).
+    const stainGeo = makeSplatGeometry()
     stainGeo.rotateX(-Math.PI / 2) // flat on the ground, facing up
-    const stainMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false })
+    const stainMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false })
     this._stainMesh = new THREE.InstancedMesh(stainGeo, stainMat, MAX_STAINS)
     this._stainMesh.count = 0
     this._stainMesh.frustumCulled = false
@@ -159,6 +188,7 @@ export class Blood {
         this._stainScale[k] = this._stainScale[k + 1]
         this._stainColor[k].copy(this._stainColor[k + 1])
         this._stainRot[k] = this._stainRot[k + 1]
+        this._stainAspect[k] = this._stainAspect[k + 1]
         this._writeStain(k)
       }
       i = MAX_STAINS - 1
@@ -169,9 +199,13 @@ export class Blood {
     this._stainScale[i] = 0.8 + this._rng() * 1.1
     // Random in-plane spin so stains read as irregular splats, not identical discs.
     this._stainRot[i] = this._rng() * Math.PI * 2
+    // v3 T14: non-uniform aspect so the shared blob stretches into a different
+    // silhouette each time (0.6–1.4 across one axis).
+    this._stainAspect[i] = 0.6 + this._rng() * 0.8
     // Dark-red variation (linear color; the white base material multiplies it).
+    // v3 T14: darker, so the blood reads with contrast against snow.
     const t = this._rng()
-    this._stainColor[i].setRGB(0.14 + t * 0.13, 0.004 + t * 0.006, 0.004 + t * 0.006)
+    this._stainColor[i].setRGB(0.11 + t * 0.10, 0.003 + t * 0.005, 0.004 + t * 0.005)
     this._writeStain(i)
     this._stainMesh.count = this._stainCount
     this._stainMesh.instanceMatrix.needsUpdate = true
@@ -180,10 +214,11 @@ export class Blood {
   }
 
   _writeStain(i) {
-    // Flat disc: scale x/z sets the radius, y stays 1; spun about Y for an
-    // irregular splat silhouette.
+    // Flat splat: scale x/z sets the radius, y stays 1; spun about Y and
+    // stretched along one axis (aspect) for an irregular, non-circular silhouette.
     this._q.setFromAxisAngle(this._upY, this._stainRot[i])
-    this._m.compose(this._stainPos[i], this._q, this._s.set(this._stainScale[i], 1, this._stainScale[i]))
+    const s = this._stainScale[i]
+    this._m.compose(this._stainPos[i], this._q, this._s.set(s * this._stainAspect[i], 1, s))
     this._stainMesh.setMatrixAt(i, this._m)
     this._stainMesh.setColorAt(i, this._stainColor[i])
   }

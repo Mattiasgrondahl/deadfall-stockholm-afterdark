@@ -13,12 +13,54 @@
 // they are silently clipped by the near/far test and the sky falls back to
 // the flat scene.background color.
 //
-// The moon direction matches Lighting.js MOON_OFFSET (-18, 30, -15), so the
+// Moon direction matches Lighting.js MOON_OFFSET (-18, 30, -15), so the
 // visible moon sits exactly behind the moonlight. Moon and silhouette
 // materials have fog disabled: at 360-400 m the exponential fog
 // (FogExp2 0.022) would otherwise erase them entirely.
+//
+// v3 T7: the moon is now a larger, texture-mapped disc set at a LOWER elevation
+// than the moonlight. The light stays high (MOON_OFFSET) so the scene still
+// reads moonlit, but the visible disc hangs lower in the sky where it is easy
+// to see. Its azimuth matches the light (-x, -z) and only the elevation is
+// lowered (MOON_ELEV). A browser-only moon.jpg is loaded onto the disc; headless
+// keeps the flat pale disc so the sky still reads correctly without a texture.
 
 import * as THREE from 'three'
+
+// Browser-only asset base (same guard as Zombie.js — headless yields '').
+const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
+
+// v3 T7: moon geometry constants. The disc is bigger than the old radius-7
+// sphere and sits at a LOWER elevation than the moonlight (the light stays high
+// so the scene reads moonlit; the visible disc hangs lower where it is easy to
+// see). Azimuth matches the light (-x, -z); only the elevation is lowered.
+const MOON_DIST = 380
+const MOON_RADIUS = 15
+const MOON_ELEV = 22 * Math.PI / 180 // radians above the horizon
+
+// Azimuth of the moonlight projected onto the ground plane, normalized.
+const MOON_AZ = new THREE.Vector3(-18, 0, -15).normalize()
+
+// v3 T7: build the lowered moon direction from the light azimuth + a lower
+// elevation. Deterministic (no Math.random).
+function moonDirection() {
+  const e = Math.cos(MOON_ELEV)
+  return new THREE.Vector3(MOON_AZ.x * e, Math.sin(MOON_ELEV), MOON_AZ.z * e).normalize()
+}
+
+// v3 T7: lazily load the moon texture onto the disc material (browser only).
+// Headless (no document) keeps the flat pale disc; a failed load is swallowed.
+function loadMoonTexture(mat) {
+  if (typeof document === 'undefined' || !ASSET_BASE) return
+  try {
+    const loader = new THREE.TextureLoader()
+    loader.load(ASSET_BASE + 'assets/sky/moon.jpg', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      mat.map = tex
+      mat.needsUpdate = true
+    }, undefined, () => { /* keep the flat disc */ })
+  } catch (err) { /* headless-safe: ignore */ }
+}
 
 function makeLCG(seed) {
   let s = seed
@@ -161,20 +203,23 @@ export class Sky {
     this.stars = new StarField(800, 400)
     group.add(this.stars.points)
 
-    // Moon: basic material, fog disabled (FogExp2 would erase it at 380 m).
-    // Direction matches Lighting.js MOON_OFFSET so it sits behind the moonlight.
-    const moonDir = new THREE.Vector3(-18, 30, -15).normalize()
+    // Moon: a larger texture-mapped disc at a lower elevation than the light
+    // (v3 T7). Basic material, fog disabled (FogExp2 would erase it at 380 m).
+    // The disc always faces the player (lookAt in update) so it reads as a full
+    // moon from any angle. Headless keeps the flat pale disc (no texture).
+    const moonDir = moonDirection()
     const moonMat = new THREE.MeshBasicMaterial({ color: 0xcfd8e6, fog: false })
-    const moonGeo = new THREE.SphereGeometry(7, 16, 12)
+    const moonGeo = new THREE.CircleGeometry(MOON_RADIUS, 32)
     const moon = new THREE.Mesh(moonGeo, moonMat)
     moon.name = 'moon'
-    moon.position.copy(moonDir).multiplyScalar(380)
+    moon.position.copy(moonDir).multiplyScalar(MOON_DIST)
+    loadMoonTexture(moonMat)
     group.add(moon)
     this.moon = moon
     this.moonGeo = moonGeo
     this.moonMat = moonMat
     this.moonDir = moonDir
-    this._moonOffset = moonDir.clone().multiplyScalar(380)
+    this._moonOffset = moonDir.clone().multiplyScalar(MOON_DIST)
 
     // City skyline silhouettes near the dome edge: 12 boxes on a ring
     // (deterministic LCG; no Math.random). All share ONE geometry and ONE
@@ -211,6 +256,9 @@ export class Sky {
     // Dome + moon follow the player; silhouettes stay fixed (parallax).
     this.dome.position.copy(playerPos)
     this.moon.position.copy(playerPos).add(this._moonOffset)
+    // v3 T7: the moon is a flat disc, so turn it to face the player every frame
+    // (it hangs at a fixed offset from the player, so it always reads full).
+    this.moon.lookAt(playerPos)
     this.stars.update(playerPos, dt)
   }
 

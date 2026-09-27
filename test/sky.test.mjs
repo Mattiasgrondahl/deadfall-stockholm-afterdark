@@ -3,9 +3,17 @@ import { test } from 'node:test'
 import * as THREE from 'three'
 import { Sky } from '../src/world/sky.js'
 
-// Same moon math the module uses (moonDir must match Lighting.js MOON_OFFSET).
-const MOON_DIR = new THREE.Vector3(-18, 30, -15).normalize()
-const MOON_OFFSET = MOON_DIR.clone().multiplyScalar(380)
+// v3 T7: the visible moon is a larger disc at a LOWER elevation than the
+// moonlight (the light stays high at MOON_OFFSET so the scene reads moonlit;
+// the disc hangs lower where it is easy to see). Same azimuth (-x, -z), only
+// the elevation is lowered to 22°.
+const MOON_DIST = 380
+const MOON_ELEV = 22 * Math.PI / 180
+const MOON_AZ = new THREE.Vector3(-18, 0, -15).normalize()
+const MOON_DIR = new THREE.Vector3(
+  MOON_AZ.x * Math.cos(MOON_ELEV), Math.sin(MOON_ELEV), MOON_AZ.z * Math.cos(MOON_ELEV)
+).normalize()
+const MOON_OFFSET = MOON_DIR.clone().multiplyScalar(MOON_DIST)
 
 function newSky() {
   const scene = new THREE.Scene()
@@ -48,6 +56,22 @@ test('fog off: moon and silhouette materials ignore scene fog', () => {
   const { sky } = newSky()
   assert.equal(sky.moonMat.fog, false, 'moon must be visible through FogExp2 at 380 m')
   assert.equal(sky.silhouetteMat.fog, false, 'silhouettes must be visible at 360-400 m')
+  sky.dispose()
+})
+
+test('v3 T7: moon is a larger disc set at a lower elevation than the light', () => {
+  const { sky } = newSky()
+  // Bigger than the old radius-7 sphere.
+  assert.equal(sky.moonGeo.type, 'CircleGeometry', 'moon is a texture-mapped disc')
+  assert.ok(sky.moonGeo.parameters.radius >= 12, 'moon disc is larger than the old sphere')
+  // Lower elevation than the moonlight (whose dir is (-18,30,-15) ≈ 42° up).
+  const moonElev = Math.asin(sky.moonDir.y) * 180 / Math.PI
+  const lightElev = Math.asin(new THREE.Vector3(-18, 30, -15).normalize().y) * 180 / Math.PI
+  assert.ok(moonElev < lightElev, `moon (${moonElev.toFixed(1)}°) hangs below the light (${lightElev.toFixed(1)}°)`)
+  // Same azimuth as the light (still NW), only the elevation changed.
+  const azMoon = Math.atan2(sky.moonDir.z, sky.moonDir.x)
+  const azLight = Math.atan2(-15, -18)
+  assert.ok(Math.abs(azMoon - azLight) < 1e-6, 'moon keeps the light azimuth')
   sky.dispose()
 })
 

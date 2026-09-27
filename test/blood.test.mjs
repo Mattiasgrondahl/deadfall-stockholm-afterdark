@@ -131,6 +131,16 @@ function stepN(b, n) { for (let i = 0; i < n; i++) b.update(DT) }
     assert.ok(Math.abs(p.y) < 0.05, 'no z-fight with the ground plane')
   }
   assert.ok(Math.hypot(b._stainPos[0].x, b._stainPos[0].z) < 0.25) // near the origin hit
+  // v3 T14: stains are irregular viscous splats, not clean discs.
+  assert.notEqual(b._stainMesh.geometry.type, 'CircleGeometry', 'stain geometry is an irregular blob')
+  assert.ok(b._stainMesh.geometry.attributes.position.count > 3, 'blob has a lumpy outline')
+  // Per-instance non-uniform aspect so no two stains share a silhouette.
+  const aspects = new Set()
+  for (let i = 0; i < b._stainCount; i++) aspects.add(b._stainAspect[i].toFixed(3))
+  assert.ok(aspects.size >= 2, 'stains stretch differently (varied aspect)')
+  for (let i = 0; i < b._stainCount; i++) {
+    assert.ok(b._stainAspect[i] >= 0.6 && b._stainAspect[i] <= 1.4, 'aspect within range')
+  }
   // Dark-red per-instance colors (linear color space).
   for (let i = 0; i < b._stainCount; i++) {
     const c = b._stainColor[i]
