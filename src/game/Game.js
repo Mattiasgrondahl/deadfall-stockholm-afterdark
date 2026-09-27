@@ -496,6 +496,12 @@ export class Game {
       this.screens = new Screens(this.env.document.getElementById('screens-root'), this)
       if (this.flashlight) this.hud.flashlight = this.flashlight // V7: reveals the battery box
       if (this.score) this.hud.score = this.score // V9: reveals the score box
+      // v7: kill + headshot counters on the HUD (top-right). Read live values
+      // through closures so the boxes reveal only when both systems exist.
+      if (this.hud) {
+        this.hud.kills = () => this.kills
+        this.hud.headshots = () => (this.achievements ? this.achievements.counters.headshots : 0)
+      }
       // Music-mute button: toggles ONLY the soundtrack (SFX stay audible).
       if (this.hud) this.hud.onToggleMusic = (muted) => { if (this.audio) this.audio.setMusicMuted(muted) }
       // Reflect the persisted music-mute state on the HUD button at boot.
@@ -694,6 +700,9 @@ export class Game {
       room: opts.room || 'default',
       url: opts.url, Socket: opts.Socket
     }
+    // v7: the run's score belongs to the joined room, so its leaderboard reads
+    // and posts to that room's board (not the shared default).
+    if (this.score) this.score.setRoom(this._mpOpts.room)
     if (!this.multiplayer && this.scene) {
       try {
         this.multiplayer = new Multiplayer({

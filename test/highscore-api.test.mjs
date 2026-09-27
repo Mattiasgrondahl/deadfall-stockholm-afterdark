@@ -4,6 +4,9 @@
 // port — the listen callback is async, so every test waits for the bound port.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { startServer } from '../server/server.js'
 
 /** Boot a server and resolve once it is actually listening. */
@@ -99,4 +102,36 @@ test('index.html is served cache-negotiated, not immutable', async () => {
     const cc = html.headers.get('cache-control')
     assert.ok(cc === 'no-cache' || cc === null, `index not immutably cached (${cc})`)
   } finally { s.close() }
+})
+
+test('v7: each room code keeps its own leaderboard, isolated from the default', async () => {
+  // Point the high-score store at a temp file so per-room sibling files do not
+  // touch the real server/highscore.json.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-hs-'))
+  const prev = process.env.HIGHSCORE_FILE
+  process.env.HIGHSCORE_FILE = path.join(dir, 'highscore.json')
+  const s = await listen({ highScore: 500, highScoreName: 'Ana' })
+  try {
+    const post = (body) => fetch(s.base + '/api/highscore', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    // Post into room "CRYPT-9": it starts empty (independent of the default board).
+    const inRoom = await (await post(JSON.stringify({ score: 300, name: 'Zed', room: 'CRYPT-9' }))).json()
+    assert.deepEqual(inRoom.top, [{ name: 'Zed', score: 300 }], 'room board starts from its own posts')
+    // The default board is untouched by the room post.
+    const def = await (await fetch(s.base + '/api/highscore')).json()
+    assert.equal(def.best, 500, 'default board unaffected by room posts')
+    // A second room is separate again.
+    const b = await (await post(JSON.stringify({ score: 800, name: 'Bo', room: 'HORDE-7' }))).json()
+    assert.deepEqual(b.top, [{ name: 'Bo', score: 800 }], 'room B has its own list')
+    // Reading room A via ?room= returns only room A.
+    const a = await (await fetch(s.base + '/api/highscore?room=CRYPT-9')).json()
+    assert.deepEqual(a.top.map((e) => e.score), [300], 'room A read back in isolation')
+    // A blank/missing room resolves to the default board.
+    const blank = await (await fetch(s.base + '/api/highscore?room=')).json()
+    assert.equal(blank.best, 500, 'blank room falls back to default')
+  } finally {
+    s.close()
+    if (prev === undefined) delete process.env.HIGHSCORE_FILE
+    else process.env.HIGHSCORE_FILE = prev
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

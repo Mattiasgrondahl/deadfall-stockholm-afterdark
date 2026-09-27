@@ -34,9 +34,9 @@ function snap(over = {}) {
   return Object.assign({
     tick: 1, time: 0, wave: 2, remaining: 5,
     players: [
-      { id: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
-      { id: 'alice', x: 3, y: 1.7, z: 4, yaw: 1, pitch: 0, health: 90, stamina: 80, weapon: 'shotgun', ammo: 4, reserve: 20, dead: false },
-      { id: 'bob', x: -2, y: 1.7, z: 6, yaw: 2, pitch: 0, health: 70, stamina: 60, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+      { id: 'me', name: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+      { id: 'alice', name: 'Alice', x: 3, y: 1.7, z: 4, yaw: 1, pitch: 0, health: 90, stamina: 80, weapon: 'shotgun', ammo: 4, reserve: 20, dead: false },
+      { id: 'bob', name: 'Bob', x: -2, y: 1.7, z: 6, yaw: 2, pitch: 0, health: 70, stamina: 60, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
     ],
     zombies: [
       { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state: 'chase', facing: 0.5 },
@@ -106,13 +106,15 @@ test('scoreboard sorts by score and paints the DOM', () => {
   const rows = mp.scoreboard()
   assert.deepEqual(rows.map(r => r.id), ['alice', 'me', 'bob'], 'sorted by score desc')
   assert.equal(rows[0].score, 410)
+  assert.equal(rows[0].name, 'Alice', 'row carries the display name (v7)')
   // The scoreboard panel was appended to body and populated with rows.
   assert.ok(doc.body.children.includes(mp._sbEl), 'panel attached to body')
   assert.equal(mp._sbEl.style.display, 'block', 'panel shown')
-  // head row + 3 player rows = 4 children.
-  assert.equal(mp._sbEl.children.length, 4, 'head + 3 rows')
+  // head row + PLAYERS count line + 3 player rows = 5 children.
+  assert.equal(mp._sbEl.children.length, 5, 'head + count + 3 rows')
   assert.match(mp._sbEl.children[0].textContent, /WAVE 2/)
-  assert.match(mp._sbEl.children[1].textContent, /alice: 410 pts  5 kills/)
+  assert.match(mp._sbEl.children[1].textContent, /PLAYERS 3/, 'online-player count line (v7)')
+  assert.match(mp._sbEl.children[2].textContent, /Alice: 410 pts  5 kills/, 'rows labelled by name (v7)')
   mp.dispose()
 })
 

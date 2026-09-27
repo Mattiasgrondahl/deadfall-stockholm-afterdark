@@ -31,6 +31,22 @@ export function randomPlayerName(seed) {
   return a + ' ' + n
 }
 
+// v7: zombie-themed room-code words. A room code is a short, uppercase,
+// memorable handle that also names the room's own leaderboard, so the words are
+// spooky/undead-flavoured. Two words + a 2-digit suffix keeps codes unique.
+const ROOM_WORDS = ['GRAVE', 'ROT', 'HORDE', 'BITE', 'CRYPT', 'ASH', 'BONE', 'MIST', 'HOWL', 'GORE', 'DUSK', 'DECAY', 'PLAGUE', 'SHAMBLE', 'EMBER', 'NIGHT']
+
+/** Pick a random zombie-themed room code, seeded from the wall clock. Pass a
+ *  fixed seed (tests) for a stable code. Format: WORD-WORD-NN (≤ 32 chars). */
+export function randomRoomCode(seed) {
+  let s = (seed == null ? Date.now() : seed) >>> 0
+  const rand = () => { s = (Math.imul(s, 48271) >>> 0) % 65537; return s / 65537 }
+  const w1 = ROOM_WORDS[Math.floor(rand() * ROOM_WORDS.length) % ROOM_WORDS.length]
+  const w2 = ROOM_WORDS[Math.floor(rand() * ROOM_WORDS.length) % ROOM_WORDS.length]
+  const n = 10 + Math.floor(rand() * 90) // 10..99
+  return w1 + '-' + w2 + '-' + n
+}
+
 export class Screens {
   constructor(root, game) {
     this._doc = root.ownerDocument
@@ -471,6 +487,10 @@ export class Screens {
     const name = randomPlayerName()
     if (this._soloNameInput && this._soloNameInput.value === 'player') this._soloNameInput.value = name
     if (this._nameInput && this._nameInput.value === 'player') this._nameInput.value = name
+    // v7: a random zombie-themed room code so a fresh co-op session lands in a
+    // uniquely-named room with its own leaderboard, instead of the shared
+    // "default". Only overwrites the untouched default so a typed code stands.
+    if (this._roomInput && this._roomInput.value === 'default') this._roomInput.value = randomRoomCode()
   }
 
   /** v3 T6: the title HIGH SCORE label. When the hosted record has a holder

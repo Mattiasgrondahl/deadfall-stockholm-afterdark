@@ -7,7 +7,10 @@
 // covers the logic that does not need a browser or a live socket.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { Room } from '../server/server.js'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { Room, startServer } from '../server/server.js'
 import { MSG, SERVER_TICK, SNAPSHOT_INTERVAL, MAX_PLAYERS, parseInput, buildHello, buildWelcome } from '../src/net/protocol.js'
 
 // Minimal fake socket: records sent frames, reports OPEN.
@@ -91,4 +94,44 @@ test('input validation blocks a malformed frame', () => {
   assert.equal(is.back, false, 'garbage fwd does not set back')
   assert.equal(is.left, false, 'garbage side does not set left')
   assert.equal(is.right, false, 'garbage side does not set right')
+})
+
+test('v7: distinct room codes are distinct sessions (independent Matches)', async () => {
+  // Two websockets hello-ing different room codes land in separate Matches, so
+  // players in one room never appear in the other's snapshot.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-room-'))
+  const prev = process.env.HIGHSCORE_FILE
+  process.env.HIGHSCORE_FILE = path.join(dir, 'highscore.json')
+  const srv = startServer({ port: 0, host: '127.0.0.1' })
+  const sockets = []
+  try {
+    const addr = await new Promise((resolve) => {
+      const poll = () => { const a = srv.http.address(); if (a && a.port) resolve(a); else setTimeout(poll, 10) }
+      poll()
+    })
+    const WS = globalThis.WebSocket
+    const a = new WS(`ws://127.0.0.1:${addr.port}/ws`)
+    const b = new WS(`ws://127.0.0.1:${addr.port}/ws`)
+    sockets.push(a, b)
+    const seen = { a: [], b: [] }
+    const waitOpen = (ws) => new Promise((r) => { if (ws.readyState === 1) r(); else ws.addEventListener('open', r) })
+    a.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.t === MSG.SNAP) seen.a.push(m) })
+    b.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.t === MSG.SNAP) seen.b.push(m) })
+    await Promise.all([waitOpen(a), waitOpen(b)])
+    a.send(JSON.stringify(buildHello('Alice', 'CRYPT-9')))
+    b.send(JSON.stringify(buildHello('Bob', 'HORDE-7')))
+    // Let a few snapshot ticks elapse.
+    await new Promise((r) => setTimeout(r, 400))
+    const aNames = new Set((seen.a.at(-1)?.players || []).map((p) => p.name))
+    const bNames = new Set((seen.b.at(-1)?.players || []).map((p) => p.name))
+    assert.ok(aNames.size >= 1 && bNames.size >= 1, 'each room has its own player')
+    assert.ok(aNames.has('Alice') && !aNames.has('Bob'), 'room A holds only Alice')
+    assert.ok(bNames.has('Bob') && !bNames.has('Alice'), 'room B holds only Bob')
+  } finally {
+    for (const ws of sockets) { try { ws.close() } catch { /* already closed */ } }
+    srv.close()
+    if (prev === undefined) delete process.env.HIGHSCORE_FILE
+    else process.env.HIGHSCORE_FILE = prev
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

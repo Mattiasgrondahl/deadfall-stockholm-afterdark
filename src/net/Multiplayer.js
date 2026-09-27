@@ -174,7 +174,10 @@ export class Multiplayer {
     return out
   }
 
-  /** Format + paint the scoreboard DOM from the snapshot's score/kills maps. */
+  /** Format + paint the scoreboard DOM from the snapshot's score/kills maps.
+   *  v7: rows are labelled by display NAME (not the opaque pid) and the panel
+   *  header shows how many players are online, so joining a room shows the full
+   *  roster with scores at a glance. */
   _renderScoreboard(snap) {
     if (!this._sbEl) return
     const rows = this.scoreboard(snap)
@@ -186,20 +189,30 @@ export class Multiplayer {
     const status = this.net.connected ? (ping ? `WAVE ${snap.wave}  LEFT ${snap.remaining}  ${ping}ms` : `WAVE ${snap.wave}  LEFT ${snap.remaining}`) : 'CONNECTION LOST'
     head.textContent = status
     this._sbEl.appendChild(head)
+    // Online-player count line (roster size), so the room's population is legible.
+    const count = this.doc.createElement('div')
+    count.textContent = `PLAYERS ${rows.length}`
+    this._sbEl.appendChild(count)
     for (const r of rows) {
       const row = this.doc.createElement('div')
-      row.textContent = `${r.id}: ${r.score} pts  ${r.kills} kills`
+      row.textContent = `${r.name}: ${r.score} pts  ${r.kills} kills`
       this._sbEl.appendChild(row)
     }
   }
 
-  /** Sorted scoreboard rows from a snapshot (mirrors Match.scoreboard()). */
+  /** Sorted scoreboard rows from a snapshot (mirrors Match.scoreboard()).
+   *  v7: each row carries the player's display name (joined from the snapshot's
+   *  players roster by id) so the scoreboard reads names, not opaque pids. */
   scoreboard(snap) {
     const s = snap || this.lastSnap
     if (!s) return []
+    // id -> name map from the authoritative roster (names already sanitized by
+    // the server / buildHello; empty name falls back to the pid).
+    const names = {}
+    for (const p of (s.players || [])) if (p && p.id) names[p.id] = p.name || p.id
     const rows = []
     for (const id of Object.keys(s.score || {})) {
-      rows.push({ id, score: s.score[id] || 0, kills: (s.kills && s.kills[id]) || 0 })
+      rows.push({ id, name: names[id] || id, score: s.score[id] || 0, kills: (s.kills && s.kills[id]) || 0 })
     }
     rows.sort((a, b) => b.score - a.score)
     return rows

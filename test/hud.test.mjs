@@ -177,6 +177,26 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   hud.dispose()
 }
 
+// --- v7: kill + headshot counters track wired getters; hidden when unwired ---
+{
+  const { hud, hudRoot } = makeHUD()
+  hud.update(fakePlayer, fakeBank('shotgun'), null)
+  const stats = hudRoot.children.find((c) => c.classList.contains('hud-stats'))
+  assert.equal(stats.classList.contains('hidden'), true, 'stats hidden until both getters wired')
+  let kills = 47, heads = 12
+  hud.kills = () => kills
+  hud.headshots = () => heads
+  hud.update(fakePlayer, fakeBank('shotgun'), null)
+  assert.equal(stats.classList.contains('hidden'), false, 'stats shown once wired')
+  assert.equal(stats.children[0].textContent, 'KILLS 47')
+  assert.equal(stats.children[1].textContent, 'HEADSHOTS 12')
+  kills = 50; heads = 13
+  hud.update(fakePlayer, fakeBank('shotgun'), null)
+  assert.equal(stats.children[0].textContent, 'KILLS 50', 'kill counter tracks the getter')
+  assert.equal(stats.children[1].textContent, 'HEADSHOTS 13', 'headshot counter tracks the getter')
+  hud.dispose()
+}
+
 // --- music-mute button: click toggles label + fires the callback; setMusicMuted
 //     reflects external state (N-key) without re-firing the callback ---
 {

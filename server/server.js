@@ -29,11 +29,37 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // it beside server/); the default resolves to the repo's dist/.
 const DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.resolve(__dirname, '..', 'dist')
 // Hosted high score: one JSON file beside the server (git-ignored dir), the
-// single global record every visitor shares. Writes are serialized through
-// the in-memory value; the file is the persistence across restarts.
-const HS_FILE = process.env.HIGHSCORE_FILE || path.join(__dirname, 'highscore.json')
+// base leaderboard every visitor shares. v7: each room code gets a sibling
+// file keyed by its code. The path is resolved at CALL time (not import) so a
+// test can redirect it via HIGHSCORE_FILE after the module is loaded.
 const HS_MAX_NAME = 24
 const HS_CTRL = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
+// v7: the room code is now a first-class key — each room code gets its own
+// leaderboard + its own Match. Codes are sanitized like names (control chars
+// stripped, whitespace collapsed, clamped) and fall back to 'default' so a
+// missing/blank code still lands on the original global board.
+const HS_MAX_ROOM = 32
+const DEFAULT_ROOM = 'default'
+
+/** Resolve the base high-score file path at call time (HIGHSCORE_FILE override). */
+function hsRootFile() {
+  return process.env.HIGHSCORE_FILE || path.join(__dirname, 'highscore.json')
+}
+
+/** Sanitize a room code for use as a key + filename fragment. */
+function sanitizeRoom(raw) {
+  const s = String(raw == null ? '' : raw)
+    .replace(HS_CTRL, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, HS_MAX_ROOM)
+  return s || DEFAULT_ROOM
+}
+
+/** Map a room code to a safe filename fragment (alnum + dash/underscore). */
+function roomFileFragment(room) {
+  return room.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 48) || DEFAULT_ROOM
+}
 
 /** v3 T6: server-side name sanitizer for the hosted record. A hostile POST
  *  must not poison the shared record, so the name is stripped of control
@@ -74,20 +100,28 @@ function normalizeTop(list) {
   return out.slice(0, HS_TOP)
 }
 
-/** Read the persisted leaderboard. v6: the file is now {top:[…]}; a legacy
- *  {best, name} file is migrated into a one-entry list. Returns {top}. */
-function readHighScore() {
+/** Resolve the JSON file for a room's leaderboard. The 'default' room keeps the
+ *  legacy HS_FILE path (back-compat); other rooms get a sibling file. */
+function hsFileFor(room) {
+  const root = hsRootFile()
+  if (room === DEFAULT_ROOM) return root
+  return path.join(path.dirname(root), 'highscore-' + roomFileFragment(room) + '.json')
+}
+
+/** Read the persisted leaderboard for `room`. v6: the file is {top:[…]}; a
+ *  legacy {best, name} file is migrated into a one-entry list. Returns {top}. */
+function readHighScore(room = DEFAULT_ROOM) {
   try {
-    const j = JSON.parse(fs.readFileSync(HS_FILE, 'utf8'))
+    const j = JSON.parse(fs.readFileSync(hsFileFor(room), 'utf8'))
     if (Array.isArray(j.top)) return { top: normalizeTop(j.top) }
     const c = cleanEntry({ score: j.best, name: j.name })
     return { top: c ? [c] : [] }
   } catch { return { top: [] } }
 }
 
-/** Persist the leaderboard; failures are swallowed (in-memory value stands). */
-function writeHighScore(top) {
-  try { fs.writeFileSync(HS_FILE, JSON.stringify({ top })) } catch { /* read-only fs */ }
+/** Persist the leaderboard for `room`; failures are swallowed (memory stands). */
+function writeHighScore(top, room = DEFAULT_ROOM) {
+  try { fs.writeFileSync(hsFileFor(room), JSON.stringify({ top })) } catch { /* read-only fs */ }
 }
 
 /** Insert a score into the leaderboard if it qualifies (any entry that fits
@@ -101,34 +135,50 @@ function insertTop(top, score, name) {
   return normalizeTop(next)
 }
 
-/** Handle /api/highscore: GET returns {best, name, top}, POST {score, name}
- *  inserts into the top-10 list (name re-validated server-side). v6. */
-function serveHighScore(req, res, state) {
-  const payload = () => {
-    const top = state.top
+/** Handle /api/highscore. v7: the leaderboard is keyed by room code. GET
+ *  ?room=X returns that room's {best, name, top}; POST {score, name, room}
+ *  inserts into that room's list. A missing/blank room resolves to 'default'
+ *  (the original global board), so older clients are unaffected. `store` is a
+ *  Map<room, {top}> shared across requests. */
+function serveHighScore(req, res, store) {
+  const roomOf = (reqUrl) => {
+    const q = (reqUrl || '').split('?')[1]
+    if (!q) return DEFAULT_ROOM
+    for (const kv of q.split('&')) {
+      const [k, v] = kv.split('=')
+      if (k === 'room') return sanitizeRoom(decodeURIComponent(v || ''))
+    }
+    return DEFAULT_ROOM
+  }
+  const payload = (top) => {
     const lead = top[0]
     return { best: lead ? lead.score : 0, name: lead ? lead.name : '', top }
   }
   if (req.method === 'GET') {
+    const room = roomOf(req.url)
+    let st = store.get(room)
+    if (!st) { st = readHighScore(room); store.set(room, st) }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-    res.end(JSON.stringify(payload()))
+    res.end(JSON.stringify(payload(st.top)))
     return
   }
   if (req.method === 'POST') {
     let body = ''
     req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy() })
     req.on('end', () => {
-      let v = NaN, nm = ''
-      try { const j = JSON.parse(body); v = Number(j.score); nm = j.name } catch { /* bad json -> NaN */ }
+      let v = NaN, nm = '', room = DEFAULT_ROOM
+      try { const j = JSON.parse(body); v = Number(j.score); nm = j.name; room = sanitizeRoom(j.room) } catch { /* bad json -> NaN */ }
+      let st = store.get(room)
+      if (!st) { st = readHighScore(room); store.set(room, st) }
       if (Number.isFinite(v) && v >= 0 && v <= 1e9) {
-        const next = insertTop(state.top, v, nm)
-        if (next !== state.top) {
-          state.top = next
-          writeHighScore(next)
+        const next = insertTop(st.top, v, nm)
+        if (next !== st.top) {
+          st.top = next
+          writeHighScore(next, room)
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      res.end(JSON.stringify(payload()))
+      res.end(JSON.stringify(payload(st.top)))
       return
     })
     return
@@ -149,10 +199,11 @@ const MIME = {
 function serveStatic(req, res) {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
   // Hosted high-score API, served at both the root and the Pages base path so
-  // one server instance answers either build.
-  const hsState = req._hsState
-  if (hsState && (urlPath === '/api/highscore' || urlPath === '/deadfall-stockholm-afterdark/api/highscore')) {
-    serveHighScore(req, res, hsState)
+  // one server instance answers either build. v7: `req._hsStore` is the
+  // room-keyed leaderboard Map.
+  const hsStore = req._hsStore
+  if (hsStore && (urlPath === '/api/highscore' || urlPath === '/deadfall-stockholm-afterdark/api/highscore')) {
+    serveHighScore(req, res, hsStore)
     return
   }
   // The Pages build is emitted with Vite base `/deadfall-stockholm-afterdark`,
@@ -268,26 +319,34 @@ export class Room {
 export function startServer(opts = {}) {
   const port = opts.port ?? Number(process.env.PORT || 8080)
   const host = opts.host ?? process.env.HOST ?? '0.0.0.0'
-  const room = new Room(opts.difficulty)
-  // Shared high-score state, attached to every request so serveStatic can see
-  // it without module-level mutable state (tests get a fresh store). v6: the
-  // record is a top-10 list; opts.highScore seeds a one-entry leaderboard and
-  // opts.highScoreName its holder name (used by tests).
-  const boot = readHighScore()
-  let top
+  // v7: each room code gets its own Match + leaderboard. `rooms` is the
+  // room-code -> Room registry; `hsStore` is the room-code -> {top} leaderboard
+  // store shared with serveHighScore. The 'default' room is pre-created so the
+  // returned `.room` (and legacy single-room tests) still resolve.
+  const rooms = new Map()
+  const hsStore = new Map()
+  const roomFor = (code) => {
+    const key = sanitizeRoom(code)
+    let r = rooms.get(key)
+    if (!r) { r = new Room(opts.difficulty); rooms.set(key, r) }
+    return r
+  }
+  const defaultRoom = roomFor(DEFAULT_ROOM)
+  // Seed the default leaderboard: opts.highScore is a one-entry board (tests);
+  // otherwise read the persisted default file.
   if (Number.isFinite(opts.highScore)) {
     const c = cleanEntry({ score: opts.highScore, name: opts.highScoreName })
-    top = c ? [c] : []
+    hsStore.set(DEFAULT_ROOM, { top: c ? [c] : [] })
   } else {
-    top = boot.top
+    hsStore.set(DEFAULT_ROOM, readHighScore(DEFAULT_ROOM))
   }
-  const hsState = { top }
-  const httpServer = http.createServer((req, res) => { req._hsState = hsState; serveStatic(req, res) })
+  const httpServer = http.createServer((req, res) => { req._hsStore = hsStore; serveStatic(req, res) })
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
   wss.on('connection', (socket) => {
     // Wait for a hello before assigning a slot, so the room is the join gate.
     let joined = false
+    let room = null
     socket.on('message', (raw) => {
       let msg
       try { msg = JSON.parse(raw.toString()) } catch { return }
@@ -295,6 +354,9 @@ export function startServer(opts = {}) {
         if (msg.t !== MSG.HELLO) return
         // v3 T11: carry the hello display name into the slot so the snapshot can
         // label remote avatars. buildHello already clamps to 24 chars.
+        // v7: route the socket into the room its hello names (msg.room), so
+        // distinct room codes are distinct sessions with distinct leaderboards.
+        room = roomFor(msg.room)
         const id = room.join(socket, msg.name)
         if (id === null) { socket.close(); return }
         joined = true
@@ -308,20 +370,23 @@ export function startServer(opts = {}) {
         case MSG.LEAVE: room.leave(socket); socket.close(); break
       }
     })
-    socket.on('close', () => room.leave(socket))
-    socket.on('error', () => room.leave(socket))
+    socket.on('close', () => { if (room) room.leave(socket) })
+    socket.on('error', () => { if (room) room.leave(socket) })
   })
 
   // Fixed 20 Hz authoritative tick (plan §4.2). setInterval is a Node timer,
-  // available in the server process (not the browser sandbox).
-  const timer = setInterval(() => room.tick(TICK), TICK * 1000)
+  // available in the server process (not the browser sandbox). v7: tick every
+  // room in the registry, not just one.
+  const timer = setInterval(() => {
+    for (const r of rooms.values()) r.tick(TICK)
+  }, TICK * 1000)
 
   const server = httpServer.listen(port, host, () => {
     console.log(`[server] http+ws on ${host}:${port}  room players cap ${MAX_PLAYERS}`)
   })
 
   return {
-    http: httpServer, wss, room, hsState,
+    http: httpServer, wss, room: defaultRoom, rooms, hsState: hsStore.get(DEFAULT_ROOM), hsStore,
     close() { clearInterval(timer); wss.close(); server.close() },
   }
 }

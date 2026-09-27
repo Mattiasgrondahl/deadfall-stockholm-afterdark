@@ -53,6 +53,21 @@ export class Score {
     // is {name, score}, already sanitized server-side; rendered via
     // textContent only. Empty until adoptBest lands.
     this.top = []
+    // v7: the room code this score belongs to. The hosted leaderboard is keyed
+    // by room, so a co-op run reads/writes its own room's board while solo play
+    // stays on the shared 'default' board. Set via setRoom() from Game.
+    this.room = 'default'
+  }
+
+  /** v7: set the active room code (co-op join). Sanitized defensively so a
+   *  hostile code can't break the query string; blank falls back to 'default'. */
+  setRoom(code) {
+    const s = String(code == null ? '' : code)
+      .replace(CTRL_RE, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 32)
+    this.room = s || 'default'
   }
 
   _storage() {
@@ -146,7 +161,7 @@ export class Score {
     const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
     if (!f) return this.best
     try {
-      const r = await f(this._apiBase() + '/api/highscore')
+      const r = await f(this._apiBase() + '/api/highscore?room=' + encodeURIComponent(this.room))
       if (!r || !r.ok) return this.best
       const j = await r.json()
       // v6: adopt the hosted top-10 leaderboard. The server returns
@@ -190,7 +205,7 @@ export class Score {
       const r = await f(this._apiBase() + '/api/highscore', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ score: this.best, name: this.bestName || this.name || '' })
+        body: JSON.stringify({ score: this.best, name: this.bestName || this.name || '', room: this.room })
       })
       return !!r && r.ok
     } catch (err) { return false }

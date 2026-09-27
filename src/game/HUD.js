@@ -152,6 +152,18 @@ export class HUD {
     })
     this._hudRoot.appendChild(musicBtn)
 
+    // v7: kill + headshot counters (top-right, under the music button). Wired
+    // by Game via this.kills / this.headshots (functions returning live ints);
+    // hidden until both are wired so a headless/no-systems run shows nothing.
+    const statsBox = d.createElement('div'); statsBox.className = 'hud-stats hidden'
+    this._killsValue = d.createElement('div'); this._killsValue.textContent = 'KILLS 0'
+    this._headValue = d.createElement('div'); this._headValue.textContent = 'HEADSHOTS 0'
+    statsBox.appendChild(this._killsValue); statsBox.appendChild(this._headValue)
+    this._statsBox = statsBox
+    this.kills = null      // set by Game wiring (v7): () => number
+    this.headshots = null  // set by Game wiring (v7): () => number
+    this._hudRoot.appendChild(statsBox)
+
     // Crosshair (static; spread FX deferred)
     const ch = d.createElement('div'); ch.className = 'crosshair'
     const dot = d.createElement('div'); dot.className = 'ch-dot'
@@ -309,13 +321,21 @@ export class HUD {
         }
         this._waveSub.classList.toggle('imminent', secs <= 2)
         this._threat.textContent = 'next: ' + preview.total
-        this._threatSub.textContent = 'cap ' + cap
+        // v7: keep _threatSubText in sync with the intermission readout so the
+        // else branch's change-detection correctly clears it on the next frame.
+        const capText = 'cap ' + cap
+        if (capText !== this._threatSubText) {
+          this._threatSubText = capText
+          this._threatSub.textContent = capText
+        }
       } else {
         if (this._waveSubText !== '') { this._waveSubText = ''; this._waveSub.textContent = '' }
         this._waveSub.classList.remove('imminent')
-        const room = cap > 0 ? cap - fighting : 0
+        // v7: the "room N/cap" headroom readout read as a confusing "room 0/10"
+        // (it is zombie-spawn headroom, not players), so it is hidden except at
+        // the cap, where the CAP warning still earns its place.
         const danger = cap > 0 && fighting >= cap - 2
-        const sub = cap > 0 ? (danger ? 'CAP ' + fighting + '/' + cap : 'room ' + room + '/' + cap) : ''
+        const sub = (cap > 0 && danger) ? 'CAP ' + fighting + '/' + cap : ''
         if (sub !== this._threatSubText) {
           this._threatSubText = sub
           this._threatSub.textContent = sub
@@ -348,6 +368,17 @@ export class HUD {
     this._scoreBox.classList.toggle('hidden', !this.score)
     if (this.score) {
       this._scoreValue.textContent = String(this.score.value !== undefined ? this.score.value : this.score)
+    }
+    // v7: kill + headshot counters, shown only when Game wires both getters.
+    const statsOn = !!(this.kills && this.headshots)
+    this._statsBox.classList.toggle('hidden', !statsOn)
+    if (statsOn) {
+      const k = Math.max(0, this.kills() | 0)
+      const h = Math.max(0, this.headshots() | 0)
+      const kText = 'KILLS ' + k
+      const hText = 'HEADSHOTS ' + h
+      if (this._killsValue.textContent !== kText) this._killsValue.textContent = kText
+      if (this._headValue.textContent !== hText) this._headValue.textContent = hText
     }
   }
 

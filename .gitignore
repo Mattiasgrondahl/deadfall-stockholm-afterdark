@@ -48,3 +48,4 @@ docs/spec-*.md
 
 # hosted high-score store (production host runtime state)
 server/highscore.json
+server/highscore-*.json

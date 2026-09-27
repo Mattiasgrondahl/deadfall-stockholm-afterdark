@@ -2,7 +2,7 @@
 // (element + document stubs). No real browser is involved.
 import assert from 'node:assert'
 import { HUD } from '../src/game/HUD.js'
-import { Screens, randomPlayerName } from '../src/game/Screens.js'
+import { Screens, randomPlayerName, randomRoomCode } from '../src/game/Screens.js'
 import { Score } from '../src/game/Score.js'
 import { VERSION } from '../src/version.js'
 
@@ -574,7 +574,9 @@ function fakeWave(o) {
   assert.strictEqual(waveSub.textContent, '', 'preview cleared when the intermission ends')
   assert(!waveSub.classList.contains('imminent'))
   assert.strictEqual(threat.textContent, 'left: 6')
-  assert.strictEqual(threatSub.textContent, 'room 3/9')
+  // v7: the "room N/cap" headroom line is hidden except at the cap, so a
+  // non-danger frame shows an empty sub-line.
+  assert.strictEqual(threatSub.textContent, '', 'room headroom line hidden')
   assert(!threat.classList.contains('danger'))
   w.remaining = 8
   hud.update(null, null, w)
@@ -770,7 +772,7 @@ function fakeWave(o) {
   const mpRows = []
   const collectRows = (el) => { for (const c of el.children) { if (c.classList.contains('mp-row')) mpRows.push(c); collectRows(c) } }
   collectRows(title)
-  const coopRow = mpRows.find((r) => r.children.some((c) => c.classList && c.classList.contains('mp-input') && c.value === 'default'))
+  const coopRow = mpRows.find((r) => r.children.some((c) => c.classList && c.classList.contains('difficulty-label') && c.textContent === 'CO-OP'))
   assert.ok(coopRow, 'co-op row present')
   const helperTexts = coopRow.children.filter((c) => c.classList.contains('tagline')).map((c) => c.textContent)
   assert.ok(helperTexts.some((t) => /shared game name/i.test(t)), 'room-code helper describes the shared room')
@@ -817,6 +819,15 @@ function fakeWave(o) {
   assert.ok(/\S \S/.test(soloName.value), 'random handle is "Adjective Noun"')
   // Deterministic: randomPlayerName with a fixed seed is stable.
   assert.strictEqual(randomPlayerName(1234), randomPlayerName(1234), 'seeded name is deterministic')
+  // v7: the co-op room input is prefilled with a random zombie-themed room code
+  // instead of the shared "default", so a fresh session lands in its own room.
+  const roomInput = nameInputs.find((c) => c.placeholder === 'room code')
+  assert.ok(roomInput, 'a room-code input exists')
+  assert.notStrictEqual(roomInput.value, 'default', 'default room replaced by a random code')
+  assert.ok(/^[A-Z]+-[A-Z]+-\d{2}$/.test(roomInput.value), `room code is WORD-WORD-NN (${roomInput.value})`)
+  // Deterministic + zombie-themed: seeded codes are stable and use the word list.
+  assert.strictEqual(randomRoomCode(1234), randomRoomCode(1234), 'seeded room code is deterministic')
+  assert.ok(/^[A-Z]+-[A-Z]+-\d{2}$/.test(randomRoomCode(99)), 'seeded code matches the shape')
   screens.dispose()
 }
 
