@@ -148,8 +148,8 @@ export class Input {
         this._syncMovement()
         if (code === 'KeyR') { this.inputState.reload = true; this._edgeHeld.reload = true }
         else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = true; this._edgeHeld.pause = true }
-        else if (code === 'KeyM') this._emit('mute')
-        else if (code === 'KeyN') this._emit('musicMute')
+        else if (code === 'KeyM') this._emit('musicMute')
+        else if (code === 'KeyN') this._emit('mute')
         else if (code === 'KeyB') this._emit('musicSkip')
         else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
         else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }

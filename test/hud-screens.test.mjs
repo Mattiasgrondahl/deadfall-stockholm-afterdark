@@ -252,7 +252,7 @@ function makeGame(doc, hud) {
   const verEl = find(title, 'version')
   assert(verEl, 'title screen shows a version element')
   assert.strictEqual(verEl.textContent, 'v' + VERSION, 'version label matches src/version.js')
-  assert.strictEqual(find(title, 'controls-grid').children.length, 13) // Phase 1: full live control contract
+  assert.strictEqual(find(title, 'controls-grid').children.length, 14) // Phase 1 + v15 B-next control
   const btns = []
   const collectBtns = (el) => { for (const c of el.children) { if (c.classList.contains('btn')) btns.push(c); collectBtns(c) } }
   collectBtns(title)

@@ -1544,7 +1544,7 @@ export class AudioBank {
     const base = String(url).split('/').pop().split('?')[0].replace(/\.mp3$/i, '')
     const stem = base.replace(/^song_/i, '')
     // Human-readable titles for the shipped soundtrack (keyed by filename stem).
-    const TITLES = { hord_en: 'Hord (EN)', matsubou_ja: 'Matsubou (JP)', javelin_sv: 'Javelin (SV)', boss: 'Boss Theme' }
+    const TITLES = { hord_en: 'Hord (EN)', matsubou_ja: 'Matsubou (JP)', javelin_sv: 'Javelin (SV)', doden_sv: 'Doden (SV)', nightfall_en: 'Nightfall (EN)', boss: 'Boss Theme' }
     if (TITLES[stem]) return TITLES[stem]
     // Fallback: prettify an unmapped snake_case stem into Title Case.
     const pretty = stem.replace(/_/g, ' ').trim()

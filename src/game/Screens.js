@@ -99,8 +99,8 @@ export class Screens {
     for (const [k, a] of [
       ['W A S D', 'Move'], ['Mouse', 'Look'], ['LMB', 'Fire'],
       ['R', 'Reload'], ['Shift', 'Sprint'], ['C', 'Crouch'],
-      ['Space', 'Jump'], ['F', 'Flashlight'], ['N', 'Music On/Off'],
-      ['M', 'Mute All'], ['1–5', 'Axe / Shotgun / Pistol / Sword / Sniper'],
+      ['Space', 'Jump'], ['F', 'Flashlight'], ['M', 'Music On/Off'],
+      ['N', 'Mute All'], ['B', 'Next Track'], ['1–5', 'Axe / Shotgun / Pistol / Sword / Sniper'],
       ['Q (hold)', 'Sniper scope'], ['P / Esc', 'Pause']
     ]) {
       const row = d.createElement('div'); row.className = 'ctrl-row'
@@ -293,8 +293,8 @@ export class Screens {
     }
     mkToggle('Flashlight flicker', 'flashlightEffects')
     mkToggle('Reduced motion', 'reducedMotion')
-    mkToggle('Mute all (M)', 'muted', (v) => { if (this._game.audio) this._game.audio.setMuted(v) })
-    mkToggle('Mute music (N)', 'musicMuted', (v) => {
+    mkToggle('Mute all (N)', 'muted', (v) => { if (this._game.audio) this._game.audio.setMuted(v) })
+    mkToggle('Mute music (M)', 'musicMuted', (v) => {
       if (this._game.audio) this._game.audio.setMusicMuted(v)
       if (this._game.hud) this._game.hud.setMusicMuted(v)
     })

@@ -49,9 +49,11 @@ export const LEVEL_TRACKS = [
 export const SONG_PLAYLIST = [
   ASSET_BASE + 'assets/audio/song_hord_en.mp3',
   ASSET_BASE + 'assets/audio/song_matsubou_ja.mp3',
-  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3'
+  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3',
+  ASSET_BASE + 'assets/audio/song_doden_sv.mp3',
+  ASSET_BASE + 'assets/audio/song_nightfall_en.mp3'
 ]
-export const SONG_PLAYLIST_SECONDS = [71, 86, 180]
+export const SONG_PLAYLIST_SECONDS = [71, 86, 180, 80, 193]
 // v3 boss fight: a dedicated mystical / slow / scary track (Wan2GP
 // tools/audio-specs/df_boss.json) that replaces the mp3 playlist for the
 // duration of a boss fight, then the playlist resumes.
@@ -945,8 +947,8 @@ export class Game {
     const tension = this._computeTension()
     if (this.audio) this.audio.setTension(tension, dt)
     if (this.musicDirector) this.musicDirector.onTension(tension)
-    // WIRING:NOWPLAYING (v4 UI): show the current soundtrack title + the B/N hint
-    // in the bottom-corner HUD. Only pushed when the name actually changes (so no
+    // WIRING:NOWPLAYING (v4 UI): show the current soundtrack title + the M/B hint
+    // in the middle-right HUD. Only pushed when the name actually changes (so no
     // per-frame DOM write), and hidden whenever the soundtrack is muted/off.
     if (this.hud && this.audio) {
       const np = (this.audio._musicMuted || !this.audio._musicOn) ? '' : this.audio.currentPlaylistName()

@@ -128,33 +128,33 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.dispose()
 }
 
-// --- mute edge fires once per press; on/off
+// --- master-mute edge (KeyN) fires once per press; on/off
 {
   const env = makeEnv(); const { input } = makeInput(env)
   let mutes = 0
   const cb = () => mutes++
   input.on('mute', cb)
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 1)
-  key(env, 'KeyM', 'keydown', true); assert.strictEqual(mutes, 1) // repeat ignored
-  key(env, 'KeyM', 'keyup')
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 2) // new press edge
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 1)
+  key(env, 'KeyN', 'keydown', true); assert.strictEqual(mutes, 1) // repeat ignored
+  key(env, 'KeyN', 'keyup')
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 2) // new press edge
   input.off('mute', cb)
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 2) // unsubscribed
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 2) // unsubscribed
   input.dispose()
 }
 
-// --- music-mute edge (KeyN) fires once per press; repeat ignored ---
+// --- music-mute edge (KeyM) fires once per press; repeat ignored ---
 {
   const env = makeEnv(); const { input } = makeInput(env)
   let musicMutes = 0
   const cb = () => musicMutes++
   input.on('musicMute', cb)
-  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 1)
-  key(env, 'KeyN', 'keydown', true); assert.strictEqual(musicMutes, 1) // repeat ignored
-  key(env, 'KeyN', 'keyup')
-  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 2) // new press edge
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 1)
+  key(env, 'KeyM', 'keydown', true); assert.strictEqual(musicMutes, 1) // repeat ignored
+  key(env, 'KeyM', 'keyup')
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 2) // new press edge
   input.off('musicMute', cb)
-  key(env, 'KeyN', 'keydown'); assert.strictEqual(musicMutes, 2) // unsubscribed
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 2) // unsubscribed
   input.dispose()
 }
 

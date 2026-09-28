@@ -140,7 +140,7 @@ export class HUD {
     musicBtn.className = 'hud-music-btn'
     musicBtn.type = 'button'
     musicBtn.textContent = '♪ Music: On'
-    musicBtn.title = 'Toggle soundtrack (Mute/Unmute music)'
+    musicBtn.title = 'Toggle soundtrack (M mute / unmute music)'
     this._musicBtn = musicBtn
     this._musicMuted = false
     this.onToggleMusic = null // set by Game wiring
@@ -164,14 +164,14 @@ export class HUD {
     this.headshots = null  // set by Game wiring (v7): () => number
     this._hudRoot.appendChild(statsBox)
 
-    // v4 UI: a "now playing" line pinned to the bottom-center of the HUD showing
-    // the current soundtrack track + the skip/mute hint. Hidden until Game feeds
-    // it a track name (setNowPlaying), so a headless/no-audio run shows nothing.
+    // v4 UI: a "now playing" line pinned to the middle-right of the HUD showing
+    // the current soundtrack title + the mute/next-track hint. Hidden until Game
+    // feeds it a track name (setNowPlaying), so a headless/no-audio run shows nothing.
     const np = d.createElement('div')
     np.className = 'hud-nowplaying hidden'
     this._npTrack = d.createElement('span'); this._npTrack.className = 'np-track'
     this._npHint = d.createElement('span'); this._npHint.className = 'np-hint'
-    this._npHint.textContent = '  ·  B skip · N mute'
+    this._npHint.textContent = '  ·  M mute · B next'
     np.appendChild(this._npTrack); np.appendChild(this._npHint)
     this._npEl = np
     this._hudRoot.appendChild(np)
