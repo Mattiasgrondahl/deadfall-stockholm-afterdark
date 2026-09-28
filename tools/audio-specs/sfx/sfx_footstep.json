@@ -1,1 +1,1 @@
-{"kind":"audio","model_type":"stable_audio3_small_sfx","name":"sfx_footstep","duration_seconds":1,"prompt":"A single soft boot footstep on snowy pavement, a dull muffled crunch scuff, quiet close-mic dry foley, one step only, no reverb.","seed":9334}
+{"kind":"audio","model_type":"stable_audio3_small_sfx","name":"sfx_footstep","duration_seconds":1,"prompt":"A single soft boot footstep landing on packed snow, a low dull muffled thud with a soft crunch, very quiet close-mic dry foley, no high-frequency snap, no reverb, one step only.","seed":47118}

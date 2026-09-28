@@ -921,6 +921,15 @@ export class Game {
       // plane; sprint is inferred from speed inside AudioBank.
       const spd = p ? Math.hypot(p.velocity.x, p.velocity.z) : 0
       this.audio.updateGroans(dt, this.zombies, pPos, pYaw, { speed: spd })
+      // v4 jump SFX: fire once on the jump edge — the frame the player's
+      // vertical velocity jumps from <=0 to a strong positive launch (Player
+      // sets velocity.y = JUMP_V only while grounded). Edge-detected so a held
+      // jump key does not retrigger, and headless/muted stays silent.
+      if (p) {
+        const vy = p.velocity.y
+        if (vy > 3 && (this._prevVy === undefined || this._prevVy <= 0)) this.audio.jump()
+        this._prevVy = vy
+      }
     }
     // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
     // player is — alive-zombie pressure vs the wave cap, blended with low
@@ -1039,29 +1048,10 @@ export class Game {
     this.zombies.push(zombie)
     // The wave-5 boss owns the HUD boss bar for as long as it is alive.
     if (zombie.isBoss) this._boss = zombie
-    // Wan2GP spawn stinger: one horror hit per 1.2 s window (AudioBank
-    // throttles too), so a wave burst fires it once, not per zombie. Boss
-    // spawns always get their own hit. Headless/muted: silent no-op.
-    if (this.audio && (zombie.isBoss || !this._stingerRecent())) {
-      this._stingerAt = this._now()
-      this.audio.playSpawnStinger(ASSET_BASE + 'assets/audio/spawn_stinger.wav')
-    }
+    // v4: the Wan2GP spawn stinger (a ~6 s horror hit) is removed — it fired on
+    // the opening spawn burst and read as a "wave-start sound" the user wanted
+    // gone. Zombie growls already carry the moment, so spawns stay silent.
     return zombie
-  }
-
-  /** True when the last spawn stinger is still inside its 1.2 s throttle
-   *  window (mirrors AudioBank.playSpawnStinger's own guard). */
-  _stingerRecent() {
-    return this._stingerAt !== undefined && (this._now() - this._stingerAt) < 1.2
-  }
-
-  /** Seconds clock for the stinger throttle: AudioContext time when live,
-   *  performance.now fallback, 0 headless (stinger is a no-op there anyway). */
-  _now() {
-    const ctx = this.audio && this.audio.ctx
-    if (ctx && Number.isFinite(ctx.currentTime)) return ctx.currentTime
-    if (typeof performance !== 'undefined') return performance.now() / 1000
-    return 0
   }
 
   /**

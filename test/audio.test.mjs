@@ -952,4 +952,18 @@ function bankWithFakeCtx() {
   b1.dispose(); b2.dispose()
 }
 
+{
+  // v4 jump: a headless jump() is a silent no-op; with a fake ctx it builds a
+  // synthesized rustle+grunt stack (bandpass noise src+filter+gain + a tone
+  // osc+gain = 5 nodes) when the sample has not decoded.
+  const headless = new AudioBank()
+  headless.jump() // no ctx -> no throw
+  headless.dispose()
+  const bank = bankWithFakeCtx()
+  const before = bank.ctx._created.length
+  bank.jump()
+  assert.ok(bank.ctx._created.length - before >= 5, 'jump synthesized stack too small')
+  bank.dispose()
+}
+
 console.log('audio OK')

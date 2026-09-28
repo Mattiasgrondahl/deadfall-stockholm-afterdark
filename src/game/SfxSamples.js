@@ -31,6 +31,7 @@ const SFX_FILES = {
   moan_distant: SFX_BASE + 'sfx_moan_distant.wav',
   attack_hiss: SFX_BASE + 'sfx_attack_hiss.wav',
   footstep: SFX_BASE + 'sfx_footstep.wav',
+  jump: SFX_BASE + 'sfx_jump.wav',
   snowstorm: SFX_BASE + 'sfx_snowstorm.wav'
 }
 

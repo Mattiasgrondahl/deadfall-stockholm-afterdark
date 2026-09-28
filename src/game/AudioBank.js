@@ -44,6 +44,8 @@ const HISS_GAIN = 0.5         // gain at point-blank (scaled by proximity)
 const FOOTSTEP_STRIDE = 2.0   // metres travelled per footfall (alternates L/R)
 const FOOTSTEP_WALK_GAIN = 0.16
 const FOOTSTEP_RUN_GAIN = 0.26
+// v4 jump: a soft cloth-rustle + effort grunt fired once on the jump edge.
+const JUMP_GAIN = 0.22
 // v4 weather: a periodic snowstorm swell layered over the wind bed. Separate
 // from the short gusts above — a longer, louder blizzard sweep that rises and
 // falls every STORM_MIN..STORM_MAX seconds to sell the winter setting.
@@ -713,6 +715,21 @@ export class AudioBank {
     // Synthesized stand-in: a short lowpassed scuff + a soft thud.
     this._playNoise({ duration: 0.09, filterType: 'lowpass', filterFreq: 900, gain })
     this._playTone({ type: 'sine', freq: 120, freqEnd: 70, duration: 0.06, gain: gain * 0.5 })
+  }
+
+  /**
+   * v4 jump: a soft body-movement cue fired once when the player leaves the
+   * ground (a cloth rustle + a low effort grunt). At the listener (no panner —
+   * it is the player's own jump). Synthesized fallback when the sample has not
+   * decoded: a short bandpassed noise rustle + a low falling grunt tone.
+   */
+  jump() {
+    if (!this.ctx) return
+    this._resume()
+    if (this._playSfx('jump', { gain: JUMP_GAIN })) return
+    // Synthesized stand-in: a brief cloth rustle + a soft low grunt.
+    this._playNoise({ duration: 0.12, filterType: 'bandpass', filterFreq: 700, gain: JUMP_GAIN * 0.6 })
+    this._playTone({ type: 'sine', freq: 180, freqEnd: 120, duration: 0.14, gain: JUMP_GAIN * 0.5 })
   }
 
   /**
