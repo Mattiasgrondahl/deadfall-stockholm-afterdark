@@ -22,6 +22,11 @@ const CTRL_RE = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
 // v4 XSS defense-in-depth: strip HTML-significant characters so a hostile name
 // is neutralized at input, not only at render. Mirrors the server sanitizer.
 const MARKUP_RE = new RegExp('[<>&"\']', 'g')
+// v4 UI: the allowed character set for a player name / room code — letters,
+// digits, space, underscore, and the two punctuation marks the user asked for
+// (! and ?). Everything else (including < > / = ( ) which let a payload like
+// `img src=x onerror=alert(1)` sneak through as inert-but-ugly text) is dropped.
+const ALLOWED_RE = new RegExp('[^A-Za-z0-9 _!?]', 'g')
 
 /** v3 T6: sanitize a player-supplied name for the hosted high score. Strips
  *  control characters (incl. newlines/tabs) and HTML-significant characters
@@ -32,6 +37,9 @@ export function sanitizeName(raw) {
   const s = String(raw == null ? '' : raw)
     .replace(CTRL_RE, '')
     .replace(MARKUP_RE, '')
+    // v4 UI: allow-list the charset so garbage like `img src=x onerror=alert(`
+    // can never appear in the leaderboard — every disallowed char is dropped.
+    .replace(ALLOWED_RE, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_NAME)
@@ -64,13 +72,16 @@ export class Score {
   }
 
   /** v7: set the active room code (co-op join). Sanitized defensively so a
-   *  hostile code can't break the query string; blank falls back to 'default'. */
+   *  hostile code can't break the query string; blank falls back to 'default'.
+   *  v4 UI: allow-list the charset (a-z 0-9 space _ ! ?) and clamp to 24 chars,
+   *  matching the room input field. */
   setRoom(code) {
     const s = String(code == null ? '' : code)
       .replace(CTRL_RE, '')
+      .replace(ALLOWED_RE, '')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 32)
+      .slice(0, 24)
     this.room = s || 'default'
   }
 

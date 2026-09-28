@@ -285,6 +285,24 @@ html, body {
 .hud-stats.hidden { display: none; }
 .hud-stats div:last-child { color: var(--warn); }
 
+/* v4 UI: "now playing" line, bottom-center of the HUD. */
+.hud-nowplaying {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  opacity: 0.8;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.hud-nowplaying .np-track { color: var(--accent); }
+.hud-nowplaying .np-hint { color: var(--ink-dim); }
+.hud-nowplaying.hidden { display: none; }
+
 /* high score (title screen) */
 .highscore {
   margin-top: 14px;
@@ -294,15 +312,21 @@ html, body {
   color: var(--warn);
 }
 
-/* v6: top-10 leaderboard under the title high-score line */
+/* v6: top-10 leaderboard. v4 UI: pinned to the TOP-RIGHT corner of the title
+   overlay (the .screen is position:absolute; inset:0, so absolute here anchors
+   to the full overlay, not the centered panel). z-index 2 keeps it above the
+   backdrop/video (0) and the panel (1). */
 .highscore-board {
-  margin-top: 10px;
-  margin-bottom: 6px;
+  position: absolute;
+  top: 20px;
+  right: 28px;
+  z-index: 2;
   font-family: var(--mono);
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-width: 320px;
+  text-align: right;
 }
 .highscore-board .board-title {
   font-size: 12px;
@@ -777,4 +801,8 @@ html, body {
   .hud-battery .bar { width: 120px; }
   .hud-score { right: 14px; top: 14px; }
   .hud-music-btn { right: 14px; top: 58px; font-size: 12px; padding: 5px 9px; }
+  /* v4 UI: shrink the top-right leaderboard on narrow screens so it stays a
+     compact corner block and doesn't crowd the centered panel. */
+  .highscore-board { top: 12px; right: 14px; max-width: 180px; font-size: 11px; }
+  .highscore-board .board-row { font-size: 11px; }
 }

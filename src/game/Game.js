@@ -914,6 +914,13 @@ export class Game {
     const tension = this._computeTension()
     if (this.audio) this.audio.setTension(tension, dt)
     if (this.musicDirector) this.musicDirector.onTension(tension)
+    // WIRING:NOWPLAYING (v4 UI): show the current soundtrack title + the B/N hint
+    // in the bottom-corner HUD. Only pushed when the name actually changes (so no
+    // per-frame DOM write), and hidden whenever the soundtrack is muted/off.
+    if (this.hud && this.audio) {
+      const np = (this.audio._musicMuted || !this.audio._musicOn) ? '' : this.audio.currentPlaylistName()
+      if (np !== this._lastNowPlaying) { this._lastNowPlaying = np; this.hud.setNowPlaying(np) }
+    }
     // WIRING:MULTIPLAYER (Phase 5): advance the net layer, send local input,
     // and re-pose remote avatars from interpolated snapshots.
     if (this.multiplayer) this.multiplayer.update(dt, this.inputState, this.player ? this.player.yaw : 0)

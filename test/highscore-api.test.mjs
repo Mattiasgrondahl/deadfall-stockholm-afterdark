@@ -88,10 +88,12 @@ test('v3 T6: a hostile XSS name is sanitized server-side, never stored as markup
     assert.ok(!/\s{2,}/.test(holder.name), 'no runs of whitespace survive')
     // v4 XSS defense-in-depth: HTML-significant characters are stripped at the
     // source too, so the payload is neutralized even before the textContent
-    // render. Assert no markup-significant char survives and the exact cleaned
-    // string (control chars + markup removed, whitespace collapsed, clamped 24).
+    // render. v4 UI: the name is also allow-listed to a-z 0-9 space _ ! ?, so
+    // every other char (parens, =, /) is dropped too — the payload can't even
+    // survive as inert text. Assert the exact cleaned string.
     assert.ok(!/[<>&"']/.test(holder.name), 'no HTML-significant characters survive')
-    assert.equal(holder.name, 'img src=x onerror=alert(')
+    assert.ok(!/[^A-Za-z0-9 _!?]/.test(holder.name), 'only the allowed charset survives')
+    assert.equal(holder.name, 'img srcx onerroralert1bz')
   } finally { s.close() }
 })
 

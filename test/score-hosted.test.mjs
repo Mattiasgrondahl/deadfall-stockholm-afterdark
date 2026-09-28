@@ -48,13 +48,14 @@ test('v6: adoptBest adopts the hosted top-10 leaderboard', async () => {
   assert.deepEqual(s.top, [{ name: 'Zed', score: 900 }, { name: 'Ana', score: 500 }], 'leaderboard adopted')
   assert.equal(fired, 1, 'change callback fired once')
   // A hostile name in the list is re-sanitized defensively on the client too:
-  // control chars AND HTML-significant characters are stripped, so a markup
-  // payload is neutralized at the source (not only at render).
+  // control chars AND HTML-significant characters are stripped, and v4 UI also
+  // allow-lists the charset to a-z 0-9 space _ ! ?, so a markup payload is fully
+  // neutralized (parens/slash/equals dropped too) at the source, not only at render.
   await s.adoptBest(fakeFetch({ json: { best: 10, top: [{ name: '<b>x</b>\n\ny', score: 10 }] } }))
-  assert.equal(s.top[0].name, 'bx/by', 'control chars + markup stripped (slash survives)')
-  // v4 XSS: a classic img/onerror payload loses every angle bracket + quote.
+  assert.equal(s.top[0].name, 'bxby', 'control chars + markup + disallowed chars stripped')
+  // v4 XSS: a classic img/onerror payload loses every angle bracket + quote + paren.
   await s.adoptBest(fakeFetch({ json: { best: 500, top: [{ name: '<img src=x onerror=alert(1)>', score: 500 }] } }))
-  assert.equal(s.top[0].name, 'img src=x onerror=alert(', 'XSS payload stripped of < > "')
+  assert.equal(s.top[0].name, 'img srcx onerroralert1', 'XSS payload stripped to the allowed charset')
   assert.ok(!/[<>&"']/.test(s.top[0].name), 'no markup-significant chars survive')
 })
 

@@ -800,7 +800,7 @@ function fakeWave(o) {
   // START routes through _startSolo -> score.setName (sanitized by Score) then startGame.
   screens._startSolo()
   assert.strictEqual(started, 1, 'START starts a solo run')
-  assert.strictEqual(game.score.name, 'img src=x onerror=alert(', 'name sanitized: markup stripped + clamped to 24')
+  assert.strictEqual(game.score.name, 'img srcx onerroralert1', 'name sanitized: markup + disallowed chars stripped, clamped to 24')
   // XSS safety: the record holder name is rendered via textContent only — the
   // high-score element gains NO child markup nodes from it (zero markup nodes).
   game.score.bestName = '<img src=x onerror=alert(1)>'
@@ -848,6 +848,16 @@ function fakeWave(o) {
   assert.ok(rows[1].textContent.includes('Ana') && rows[1].textContent.includes('500'), 'rank 2 filled')
   assert.ok(rows[2].textContent.includes('Kai'), 'rank 3 filled')
   assert.ok(!rows[3].textContent.includes('Zed'), 'empty rank 4 has no stale name')
+  // v4 UI: the board is reparented out of the centered panel and pinned to the
+  // title overlay (a direct child of the .screen), not inside the .panel.
+  assert.strictEqual(board.parentNode, title, 'v4 UI: board is a direct child of the title overlay')
+  // v4 UI: empty ranks are pre-populated with a random handle + score 0 so the
+  // board always reads as a full top-10.
+  const r3name = rows[3].children[1].textContent
+  const r3score = rows[3].children[2].textContent
+  assert.ok(/\S/.test(r3name), 'v4 UI: empty rank 4 pre-filled with a random name')
+  assert.strictEqual(r3score, '0', 'v4 UI: empty rank 4 pre-filled with score 0')
+  assert.ok(/\S \S/.test(r3name), 'v4 UI: pre-filled name is an "Adjective Noun" handle')
   // textContent-only: a hostile name adds no markup nodes to the row.
   score.top = [{ name: '<img src=x>', score: 5 }]
   screens._renderBoard()
@@ -871,10 +881,17 @@ function fakeWave(o) {
   const roomInput = nameInputs.find((c) => c.placeholder === 'room code')
   assert.ok(roomInput, 'a room-code input exists')
   assert.notStrictEqual(roomInput.value, 'default', 'default room replaced by a random code')
-  assert.ok(/^[A-Z]+-[A-Z]+-\d{2}$/.test(roomInput.value), `room code is WORD-WORD-NN (${roomInput.value})`)
+  assert.ok(/^[A-Z]+_[A-Z]+_\d{2}$/.test(roomInput.value), `room code is WORD_WORD_NN (${roomInput.value})`)
   // Deterministic + zombie-themed: seeded codes are stable and use the word list.
   assert.strictEqual(randomRoomCode(1234), randomRoomCode(1234), 'seeded room code is deterministic')
-  assert.ok(/^[A-Z]+-[A-Z]+-\d{2}$/.test(randomRoomCode(99)), 'seeded code matches the shape')
+  assert.ok(/^[A-Z]+_[A-Z]+_\d{2}$/.test(randomRoomCode(99)), 'seeded code matches the shape')
+  // v4 UI: both inputs are capped at 24 chars and filter disallowed characters
+  // live on input (only a-z 0-9 space _ ! ? survive).
+  assert.strictEqual(soloName.maxLength, 24, 'v4 UI: name input maxLength is 24')
+  assert.strictEqual(roomInput.maxLength, 24, 'v4 UI: room input maxLength is 24')
+  soloName.value = 'a<b>c(x)/d!e?f_1 2'
+  soloName.dispatch('input')
+  assert.strictEqual(soloName.value, 'abcxd!e?f_1 2', 'v4 UI: name input strips disallowed chars on input')
   screens.dispose()
 }
 

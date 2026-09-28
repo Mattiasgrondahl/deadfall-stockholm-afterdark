@@ -39,6 +39,10 @@ const HS_CTRL = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
 // text. Rendering is textContent-only, but neutralizing at the source keeps the
 // shared board clean and removes reliance on the render path alone.
 const HS_MARKUP = new RegExp('[<>&"\']', 'g')
+// v4 UI: allow-list the name charset (letters, digits, space, _ ! ?) so a hostile
+// POST like `img src=x onerror=alert(1)` can never be stored — every disallowed
+// char is dropped. Mirrors the client sanitizeName in src/game/Score.js.
+const HS_ALLOWED = new RegExp('[^A-Za-z0-9 _!?]', 'g')
 
 // v4 request logging: make writes attributable. The server had no per-request
 // logging at all, so a hostile POST (e.g. the XSS name) left no trace of who
@@ -65,7 +69,7 @@ function logWs(event, socket, extra) {
 // leaderboard + its own Match. Codes are sanitized like names (control chars
 // stripped, whitespace collapsed, clamped) and fall back to 'default' so a
 // missing/blank code still lands on the original global board.
-const HS_MAX_ROOM = 32
+const HS_MAX_ROOM = 24
 const DEFAULT_ROOM = 'default'
 
 /** Resolve the base high-score file path at call time (HIGHSCORE_FILE override). */
@@ -77,6 +81,7 @@ function hsRootFile() {
 function sanitizeRoom(raw) {
   const s = String(raw == null ? '' : raw)
     .replace(HS_CTRL, '')
+    .replace(HS_ALLOWED, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, HS_MAX_ROOM)
@@ -97,6 +102,7 @@ function sanitizeName(raw) {
   return String(raw == null ? '' : raw)
     .replace(HS_CTRL, '')
     .replace(HS_MARKUP, '')
+    .replace(HS_ALLOWED, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, HS_MAX_NAME)

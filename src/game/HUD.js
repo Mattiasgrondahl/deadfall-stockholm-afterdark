@@ -164,6 +164,18 @@ export class HUD {
     this.headshots = null  // set by Game wiring (v7): () => number
     this._hudRoot.appendChild(statsBox)
 
+    // v4 UI: a "now playing" line pinned to the bottom-center of the HUD showing
+    // the current soundtrack track + the skip/mute hint. Hidden until Game feeds
+    // it a track name (setNowPlaying), so a headless/no-audio run shows nothing.
+    const np = d.createElement('div')
+    np.className = 'hud-nowplaying hidden'
+    this._npTrack = d.createElement('span'); this._npTrack.className = 'np-track'
+    this._npHint = d.createElement('span'); this._npHint.className = 'np-hint'
+    this._npHint.textContent = '  ·  B skip · N mute'
+    np.appendChild(this._npTrack); np.appendChild(this._npHint)
+    this._npEl = np
+    this._hudRoot.appendChild(np)
+
     // Crosshair (static; spread FX deferred)
     const ch = d.createElement('div'); ch.className = 'crosshair'
     const dot = d.createElement('div'); dot.className = 'ch-dot'
@@ -399,6 +411,19 @@ export class HUD {
     if (this._musicBtn) {
       this._musicBtn.textContent = this._musicMuted ? '♪ Music: Off' : '♪ Music: On'
       this._musicBtn.classList.toggle('muted', this._musicMuted)
+    }
+  }
+
+  /** v4 UI: show the current soundtrack track name in the bottom-corner "now
+   *  playing" line (called by Game whenever the playlist advances). A falsy name
+   *  hides the line (e.g. music muted/off or a headless run). textContent-only. */
+  setNowPlaying(name) {
+    if (!this._npEl) return
+    if (name) {
+      this._npTrack.textContent = '♪ ' + name
+      this._npEl.classList.remove('hidden')
+    } else {
+      this._npEl.classList.add('hidden')
     }
   }
 

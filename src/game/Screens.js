@@ -12,6 +12,7 @@
 // to a direct state resume when the lock is unavailable (headless, denied).
 
 import { VERSION } from '../version.js'
+import { sanitizeName } from './Score.js'
 
 // v6: random player-handle generator. AGENTS.md forbids Math.random in src/,
 // so this uses the standard seeded-LCG shape (see AmmoDrops._rand) seeded from
@@ -44,7 +45,9 @@ export function randomRoomCode(seed) {
   const w1 = ROOM_WORDS[Math.floor(rand() * ROOM_WORDS.length) % ROOM_WORDS.length]
   const w2 = ROOM_WORDS[Math.floor(rand() * ROOM_WORDS.length) % ROOM_WORDS.length]
   const n = 10 + Math.floor(rand() * 90) // 10..99
-  return w1 + '-' + w2 + '-' + n
+  // v4 UI: join with underscores (not dashes) so a generated code stays inside
+  // the allowed input charset (a-z 0-9 space _ ! ?).
+  return w1 + '_' + w2 + '_' + n
 }
 
 export class Screens {
@@ -125,7 +128,7 @@ export class Screens {
     this._nightmareBtn.addEventListener('click', () => this._setDifficulty('nightmare'))
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
-    panelT.appendChild(grid); panelT.appendChild(board); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
+    panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
     // v11: ONE display name drives both modes. It is sanitized (control chars
     // stripped, whitespace collapsed, clamped to 24), attributed to a solo high
     // score AND sent to the co-op room, so the same generated handle appears on
@@ -136,6 +139,11 @@ export class Screens {
     const nameLabel = d.createElement('div'); nameLabel.className = 'difficulty-label'; nameLabel.textContent = 'PLAYER'
     this._nameInput = d.createElement('input'); this._nameInput.className = 'mp-input'
     this._nameInput.type = 'text'; this._nameInput.placeholder = 'your name'; this._nameInput.value = 'player'
+    // v4 UI: cap the field at 24 chars and keep only the allowed charset live as
+    // the player types (a-z 0-9 space _ ! ?), so a payload like `img src=x
+    // onerror=alert(` can't even be entered.
+    this._nameInput.maxLength = 24
+    this._nameInput.addEventListener('input', () => Screens._filterInput(this._nameInput))
     const soloHint = d.createElement('div'); soloHint.className = 'tagline dim'
     soloHint.textContent = 'Your name — shown on the high score and to other players in co-op.'
     nameRow.appendChild(nameLabel); nameRow.appendChild(this._nameInput); nameRow.appendChild(soloHint)
@@ -151,6 +159,9 @@ export class Screens {
     const mpLabel = d.createElement('div'); mpLabel.className = 'difficulty-label'; mpLabel.textContent = 'CO-OP'
     this._roomInput = d.createElement('input'); this._roomInput.className = 'mp-input'
     this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'default'
+    // v4 UI: same 24-char cap + live charset filter as the name field.
+    this._roomInput.maxLength = 24
+    this._roomInput.addEventListener('input', () => Screens._filterInput(this._roomInput))
     // v3 T6b: short helper line under the co-op field, rendered via textContent
     // (same XSS rules as the high-score name).
     const roomHint = d.createElement('div'); roomHint.className = 'tagline dim'
@@ -185,6 +196,10 @@ export class Screens {
     this._titleVideo = vid
     this._title.appendChild(vid)
     this._title.appendChild(panelT)
+    // v4 UI: the TOP-10 board is a sibling of the panel, pinned to the top-right
+    // corner of the title overlay (see .highscore-board CSS) instead of sitting
+    // inside the centered panel.
+    this._title.appendChild(board)
     this._root.appendChild(this._title)
 
     // PAUSE — clicking the overlay re-locks the pointer (or resumes directly
@@ -442,8 +457,10 @@ export class Screens {
   /** JOIN CO-OP: read the room code + name from the title inputs and start a
    *  server-authoritative co-op run. */
   _joinCoop() {
-    const room = (this._roomInput && this._roomInput.value || 'default').trim() || 'default'
-    const name = (this._nameInput && this._nameInput.value || 'player').trim() || 'player'
+    // v4 UI: sanitize both fields through the same allow-list the score uses, so
+    // a co-op join can't carry a hostile name/room to the server either.
+    const room = sanitizeName(this._roomInput && this._roomInput.value) || 'default'
+    const name = sanitizeName(this._nameInput && this._nameInput.value) || 'player'
     this._game.startMultiplayer({ room, name })
   }
 
@@ -491,10 +508,19 @@ export class Screens {
   _renderBoard() {
     if (!this._boardRows) return
     const top = (this._game.score && this._game.score.top) || []
+    // v4 UI: pre-populate empty slots with random handles at score 0 so the
+    // board always reads as a full top-10 rather than blank rows. Each empty
+    // rank gets a distinct generated name (seeded off its rank so it is stable
+    // across a page load) and a 0 score. Real hosted entries (top[i]) win.
     for (let i = 0; i < this._boardRows.length; i++) {
       const e = top[i]
-      this._boardRows[i].nm.textContent = e ? e.name : ''
-      this._boardRows[i].sc.textContent = e ? String(e.score) : ''
+      if (e) {
+        this._boardRows[i].nm.textContent = e.name
+        this._boardRows[i].sc.textContent = String(e.score)
+      } else {
+        this._boardRows[i].nm.textContent = randomPlayerName(1000 + i)
+        this._boardRows[i].sc.textContent = '0'
+      }
     }
   }
 
@@ -512,6 +538,15 @@ export class Screens {
     // uniquely-named room with its own leaderboard, instead of the shared
     // "default". Only overwrites the untouched default so a typed code stands.
     if (this._roomInput && this._roomInput.value === 'default') this._roomInput.value = randomRoomCode()
+  }
+
+  /** v4 UI: strip disallowed characters from an input's value in place, keeping
+   *  only a-z 0-9 space _ ! ? (case preserved). Used as a live `input` handler
+   *  on the name + room fields so a hostile payload can't be typed. */
+  static _filterInput(el) {
+    if (!el) return
+    const cleaned = String(el.value == null ? '' : el.value).replace(/[^A-Za-z0-9 _!?]/g, '')
+    if (cleaned !== el.value) el.value = cleaned
   }
 
   /** v3 T6: the title HIGH SCORE label. When the hosted record has a holder

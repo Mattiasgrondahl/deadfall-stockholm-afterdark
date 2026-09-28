@@ -1156,6 +1156,23 @@ export class AudioBank {
   /** Skip to the next song in the playlist right now (player-initiated). */
   skipPlaylistTrack() { this._advancePlaylist() }
 
+  /** v4 UI: human-readable title of the CURRENT playlist track, derived from its
+   *  filename (the shipped mp3s carry a language suffix: _en/_ja/_sv). Returns
+   *  '' when no playlist is active so the HUD can hide the "now playing" line. */
+  currentPlaylistName() {
+    if (!this._plUrls || !this._plUrls.length) return ''
+    const url = this._plUrls[this._plIndex || 0]
+    if (!url) return ''
+    const base = String(url).split('/').pop().split('?')[0].replace(/\.mp3$/i, '')
+    const stem = base.replace(/^song_/i, '')
+    // Human-readable titles for the shipped soundtrack (keyed by filename stem).
+    const TITLES = { hord_en: 'Hord (EN)', matsubou_ja: 'Matsubou (JP)', javelin_sv: 'Javelin (SV)', boss: 'Boss Theme' }
+    if (TITLES[stem]) return TITLES[stem]
+    // Fallback: prettify an unmapped snake_case stem into Title Case.
+    const pretty = stem.replace(/_/g, ' ').trim()
+    return pretty ? pretty.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : ''
+  }
+
   /** Temporarily pause the mp3 playlist (e.g. for a boss fight) while keeping
    *  the playlist state so resumePlaylistTrack can continue the same song. */
   pausePlaylistTrack() {
