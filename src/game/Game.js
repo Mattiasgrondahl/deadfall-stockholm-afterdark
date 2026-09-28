@@ -821,13 +821,20 @@ export class Game {
     const record = this.score ? this.score.newRecord() : false
     if (this.score) this.score.submitRun()
     const wave = (this.multiplayer && this.multiplayer.lastSnap) ? (this.multiplayer.lastSnap.wave | 0) : 0
+    // v15: the co-op end screen shows the full per-player scoreboard (zombie
+    // kills, player kills, deaths, headshots, total score) with the winner — the
+    // highest-scoring player — first. finalScoreboard is sorted by score desc.
+    const board = (this.multiplayer && this.multiplayer.finalScoreboard) || null
+    const winner = board && board.length ? board[0].id : null
     if (this.screens) this.screens.showGameOver({
       wave,
       kills: this.kills,
       score: this.score ? this.score.value : 0,
       best: this.score ? this.score.best : 0,
       name: this.score ? this.score.name : '',
-      record
+      record,
+      scoreboard: board,
+      winner
     })
   }
 

@@ -154,3 +154,50 @@ test('v12: final scoreboard rows carry display names', () => {
   const sb2 = m.scoreboard()
   assert.equal(sb2[1].name, 'Ada', 'named row carries the display name even during grace')
 })
+
+test('v15: match ends at 72 team kills; scoreboard carries deaths/headshots/playerKills; winner is highest score', () => {
+  const m = new Match({ players: [{ id: 'p0', name: 'Ada' }, { id: 'p1', name: 'Bo' }] })
+  // p0 kills 70 walkers with headshots; p1 kills 2 more -> 72 total, ending the
+  // match. p1 also friendly-fires p0 to death (a player kill + a death).
+  for (let i = 0; i < 70; i++) {
+    const z = m.spawnZombie('walker', 0, 0, 1)
+    m.applyHit(z._matchId, 9999, true, 'p0')
+  }
+  for (let i = 0; i < 2; i++) {
+    const z = m.spawnZombie('walker', 0, 0, 1)
+    m.applyHit(z._matchId, 9999, false, 'p1')
+  }
+  // p1 kills p0 via friendly fire (enough to drop p0 to 0 from full health).
+  m.applyFF('p0', 9999, 'p1')
+  m.step(TICK)
+  assert.equal(m.ended, true, 'match ended on the 72-kill target')
+  assert.equal(m.endReason, 'killtarget', 'end reason is the kill target')
+  const sb = m.scoreboard()
+  assert.equal(sb.length, 2, 'both players on the scoreboard')
+  assert.equal(sb[0].id, 'p0', 'p0 (70 headshot kills) has the highest score -> winner first')
+  const p0 = sb.find((r) => r.id === 'p0')
+  const p1 = sb.find((r) => r.id === 'p1')
+  assert.equal(p0.kills, 70, 'p0 killed 70 zombies')
+  assert.equal(p0.headshots, 70, 'every p0 kill was a headshot')
+  assert.equal(p0.deaths, 1, 'p0 died once (friendly fire)')
+  assert.equal(p0.playerKills, 0, 'p0 killed no players')
+  assert.equal(p1.kills, 2, 'p1 killed 2 zombies')
+  assert.equal(p1.headshots, 0, 'p1 had no headshots')
+  assert.equal(p1.playerKills, 1, 'p1 killed a teammate (friendly fire)')
+  assert.ok(p0.score > p1.score, 'winner has the strictly higher score')
+})
+
+test('v15: killTarget is configurable and below-target matches do not end early', () => {
+  const m = new Match({ players: [{ id: 'p0' }], killTarget: 3 })
+  for (let i = 0; i < 2; i++) {
+    const z = m.spawnZombie('walker', 0, 0, 1)
+    m.applyHit(z._matchId, 9999, false, 'p0')
+  }
+  m.step(TICK)
+  assert.equal(m.ended, false, 'two kills do not end a 3-kill match')
+  const z = m.spawnZombie('walker', 0, 0, 1)
+  m.applyHit(z._matchId, 9999, false, 'p0')
+  m.step(TICK)
+  assert.equal(m.ended, true, 'the third kill ends it')
+  assert.equal(m.endReason, 'killtarget')
+})

@@ -894,5 +894,38 @@ function fakeWave(o) {
   assert.strictEqual(soloName.value, 'abcxd!e?f_1 2', 'v4 UI: name input strips disallowed chars on input')
   screens.dispose()
 }
+{
+  // v15: co-op end-game scoreboard — showGameOver with a per-player scoreboard
+  // fills the end board (winner first, star on the winner) and names the winner;
+  // a single-player run (no scoreboard) hides it.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  screens.showGameOver({
+    wave: 3, kills: 12, score: 400, best: 400, record: false,
+    scoreboard: [
+      { id: 'p0', name: 'Ada', score: 400, kills: 30, playerKills: 1, deaths: 2, headshots: 8 },
+      { id: 'p1', name: 'Bo', score: 150, kills: 10, playerKills: 0, deaths: 1, headshots: 0 }
+    ],
+    winner: 'p0'
+  })
+  const over = screenWithText(screensRoot, 'YOU DIED')
+  const board = find(over, 'mp-end-board')
+  assert.ok(board.classList.contains('visible'), 'co-op scoreboard is shown')
+  assert.strictEqual(find(over, 'mp-end-title').textContent, 'WINNER — Ada', 'winner named')
+  const rows = board.children.filter((c) => c.classList.contains('mp-end-row') && !c.classList.contains('mp-end-head'))
+  const winnerCells = rows[0].children.map((c) => c.textContent)
+  assert.strictEqual(winnerCells[0], 'Ada ★', 'winner row first + starred')
+  assert.deepStrictEqual(winnerCells.slice(1), ['30', '1', '2', '8', '400'], 'zombies/playerKills/deaths/headshots/score')
+  const loserCells = rows[1].children.map((c) => c.textContent)
+  assert.strictEqual(loserCells[0], 'Bo', 'second row is the other player')
+  assert.deepStrictEqual(loserCells.slice(1), ['10', '0', '1', '0', '150'], 'loser stats')
+  // Single-player run: no scoreboard -> board hidden, cells cleared.
+  screens.showGameOver({ wave: 2, kills: 5, score: 100 })
+  assert.ok(!find(over, 'mp-end-board').classList.contains('visible'), 'board hidden without a scoreboard')
+  screens.dispose()
+}
 
 console.log('hud-screens OK')

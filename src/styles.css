@@ -355,6 +355,37 @@ html, body {
   color: var(--danger);
 }
 
+/* v15: co-op end-game scoreboard — per-player stats table on the game-over
+   screen (winner first). Hidden until showGameOver() fills it with a scoreboard. */
+.mp-end-board {
+  display: none;
+  margin: 14px auto 0;
+  max-width: 460px;
+  font-family: var(--mono);
+}
+.mp-end-board.visible { display: block; }
+.mp-end-title {
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--warn);
+  text-align: center;
+  margin-bottom: 8px;
+}
+.mp-end-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+}
+.mp-end-row.mp-end-head { color: var(--ink-dim); border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.mp-end-cell { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-end-row .mp-end-cell:first-child { flex: 1.6; text-align: left; color: var(--ink); }
+.mp-end-row:not(.mp-end-head) .mp-end-cell:first-child { color: var(--warn); }
+.mp-end-row .mp-end-cell:last-child { color: var(--warn); }
+.mp-end-cell:not(.show) { visibility: hidden; }
+
 /* wave + threat */
 .hud-wave {
   position: absolute;

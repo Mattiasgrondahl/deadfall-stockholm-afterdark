@@ -317,8 +317,29 @@ export class Screens {
     const restartBtn = d.createElement('button'); restartBtn.className = 'btn primary'; restartBtn.textContent = 'RESTART'
     restartBtn.addEventListener('click', () => this._game.startGame())
     const recordEl = d.createElement('div'); recordEl.className = 'record'; this._recordText = recordEl; recordEl.textContent = ''
+    // v15: co-op end-game scoreboard — one row per player with their full stats
+    // (zombie kills, player kills, deaths, headshots, total score), winner first.
+    // Built once here; showGameOver() fills the rows when a scoreboard is passed.
+    const endBoard = d.createElement('div'); endBoard.className = 'mp-end-board'; this._endBoard = endBoard
+    const ebTitle = d.createElement('div'); ebTitle.className = 'mp-end-title'; this._endTitle = ebTitle; ebTitle.textContent = ''
+    const ebHead = d.createElement('div'); ebHead.className = 'mp-end-row mp-end-head'
+    for (const label of ['PLAYER', 'ZOMBIES', 'PLAYERS', 'DEATHS', 'HEADSHOTS', 'SCORE']) {
+      const c = d.createElement('span'); c.className = 'mp-end-cell'; c.textContent = label
+      ebHead.appendChild(c)
+    }
+    endBoard.appendChild(ebTitle); endBoard.appendChild(ebHead)
+    this._endRows = []
+    for (let i = 0; i < 8; i++) {
+      const row = d.createElement('div'); row.className = 'mp-end-row'
+      const cells = []
+      for (let j = 0; j < 6; j++) {
+        const c = d.createElement('span'); c.className = 'mp-end-cell'; c.textContent = ''
+        row.appendChild(c); cells.push(c)
+      }
+      endBoard.appendChild(row); this._endRows.push(cells)
+    }
     const oHint = d.createElement('div'); oHint.className = 'tagline dim'; oHint.textContent = 'or press Enter to restart'
-    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(recordEl); panelO.appendChild(oHint); panelO.appendChild(restartBtn)
+    panelO.appendChild(oTitle); panelO.appendChild(stats); panelO.appendChild(recordEl); panelO.appendChild(endBoard); panelO.appendChild(oHint); panelO.appendChild(restartBtn)
     this._over.appendChild(panelO)
     this._root.appendChild(this._over)
 
@@ -585,11 +606,41 @@ export class Screens {
     else this.showTitle()
   }
 
-  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '' }) {
+  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '', scoreboard = null, winner = null }) {
     this._hideAll()
     this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
     // v3 T6: a new record is attributed to the player's name (textContent only).
     this._recordText.textContent = record ? (name ? 'NEW HIGH SCORE — ' + name + ' — ' + best : 'NEW HIGH SCORE — ' + best) : ''
+    // v15: co-op end-game scoreboard. When the match ended with a per-player
+    // scoreboard, show each player's stats (winner first) and name the winner;
+    // otherwise hide the board (single-player run).
+    if (this._endBoard) {
+      if (Array.isArray(scoreboard) && scoreboard.length) {
+        const win = winner != null ? winner : (scoreboard[0] && scoreboard[0].id)
+        const winRow = scoreboard.find((r) => r.id === win)
+        this._endTitle.textContent = winRow ? ('WINNER — ' + (winRow.name || winRow.id)) : 'FINAL SCORES'
+        for (let i = 0; i < this._endRows.length; i++) {
+          const r = scoreboard[i]
+          const cells = this._endRows[i]
+          if (r) {
+            cells[0].textContent = (r.name || r.id) + (r.id === win ? ' \u2605' : '')
+            cells[1].textContent = String(r.kills || 0)
+            cells[2].textContent = String(r.playerKills || 0)
+            cells[3].textContent = String(r.deaths || 0)
+            cells[4].textContent = String(r.headshots || 0)
+            cells[5].textContent = String(r.score || 0)
+            cells.forEach((c) => c.classList.add('show'))
+          } else {
+            cells.forEach((c) => { c.textContent = ''; c.classList.remove('show') })
+          }
+        }
+        this._endBoard.classList.add('visible')
+      } else {
+        this._endTitle.textContent = ''
+        for (const cells of this._endRows) cells.forEach((c) => { c.textContent = ''; c.classList.remove('show') })
+        this._endBoard.classList.remove('visible')
+      }
+    }
     this._over.classList.add('visible')
   }
 

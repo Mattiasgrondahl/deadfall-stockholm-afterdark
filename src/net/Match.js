@@ -34,6 +34,9 @@ const RESPAWN_DELAY = 3.0 // seconds a dead player waits before respawning (§12
 const DISCONNECT_GRACE = 5.0 // seconds a dropped slot is held before freeing (§7)
 const BOSS_WAVE = 5 // WaveManager's final wave; clearing it ends the match
 const MATCH_TIME_CAP = 900 // 15 min hard cap so a stalled room still ends (§12.2)
+// v15: a co-op match ends once the team has killed this many zombies in total;
+// the winner is then the player with the highest score.
+const KILL_TARGET = 72
 
 const SPAWN = { x: 0, y: 1.7, z: 12 } // same shared spawn as the single-player Game
 // Per-kill points, mirroring Score.pointsFor (walker 10, shambler 15,
@@ -85,6 +88,11 @@ export class Match {
     this.zombies = []
     this.kills = new Map() // id ('unknown' if unattributed) -> count
     this.score = new Map() // id -> points
+    // v15: per-player end-screen stats — deaths, headshot kills, and players
+    // killed by friendly fire. Keyed by id like kills/score.
+    this.deaths = new Map() // id -> times this player died
+    this.headshots = new Map() // id -> headshot zombie kills
+    this.playerKills = new Map() // id -> teammates killed (friendly fire)
     this.audio = null      // the server never renders or plays audio
 
     // Match flow (Phase 3): respawn timers, disconnect grace, end state.
@@ -93,6 +101,8 @@ export class Match {
     this._ended = false
     this._endReason = null // 'waves' | 'timecap' | 'alldead'
     this.matchTimeCap = opts.matchTimeCap ?? MATCH_TIME_CAP
+    // v15: total team kills that end a co-op match (winner = highest score).
+    this.killTarget = opts.killTarget ?? KILL_TARGET
 
     this.drops = new AmmoDrops(this.scene, null)
     // v3 T1: the authoritative match owns a shared dropped-limb pool so the
@@ -155,6 +165,8 @@ export class Match {
       })
     }
     player.setOnDeath(() => {
+      // v15: record the death on the victim's end-screen stats.
+      this.deaths.set(id, (this.deaths.get(id) || 0) + 1)
       this.events.push({ k: 'death', victim: id, by: null })
       // Respawn-on-delay (plan §12.1 default): schedule a respawn unless the
       // match already ended.
@@ -169,6 +181,9 @@ export class Match {
     this.ws.players = Array.from(this.players.values())
     this.kills.set(id, 0)
     this.score.set(id, 0)
+    this.deaths.set(id, 0)
+    this.headshots.set(id, 0)
+    this.playerKills.set(id, 0)
     return slot
   }
 
@@ -266,6 +281,10 @@ export class Match {
     // End conditions.
     if (this.wave && this.wave.wave >= BOSS_WAVE && this.wave.remaining === 0 && this.zombies.filter((z) => !z.isDead).length === 0) {
       this._end('waves')
+    } else if (this._totalKills() >= this.killTarget) {
+      // v15: the match ends once the team has killed KILL_TARGET zombies in
+      // total; the winner is the highest-scoring player (see scoreboard()).
+      this._end('killtarget')
     } else if (this.time >= this.matchTimeCap) {
       this._end('timecap')
     } else if (this._connectedCount() > 0 && this._allDeadNoRespawn()) {
@@ -295,16 +314,36 @@ export class Match {
     this.events.push({ k: 'matchEnd', reason, scoreboard: this.scoreboard() })
   }
 
+  /** v15: total zombies killed by the whole team (sum of every player's kills).
+   *  Unattributed ('unknown') kills count too, so the target is met regardless
+   *  of attribution. */
+  _totalKills() {
+    let n = 0
+    for (const k of this.kills.values()) n += k
+    return n
+  }
+
   /** Final per-player scoreboard (plan §7): score + kills, sorted desc.
    *  v12: rows carry the display name too (from the slot roster, including
    *  slots held in disconnect grace) so the co-op end screen can label players
-   *  instead of raw ids. */
+   *  instead of raw ids.
+   *  v15: rows also carry deaths, headshots, and player-kills for the end-game
+   *  stats screen; the scoreboard is sorted by score desc so the first row is
+   *  the winner (highest score). */
   scoreboard() {
     const names = new Map()
     for (const [id, slot] of this.players) names.set(id, slot.name || id)
     const rows = []
     for (const [id, sc] of this.score) {
-      rows.push({ id, name: names.get(id) || id, score: sc, kills: this.kills.get(id) || 0 })
+      rows.push({
+        id,
+        name: names.get(id) || id,
+        score: sc,
+        kills: this.kills.get(id) || 0,
+        deaths: this.deaths.get(id) || 0,
+        headshots: this.headshots.get(id) || 0,
+        playerKills: this.playerKills.get(id) || 0
+      })
     }
     rows.sort((a, b) => b.score - a.score)
     return rows
@@ -316,6 +355,8 @@ export class Match {
   _onKill(z, by) {
     const key = by !== null ? by : 'unknown'
     this.kills.set(key, (this.kills.get(key) || 0) + 1)
+    // v15: count headshot kills toward the killer's end-screen stats.
+    if (z.lastHitHead === true) this.headshots.set(key, (this.headshots.get(key) || 0) + 1)
     const wave = this.wave ? this.wave.wave : 1
     this.score.set(key, (this.score.get(key) || 0) + (KILL_VALUES[z.type] || 0) + WAVE_BONUS * wave)
     // v12: the head flag rides along so the co-op kill feed can mark headshots.
@@ -351,7 +392,13 @@ export class Match {
     const p = slot.player
     if (!p || p.isDead) return
     const applied = dmg * FRIENDLY_FIRE
+    const wasDead = p.isDead
     p.damage(applied, null, by !== null && by !== undefined ? by : null, false)
+    // v15: a friendly-fire hit that kills a teammate counts as a player kill for
+    // the shooter (the victim's death itself is counted in setOnDeath).
+    if (!wasDead && p.isDead && by !== null && by !== undefined) {
+      this.playerKills.set(by, (this.playerKills.get(by) || 0) + 1)
+    }
     this.events.push({ k: 'hit', victim, dmg: Math.round(applied), by: by !== null && by !== undefined ? by : null, ff: true })
   }
 
