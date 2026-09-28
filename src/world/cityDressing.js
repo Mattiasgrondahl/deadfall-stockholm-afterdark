@@ -50,8 +50,20 @@ export function addStreetlights(group, collision) {
   // brute body at 0.0703), so brightness already separates them from actors;
   // this only removes the shared roughness band.
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.42, metalness: 0.3 })
-  const headGeo = new THREE.BoxGeometry(0.45, 0.18, 0.45)
-  // V6 visuals (4): the head is a bloom source, so what matters is its
+  // v19 graphics: the lamp head is no longer a flat box. It is a real
+  // luminaire — a dark metal hood (cone shade) over a small emissive bulb,
+  // hung from a short arm that curves off the pole toward the street. The hood
+  // + arm are dark painted metal (roughness 0.5, under the 0.70 scenery band)
+  // and are STATIC (they never change when a lamp breaks), so they are drawn as
+  // two InstancedMeshes (40 instances each = 2 draw calls) instead of 80 meshes.
+  // Only the emissive bulb stays a per-lamp mesh with its own cloned material,
+  // because Lamps.js darkens it on break (see src/game/Lamps.js).
+  const headGeo = new THREE.SphereGeometry(0.16, 10, 8)
+  const hoodGeo = new THREE.ConeGeometry(0.34, 0.34, 12, 1, true)
+  const armGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6)
+  const hoodMat = new THREE.MeshStandardMaterial({ color: 0x181d26, roughness: 0.5, metalness: 0.35, side: THREE.DoubleSide })
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.45, metalness: 0.35 })
+  // V6 visuals (4): the bulb is a bloom source, so what matters is its
   // luminance AFTER the ACES tone map (renderer.toneMapping = ACESFilmic,
   // exposure 1.2 — src/world/Lighting.js:29-30). 0xffb066×3.2 → lin 1.705 →
   // tonemapped 0.917, i.e. deep into the shoulder where the bloom mip is
@@ -72,39 +84,86 @@ export function addStreetlights(group, collision) {
   const shaftMat = new THREE.SpriteMaterial({ color: 0xffc27a, map: shaftMap, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })
   const anchors = []
   const lamps = []
-  const place = (x, z, shaft) => {
+  // v19 graphics: collect each luminaire's head position + reach axis so the
+  // static hood + arm InstancedMeshes can be built after all lamps are placed.
+  const headPos = []   // { x, z, axis } axis = 'x' | 'z' the arm reaches along
+  const place = (x, z, shaft, axis) => {
     const pole = new THREE.Mesh(poleGeo, poleMat)
     pole.castShadow = true
     pole.position.set(x, 2.5, z)
     group.add(pole)
-    // Each head gets its OWN material clone so a broken lamp can go dark
+    // Each bulb gets its OWN material clone so a broken lamp can go dark
     // independently while the rest stay lit.
     const hm = headMat.clone()
     const head = new THREE.Mesh(headGeo, hm)
-    head.position.set(x, 5.2, z)
+    // The bulb hangs just under the hood at the arm's end, offset toward the
+    // street (reaching back -0.55 along the axis) so the luminaire overhangs
+    // the pavement it lights.
+    const hx = axis === 'x' ? x - 0.55 : x
+    const hz = axis === 'z' ? z - 0.55 : z
+    head.position.set(hx, 5.05, hz)
     group.add(head)
-    const halo = new THREE.Sprite(haloMat); halo.position.set(x, 5.2, z); halo.scale.set(1.6, 1.6, 1); group.add(halo) // v6 visuals (4): 2.2→1.6, glow stays inside the head silhouette
+    const halo = new THREE.Sprite(haloMat); halo.position.set(hx, 5.05, hz); halo.scale.set(1.6, 1.6, 1); group.add(halo) // v6 visuals (4): 2.2→1.6, glow stays inside the head silhouette
     // Shaft hangs from the head down toward the pavement (tall, narrow). Only
     // the vertical-street lamps get one, to stay inside the mesh/sprite budget.
     let shaftSprite = null
     if (shaft) {
-      shaftSprite = new THREE.Sprite(shaftMat); shaftSprite.position.set(x, 2.6, z); shaftSprite.scale.set(1.6, 5.2, 1); group.add(shaftSprite)
+      shaftSprite = new THREE.Sprite(shaftMat); shaftSprite.position.set(hx, 2.6, hz); shaftSprite.scale.set(1.6, 5.2, 1); group.add(shaftSprite)
     }
-    anchors.push(new THREE.Vector3(x, 5.2, z))
+    anchors.push(new THREE.Vector3(hx, 5.05, hz))
     // Shootable: a small AABB around the head so a bullet can hit + break it.
     // Flagged `shootable` so it blocks bullets but NOT the player (a thin pole
     // should not trap movement), and it is excluded from the light pool when
     // broken.
     let aabb = null
     if (collision && collision.addAABB) {
-      collision.addAABB(x - 0.3, z - 0.3, x + 0.3, z + 0.3, 5.3)
+      collision.addAABB(hx - 0.3, hz - 0.3, hx + 0.3, hz + 0.3, 5.3)
       aabb = collision.aabbs[collision.aabbs.length - 1]
       aabb.shootable = true
     }
-    lamps.push({ x, z, head, halo, shaft: shaftSprite, material: hm, aabb, broken: false, timer: 0 })
+    lamps.push({ x: hx, z: hz, head, halo, shaft: shaftSprite, material: hm, aabb, broken: false, timer: 0 })
+    headPos.push({ x: hx, z: hz, axis })
   }
-  for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z, true) // vertical streets (with shafts)
-  for (const z of STREETS) for (const x of POLES) place(x, z + OFFSET, false) // horizontal streets (no shafts)
+  // Vertical-street lamps sit at x+OFFSET beside the street line at x, so their
+  // arm reaches back in -x toward the street (axis 'x'). Horizontal-street lamps
+  // sit at z+OFFSET, arm reaches -z (axis 'z').
+  for (const x of STREETS) for (const z of POLES) place(x + OFFSET, z, true, 'x') // vertical streets (with shafts)
+  for (const z of STREETS) for (const x of POLES) place(x, z + OFFSET, false, 'z') // horizontal streets (no shafts)
+  // v19 graphics: build the two static luminaire parts as InstancedMeshes.
+  // The arm is a short cylinder from the pole top to the head; the hood is a
+  // cone shade capping the bulb. Both dark painted metal, never lit, never
+  // toggled on break — so a single InstancedMesh each (2 draw calls for 40 lamps).
+  const _m = new THREE.Matrix4()
+  const _q = new THREE.Quaternion()
+  const _s = new THREE.Vector3(1, 1, 1)
+  const _p = new THREE.Vector3()
+  const _axisX = new THREE.Vector3(0, 0, 1) // +y cylinder → x axis: rotate 90° about z
+  const _axisZ = new THREE.Vector3(1, 0, 0) // +y cylinder → z axis: rotate 90° about x
+  const _down = new THREE.Vector3(1, 0, 0) // flip the cone so its mouth faces down
+  const armMesh = new THREE.InstancedMesh(armGeo, armMat, headPos.length)
+  const hoodMesh = new THREE.InstancedMesh(hoodGeo, hoodMat, headPos.length)
+  armMesh.castShadow = true
+  for (let i = 0; i < headPos.length; i++) {
+    const hp = headPos[i]
+    // Arm: a horizontal cylinder spanning from the pole (0.55 back along the
+    // axis) to the head, at the top of the pole (y≈5.1). The head sits at the
+    // -axis end, so the arm centre is 0.275 back from the head.
+    const ax = hp.axis === 'x' ? hp.x + 0.275 : hp.x
+    const az = hp.axis === 'z' ? hp.z + 0.275 : hp.z
+    _q.setFromAxisAngle(hp.axis === 'x' ? _axisX : _axisZ, Math.PI / 2)
+    _p.set(ax, 5.1, az)
+    _m.compose(_p, _q, _s)
+    armMesh.setMatrixAt(i, _m)
+    // Hood: cone above the bulb, opening downward (default cone apex is +y, so
+    // flip it so the wide mouth faces down over the bulb).
+    _q.setFromAxisAngle(_down, Math.PI)
+    _p.set(hp.x, 5.28, hp.z)
+    _m.compose(_p, _q, _s)
+    hoodMesh.setMatrixAt(i, _m)
+  }
+  armMesh.instanceMatrix.needsUpdate = true
+  hoodMesh.instanceMatrix.needsUpdate = true
+  group.add(armMesh, hoodMesh)
   return { anchors, lamps }
 }
 
@@ -464,7 +523,7 @@ export function addOuterStrips(group) {
 export function addStreetlightPools(group, anchors) {
   const geo = new THREE.CircleGeometry(1.6, 20)
   geo.rotateX(-Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false })
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false })
   // v4 budget (B): 40 identical discs shared one geometry + material but were 40
   // separate meshes (40 draw calls). Collapse to ONE InstancedMesh — same look,
   // 40→1 meshes. Positions come straight from the streetlight anchors; no

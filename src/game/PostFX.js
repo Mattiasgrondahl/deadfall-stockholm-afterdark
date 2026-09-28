@@ -63,21 +63,21 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v))
 // emissive source (≥ 0.681), so only real light sources bloom. `radius` sets
 // halo spread per mip (0.5·radius·(2^k−1) total reach). `strength` is the
 // composite weight.
-const BLOOM = { strength: 0.18, radius: 0.35, threshold: 0.72 }
+const BLOOM = { strength: 0.22, radius: 0.38, threshold: 0.72 }
 
 // Quality-tier bloom strength. Post is still gated off entirely for low/medium
 // (Game.js: setEnabled(s.quality === 'high')), so these are the values the
 // enabled path would use if a tier ever turns it on — medium is a restrained
 // half-step down, low is near-flat. The cheap fallback stays cheap: no
 // composer render at all when disabled.
-const BLOOM_TIERS = { high: 0.18, medium: 0.12, low: 0.08 }
+const BLOOM_TIERS = { high: 0.22, medium: 0.14, low: 0.09 }
 
 const GRADE_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     uTime: { value: 0 },
-    uGrain: { value: 0.012 },       // grain amplitude (fraction of full scale)
-    uVignette: { value: 0.05 }      // corner darkening (0 = none)
+    uGrain: { value: 0.02 },        // grain amplitude (fraction of full scale) — grittier film look
+    uVignette: { value: 0.09 }      // corner darkening (0 = none) — moodier night frame
   },
   vertexShader: `
     varying vec2 vUv;

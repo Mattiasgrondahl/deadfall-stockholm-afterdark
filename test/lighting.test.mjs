@@ -41,7 +41,7 @@ test('lighting: 15 lights (1 moon, 1 hemi, 1 ambient, 12 point); r185 settings; 
   assert.equal(renderer.shadowMap.enabled, false, 'dispose disables shadows')
 })
 
-test('update: moon follows player; 12 distinct nearest anchors at 70 cd', () => {
+test('update: moon follows player; 12 distinct nearest anchors at 82 cd', () => {
   const { scene, city, renderer } = makeScene()
   const li = new Lighting(scene, city, renderer, 'high')
   const p = { x: -80, z: 0 }
@@ -53,7 +53,7 @@ test('update: moon follows player; 12 distinct nearest anchors at 70 cd', () => 
   assert.equal(li.moon.target.position.z, 0)
   const seen = new Set()
   for (const l of li.lights) {
-    assert.equal(l.intensity, 70, `light ${l.position.x},${l.position.z} not 70 cd`)
+    assert.equal(l.intensity, 82, `light ${l.position.x},${l.position.z} not 82 cd`)
     assert.equal(l.distance, 14)
     assert.equal(l.decay, 2)
     const a = city.streetlightAnchors.find(a => Math.abs(a.x - l.position.x) < 1e-6 && Math.abs(a.y - l.position.y) < 1e-6 && Math.abs(a.z - l.position.z) < 1e-6)
@@ -69,23 +69,23 @@ test('setQuality low: 6 lights, shadows off, snow halved; high restores', () => 
   const li = new Lighting(scene, city, renderer, 'high')
   li.update({ x: 0, z: 0 })
   li.setQuality('low')
-  assert.equal(li.lights.filter(l => l.intensity === 70).length, 6)
+  assert.equal(li.lights.filter(l => l.intensity === 82).length, 6)
   assert.equal(renderer.shadowMap.enabled, false)
   assert.equal(city.snow.points.reduce((n, p) => n + p.geometry.drawRange.count, 0), 750, 'snow halved')
   li.setQuality('high')
-  assert.equal(li.lights.filter(l => l.intensity === 70).length, 12)
+  assert.equal(li.lights.filter(l => l.intensity === 82).length, 12)
   assert.ok(renderer.shadowMap.enabled)
   assert.equal(city.snow.points.reduce((n, p) => n + p.geometry.drawRange.count, 0), 1500, 'snow restored')
   li.dispose()
 })
 
-test('streetlights: 12 PointLights, 0xffb066, 70 cd, 14 m, decay 2', () => {
+test('streetlights: 12 PointLights, 0xffb066, 82 cd, 14 m, decay 2', () => {
   const { scene, city, renderer } = makeScene()
   const li = new Lighting(scene, city, renderer, 'high')
   assert.equal(li.lights.length, 12, '12 pooled PointLights')
   for (const l of li.lights) {
     assert.equal(l.color.getHex(), 0xffb066, `color ${l.color.getHex()}`)
-    assert.equal(l.intensity, 70, '70 cd')
+    assert.equal(l.intensity, 82, '82 cd')
     assert.equal(l.distance, 14, '14 m reach')
     assert.equal(l.decay, 2, 'inverse-square decay')
   }

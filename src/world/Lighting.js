@@ -8,9 +8,10 @@ import * as THREE from 'three'
 
 const POINTS_HIGH = 12
 const POINTS_LOW = 6
-// Raised 55 -> 70 cd so streetlight pools read clearly against the night
-// ground (readable street pools).
-const POLE_INTENSITY = 70 // cd
+// Raised 55 -> 70 -> 82 cd so streetlight pools read clearly against the night
+// ground and the pavement under a lamp reads as warm, lit asphalt (grittier
+// night pass). The pool halo + ground pool disc are tuned to match.
+const POLE_INTENSITY = 82 // cd
 const MOON_OFFSET = { x: -18, y: 30, z: -15 } // NW-above the player
 // Raised 1.1 -> 1.45 lx: stronger moonlight so silhouettes stay readable.
 const MOON_INTENSITY = 1.45

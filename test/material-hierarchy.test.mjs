@@ -138,9 +138,10 @@ test('hierarchy: the changes cost no meshes, lights, or points', () => {
   city.group.traverse((o) => { if (o.isMesh) meshes++; if (o.isLight) lights++ })
   // v4 budget (B): repeated dressing (pools, barricades, strips, signs,
   // crosswalks, drifts) collapsed into InstancedMeshes, dropping the city mesh
-  // count 389 -> 244; the v17 snow-splash layer adds 1 -> 245. The material
-  // work itself still adds no meshes/lights.
-  assert.equal(meshes, 245, `city mesh count must stay 245 (post v4-B instancing + v17 splash), got ${meshes}`)
+  // count 389 -> 244; the v17 snow-splash layer adds 1 -> 245; the v19 luminaire
+  // arm + hood add 2 -> 247; the v19 storefront + grime add 2 -> 249. The
+  // material work itself still adds no lights.
+  assert.equal(meshes, 249, `city mesh count must stay 249 (post v4-B instancing + v17 splash + v19 luminaire/storefront), got ${meshes}`)
   assert.equal(lights, 0, `city group must add no lights, got ${lights}`)
 })
 

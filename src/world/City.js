@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture, makeGroundImageTexture } from './cityDressing.js'
 import { createSnow } from './snow.js'
 import { addFacadeTrim } from './FacadeTrim.js'
+import { addStorefronts } from './Storefront.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246, 0x2e3140, 0x3a3644]
 const TINTS = [1.12, 1.0, 0.9, 0.78, 1.05, 0.86]
@@ -217,16 +218,16 @@ export class City {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
-      // v6 visuals (10): roughness 0.85 -> 0.55. The old value sat inside the
-      // zombie-body roughness band (0.90/0.95), so under the moon rig (1.45 lx)
+      // v6 visuals (10): roughness 0.85 -> 0.55 -> v19 0.42. The old value sat inside
+      // the zombie-body roughness band (0.90/0.95), so under the moon rig (1.45 lx)
       // the pavement shaded identically to a body and nothing separated
-      // gameplay surfaces from scenery. 0.55 keeps the wet sheen the IBL sky +
-      // 70 cd streetlight pools give the snow (specular widens as roughness
-      // drops, so the pool halo spreads further across the ground) while
-      // pulling the pavement a full band below every body. Color untouched:
-      // ground tonemaps 0.2320, still above every body (0.070-0.174), so it
-      // reads as a lit backdrop rather than as an actor.
-      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.55 })
+      // gameplay surfaces from scenery. 0.42 deepens the wet-asphalt sheen the
+      // IBL sky + 82 cd streetlight pools give the snow (specular widens and
+      // sharpens as roughness drops, so each pool smears into a long wet streak
+      // across the pavement) while still pulling the pavement a full band below
+      // every body. Color untouched: ground tonemaps 0.2320, still above every
+      // body (0.070-0.174), so it reads as a lit backdrop rather than an actor.
+      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.42 })
     )
     // Realism pass: cracked/wet-pavement normal + roughness maps so the ground
     // stops reading as flat card. Headless (canvasFactory null) leaves them off.
@@ -370,6 +371,10 @@ export class City {
     // v4 VISUALS (C1): instanced window trim/sills (+1 InstancedMesh) so the
     // flat facade boxes gain real geometric relief up close.
     addFacadeTrim(group, buildings)
+    // v19 graphics: ground-floor storefront strips + base grime/AO bands (2
+    // InstancedMeshes) so buildings meet the pavement with a lit street level
+    // and soot-darkened foot instead of a flat box edge.
+    addStorefronts(group, buildings)
     // Realism pass (tier 3): soft contact-shadow decals under vehicles +
     // barricades (1 InstancedMesh) so props read as resting on the pavement.
     addContactShadows(group)

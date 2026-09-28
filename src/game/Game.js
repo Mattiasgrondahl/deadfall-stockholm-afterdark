@@ -377,7 +377,7 @@ export class Game {
     // material a soft ambient sheen and sky reflections consistent with what
     // the player sees. One-shot cost at init; no per-frame cost. Headless no-op
     // (StubRenderer is not a WebGLRenderer) and returns null there.
-    this.envMap = bakeSkyEnvironment(this.renderer, this.sky, this.scene, { intensity: 0.5 })
+    this.envMap = bakeSkyEnvironment(this.renderer, this.sky, this.scene, { intensity: 0.7 })
     // WIRING:POSTFX (V2P-10b): restrained bloom; no-op headless (StubRenderer)
     this.postfx = new PostFX(this.scene, this.camera, this.renderer, { strength: 0.25 })
     // WIRING:AUDIO

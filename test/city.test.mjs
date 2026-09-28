@@ -83,10 +83,10 @@ test('update() is a safe no-op', () => {
   city.update({ x: 0, z: 0 })
 })
 
-test('streetlight anchors: 40, y=5.2, within bounds; total meshes <= 600', () => {
+test('streetlight anchors: 40, y=5.05, within bounds; total meshes <= 600', () => {
   assert.equal(city.streetlightAnchors.length, 40, `anchors ${city.streetlightAnchors.length}`)
   for (const a of city.streetlightAnchors) {
-    assert.ok(Math.abs(a.y - 5.2) < 1e-6, `anchor y ${a.y}`)
+    assert.ok(Math.abs(a.y - 5.05) < 1e-6, `anchor y ${a.y}`)
     assert.ok(Math.abs(a.x) <= 90 && Math.abs(a.z) <= 90, `anchor out of bounds: ${a.x},${a.z}`)
   }
   let meshes = 0
@@ -412,7 +412,7 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   city2.dispose()
 })
 
-test('roof detail + car glass/lights: 18 InstancedMeshes, deterministic, headless-safe maps', () => {
+test('roof detail + car glass/lights: 23 InstancedMeshes, deterministic, headless-safe maps', () => {
   const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   const inst = []
   c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
@@ -420,8 +420,9 @@ test('roof detail + car glass/lights: 18 InstancedMeshes, deterministic, headles
   // glass/lights + v4 facade-trim) plus 13 new dressing batches (pools,
   // barricades, landmark strips ×2, danger strips ×2, outer strips ×2, sign
   // posts + panels, crosswalk bands ×2, drifts) plus the v17 snow-splash layer
-  // = 19 InstancedMeshes.
-  assert.equal(inst.length, 19, 'exactly 19 InstancedMeshes, got ' + inst.length)
+  // plus the v19 luminaire arm + hood batches plus the v19 storefront + grime
+  // batches = 23 InstancedMeshes.
+  assert.equal(inst.length, 23, 'exactly 23 InstancedMeshes, got ' + inst.length)
   // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
@@ -481,7 +482,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   for (const p of pools) {
     assert.ok(Math.abs(p.position.y - 0.02) < 1e-6, 'pool y ' + p.position.y)
     assert.equal(p.castShadow, false, 'pool castShadow')
-    assert.ok(city.streetlightAnchors.some(a => Math.abs(a.x - p.position.x) < 1e-6 && Math.abs(a.z - p.position.z) < 1e-6), 'pool at an anchor')
+    assert.ok(city.streetlightAnchors.some(a => Math.abs(a.x - p.position.x) < 1e-4 && Math.abs(a.z - p.position.z) < 1e-4), 'pool at an anchor')
   }
   assert.equal(new Set(pools.map(p => p.material)).size, 1, 'pools share one material')
   const bands = []
@@ -508,8 +509,9 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   // barricade planks→1, 10 landmark strips→2, 4 danger strips→2, 20 outer
   // strips→2, 44 sign posts+panels→2, 16 crosswalk bands→2, 8 drifts→1, plus
   // the v17 snow-splash→1. 319 base + collapsed dressing batches + 1 poster +
-  // 2 roof-detail + 1 contact-shadow + 1 car glass/lights + 1 facade-trim = 245.
-  assert.equal(meshes, 245, 'instanced city mesh count, got ' + meshes)
+  // 2 roof-detail + 1 contact-shadow + 1 car glass/lights + 1 facade-trim +
+  // 2 v19 luminaire arm/hood + 2 v19 storefront/grime = 249.
+  assert.equal(meshes, 249, 'instanced city mesh count, got ' + meshes)
   assert.equal(collision.aabbs.length, 127, 'dressing adds no collision (lamps do: 127)')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

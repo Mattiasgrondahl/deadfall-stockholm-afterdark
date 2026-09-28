@@ -46,7 +46,7 @@ test('headless stub renderer: disabled, no-op methods, dispose safe', () => {
   assert.equal(fx.bloom, null)
   assert.equal(fx.grade, null)
   assert.equal(fx.gtao, null)
-  assert.equal(fx.strength, 0.18)
+  assert.equal(fx.strength, 0.22)
   fx.render()
   fx.setStrength(0.4)
   fx.setSize(640, 480)
@@ -79,12 +79,12 @@ test('WebGLRenderer guard: composer builds RenderPass + GTAO + grade + bloom (gr
   assert.equal(fx.gtao.blendIntensity, 0.5, 'GTAO blend kept subtle')
   // V6 visuals (4): restrained bloom. strength 0.25→0.18, radius 0.5→0.35,
   // threshold 0.0→0.72.
-  assert.equal(fx.bloom.strength, 0.18)
-  assert.equal(fx.bloom.radius, 0.35)
+  assert.equal(fx.bloom.strength, 0.22)
+  assert.equal(fx.bloom.radius, 0.38)
   assert.equal(fx.bloom.threshold, 0.72)
   // Grade uniforms at their tuned defaults (V3P-10): grain + vignette only.
-  assert.equal(fx.grade.uniforms.uGrain.value, 0.012)
-  assert.equal(fx.grade.uniforms.uVignette.value, 0.05)
+  assert.equal(fx.grade.uniforms.uGrain.value, 0.02)
+  assert.equal(fx.grade.uniforms.uVignette.value, 0.09)
   assert.equal(fx.grade.uniforms.uTime.value, 0)
 })
 
@@ -149,20 +149,20 @@ test('v6 visuals (4): halo reach is narrower than the round-41 baseline', () => 
 test('v6 visuals (4): per-tier bloom strength; tiers never enable post by themselves', () => {
   const fx = new PostFX(mkScene(), mkCamera(), fakeGLRenderer())
   assert.equal(fx.setTier('high'), 'high')
-  assert.equal(fx.bloom.strength, 0.18)
+  assert.equal(fx.bloom.strength, 0.22)
   assert.equal(fx.setTier('medium'), 'medium')
-  assert.equal(fx.bloom.strength, 0.12)
+  assert.equal(fx.bloom.strength, 0.14)
   assert.equal(fx.setTier('low'), 'low')
-  assert.equal(fx.bloom.strength, 0.08)
+  assert.equal(fx.bloom.strength, 0.09)
   assert.equal(fx.setTier('nonsense'), 'high', 'unknown tier falls back to high')
-  assert.equal(fx.bloom.strength, 0.18)
+  assert.equal(fx.bloom.strength, 0.22)
   // Cheap fallback: disabling post stops every composer render; the tier value
   // is retained but costs nothing while disabled.
   fx.setEnabled(false)
   assert.equal(fx.enabled, false)
   fx.setTier('low')
   fx.render()
-  assert.equal(fx.bloom.strength, 0.08)
+  assert.equal(fx.bloom.strength, 0.09)
   fx.dispose()
 })
 
