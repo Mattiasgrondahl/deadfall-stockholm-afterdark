@@ -708,6 +708,12 @@ export function buildFaceFor(type, dropY = 0) {
  *  box. Returns owned meshes (the group + parts); materials are shared, so the
  *  caller must NOT dispose them — only remove the group from the scene. */
 export function buildPrimitiveBody(type, phase) {
+  // v4 co-op: remote co-op zombies build their bodies through this function but
+  // never construct a local Zombie, so the face-texture loader (normally kicked
+  // off by the Zombie constructor) never runs in a co-op-only client — remote
+  // zombies then showed a flat head-color face instead of the portrait. Trigger
+  // the same idempotent load here so remote bodies get the real faces too.
+  loadFaceTextures()
   const t = MAT2[type] ? type : 'walker'
   const pose = POSE2[t]
   const mat = MAT2[t]

@@ -282,7 +282,10 @@ function serveStatic(req, res) {
 
 /** A room = one Match + its sockets. Single room per server instance (§12). */
 export class Room {
-  constructor(difficulty = 'normal') {
+  // v4 co-op: co-op zombies default to NIGHTMARE speed (speedMult 3) to match the
+  // single-player nightmare preset — the user found the old 'normal' (1×) horde
+  // too slow/slow-moving in co-op. Callers can still override via opts.difficulty.
+  constructor(difficulty = 'nightmare') {
     this.match = new Match({ difficulty })
     this.sockets = new Map() // socket -> playerId
     this._snapAccum = 0
