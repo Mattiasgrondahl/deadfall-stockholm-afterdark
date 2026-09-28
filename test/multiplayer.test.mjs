@@ -667,3 +667,27 @@ test('v4 co-op: a zombie melee hit resolves the attacker position for directiona
   assert.equal(hits[0].ff, false, 'not friendly fire')
   mp.dispose()
 })
+
+test('v4 co-op: a remote zombie glides toward its snapshot target (no 10 Hz teleport)', () => {
+  const { mp } = makeMP()
+  // First snapshot: the proxy appears exactly at the reported position.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 0, z: 0, health: 100, state: 'chase', facing: 0 }
+  ] }) })
+  const e = mp.zombies.get('z1')
+  assert.equal(e.group.position.z, 0, 'first sync places the proxy at the target')
+  // A later snapshot jumps the target 10 m away; the rendered position must NOT
+  // teleport there in one frame — it eases toward it, so the zombie glides like
+  // the smooth single-player zombie instead of jumping every 100 ms.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 0, z: 10, health: 100, state: 'chase', facing: 0 }
+  ] }) })
+  assert.ok(e.group.position.z < 10, 'rendered z lags the new target (no instant teleport)')
+  const startZ = e.group.position.z
+  e.update(1 / 60)
+  assert.ok(e.group.position.z > startZ, 'update eases the proxy toward the target')
+  // Converges to the target within a few frames.
+  for (let i = 0; i < 30; i++) e.update(1 / 60)
+  assert.ok(Math.abs(e.group.position.z - 10) < 0.5, 'proxy converges to the target within ~0.5 s')
+  mp.dispose()
+})

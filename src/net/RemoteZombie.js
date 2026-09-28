@@ -71,6 +71,13 @@ export class RemoteZombie {
     this._removed = false
     this._falling = [] // detached limbs/heads tumbling to the ground
     this._x = 0; this._z = 0; this._facing = 0
+    // v4 co-op: snapshot target position. The server sends positions at 10 Hz;
+    // without smoothing a remote zombie teleports in 100 ms jumps, which reads as
+    // sluggish/jerky versus the smooth single-player zombie. sync() sets the
+    // target; update() eases the rendered position toward it every frame so the
+    // proxy glides continuously and keeps pace with the (faster) real zombie.
+    this._tx = 0; this._tz = 0
+    this._seen = false // first snapshot snaps into place; later ones glide
     this._hp = 100
     this._predHp = null
     this._predictedDead = false
@@ -88,7 +95,10 @@ export class RemoteZombie {
   /** Apply the latest snapshot: position, facing, limb state, death. */
   sync(z) {
     if (!z) return
-    this._x = z.x; this._z = z.z
+    const first = !this._seen
+    this._seen = true
+    this._tx = z.x; this._tz = z.z
+    if (first) { this._x = z.x; this._z = z.z } // appear at the right spot, then glide
     if (z.facing != null) this._facing = z.facing
     // v4 co-op: remember the authoritative state so update() can pose an attack.
     // A fresh transition into `attack` kicks off a swing timer; holding the
@@ -196,6 +206,14 @@ export class RemoteZombie {
       if (p._life > 4) { this.scene.remove(p); this._falling.splice(i, 1) }
     }
     if (!this.isDead) {
+      // v4 co-op: glide the rendered position toward the latest snapshot target so
+      // a remote zombie moves smoothly between 10 Hz updates instead of teleporting
+      // in 100 ms jumps. Converge fast enough to keep pace with the real zombie
+      // (~0.1 s) but never overshoot.
+      const k = Math.min(1, 12 * dt)
+      this._x += (this._tx - this._x) * k
+      this._z += (this._tz - this._z) * k
+      this.group.position.set(this._x, 0, this._z)
       // v4 co-op: drive the same gait the single-player zombie uses. The server
       // snapshot carries a per-zombie `state`; `attack` plays the melee lunge,
       // `chase` plays the walk cycle (legs swing, arms counter-swing, body bobs),

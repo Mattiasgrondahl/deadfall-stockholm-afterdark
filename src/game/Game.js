@@ -934,6 +934,28 @@ export class Game {
       if (Number.isFinite(this.multiplayer.selfStamina)) {
         this.player.stamina = Math.max(0, Math.min(this.player.maxStamina, this.multiplayer.selfStamina))
       }
+      // v4 co-op: reconcile the local player's position with the server's
+      // authoritative self position. The client self-predicts movement locally
+      // (updateWorld above runs player.update with an empty horde), but the
+      // server reconstructs the same player from input and can drift (different
+      // collision, packet loss, respawn). Without this, remote zombies chase the
+      // SERVER position while the client sees itself elsewhere — so zombies read
+      // as converging on a stale spot and only biting when the player walks back
+      // into it. A gentle correction (proportional to the error, dead-zoned under
+      // 0.5 m so small prediction noise never rubber-bands) keeps the client and
+      // server in lockstep, so zombies always chase where the player actually is.
+      const sp = this.multiplayer.selfPos
+      if (sp && !this.player.isDead) {
+        const ex = sp.x - this.player.position.x
+        const ez = sp.z - this.player.position.z
+        const d = Math.hypot(ex, ez)
+        if (d > 0.5) {
+          const k = Math.min(1, 8 * dt) // converge over ~0.12 s, never a hard snap
+          const pull = Math.min(d, 6) // cap the correction so a big desync eases in
+          this.player.position.x += (ex / d) * pull * k
+          this.player.position.z += (ez / d) * pull * k
+        }
+      }
     }
     // Boss HUD: the bar tracks the live boss while it stands; it clears when
     // the brute dies (the corpse is still in the list for a few seconds).
