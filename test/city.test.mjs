@@ -201,7 +201,7 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
     if (!o.isMesh) return
     if (o.material.emissive && o.material.emissive.getHex() === 0xffc878) spires.push(o)
     if (o.material.emissive && o.material.emissive.getHex() === 0xff4433) beacons.push(o)
-    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0x3d6fa8) strips.push(o)
+    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0x6f86a6) strips.push(o)
   })
   assert.equal(spires.length, 1, `expected 1 center spire, got ${spires.length}`)
   const spire = spires[0]
@@ -299,7 +299,7 @@ test('V3P-1b: 24 red strips total; 4 central-cross danger strips at exact positi
   const posts = []
   city.group.traverse(o => {
     if (!o.isMesh) return
-    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) strips.push(...expandInstances(o))
+    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff6a52) strips.push(...expandInstances(o))
     if (o.material.emissive && o.material.emissive.getHex() === 0xffd9a5) panels.push(...expandInstances(o))
     if (o.material.isMeshStandardMaterial && o.material.color.getHex() === 0x1a202a) {
       for (const inst of expandInstances(o)) if (Math.abs(inst.position.y - 0.8) < 1e-6) posts.push(inst)
@@ -347,7 +347,7 @@ test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs,
   const city = new City(scene, collision, { canvasFactory: () => null })
   const strips = []
   city.group.traverse(o => {
-    if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) {
+    if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff6a52) {
       for (const inst of expandInstances(o)) if (Math.max(Math.abs(inst.position.x), Math.abs(inst.position.z)) === 69.75) strips.push(inst)
     }
   })
@@ -419,8 +419,9 @@ test('roof detail + car glass/lights: 18 InstancedMeshes, deterministic, headles
   // v4 budget (B): the original 5 (clutter + cornice + contact-shadow + car
   // glass/lights + v4 facade-trim) plus 13 new dressing batches (pools,
   // barricades, landmark strips ×2, danger strips ×2, outer strips ×2, sign
-  // posts + panels, crosswalk bands ×2, drifts) = 18 InstancedMeshes.
-  assert.equal(inst.length, 18, 'exactly 18 InstancedMeshes, got ' + inst.length)
+  // posts + panels, crosswalk bands ×2, drifts) plus the v17 snow-splash layer
+  // = 19 InstancedMeshes.
+  assert.equal(inst.length, 19, 'exactly 19 InstancedMeshes, got ' + inst.length)
   // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
@@ -493,15 +494,22 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   const drifts = []
   city.group.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && o.material.color.getHex() === 0xbcd0e6) drifts.push(...expandInstances(o)) })
   assert.equal(drifts.length, 8, 'expected 8 snowdrifts, got ' + drifts.length)
+  // v17 snow ground-splash: one InstancedMesh of 96 soft white snow patches
+  // scattered across the whole ground (y=0.012, additive), so the pavement
+  // reads as snow rather than flat blue asphalt.
+  const splash = []
+  city.group.traverse(o => { if (o.isInstancedMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xeef4ff) splash.push(...expandInstances(o)) })
+  assert.equal(splash.length, 96, 'expected 96 snow-splash patches, got ' + splash.length)
+  for (const s of splash) assert.ok(Math.abs(s.position.y - 0.012) < 1e-6, 'splash y ' + s.position.y)
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
   // v4 budget (B): dressing collapsed to InstancedMeshes — 40 pools→1, 16
   // barricade planks→1, 10 landmark strips→2, 4 danger strips→2, 20 outer
-  // strips→2, 44 sign posts+panels→2, 16 crosswalk bands→2, 8 drifts→1.
-  // 319 base + collapsed dressing batches + 1 poster + 2 roof-detail + 1
-  // contact-shadow + 1 car glass/lights + 1 facade-trim = 244 meshes.
-  assert.equal(meshes, 244, 'instanced city mesh count, got ' + meshes)
+  // strips→2, 44 sign posts+panels→2, 16 crosswalk bands→2, 8 drifts→1, plus
+  // the v17 snow-splash→1. 319 base + collapsed dressing batches + 1 poster +
+  // 2 roof-detail + 1 contact-shadow + 1 car glass/lights + 1 facade-trim = 245.
+  assert.equal(meshes, 245, 'instanced city mesh count, got ' + meshes)
   assert.equal(collision.aabbs.length, 127, 'dressing adds no collision (lamps do: 127)')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

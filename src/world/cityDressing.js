@@ -310,7 +310,12 @@ export function addLandmarks(group) {
     }
   }
   // 10 street strips along street center lines (always walkable, no aabbs).
-  const stripMat = new THREE.MeshBasicMaterial({ color: 0x3d6fa8 })
+  // v17: the old fully-saturated unlit blue (0x3d6fa8, MeshBasicMaterial) read
+  // as a harsh blue LINE painted across the snow — the user's "blue lines on the
+  // ground" complaint. Desaturated toward the snow tone + made translucent +
+  // additive so the centerline now reads as a faint icy sheen on the pavement
+  // rather than a colored stripe, while still hinting street direction.
+  const stripMat = new THREE.MeshBasicMaterial({ color: 0x6f86a6, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false })
   const stripGeoV = new THREE.BoxGeometry(0.35, 0.05, 176)
   const stripGeoH = new THREE.BoxGeometry(176, 0.05, 0.35)
   // v4 budget (B): 5 vertical + 5 horizontal strips share one material but were
@@ -353,7 +358,11 @@ export function addPlazaHalos(group, centers) {
 // strips clear of the blue directional strips (y 0.005..0.055) at crossings.
 // No lights, no aabbs, no sprites, no Math.random.
 export function addDangerStrips(group) {
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff4433 })
+  // v17: was a fully-opaque saturated red (0xff4433) that read as a bright red
+  // LINE across the snow ("red lines on the ground"). Now a dim, translucent
+  // additive ember tint so the danger corridor still reads as caution but no
+  // longer as a painted stripe.
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff6a52, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })
   const geoZ = new THREE.BoxGeometry(0.35, 0.05, 76.5) // along z at x=0
   const geoX = new THREE.BoxGeometry(74.5, 0.05, 0.35) // along x at z=0
   const pos = [[0, 0.09, 41.25, geoZ], [0, 0.09, -41.25, geoZ], [42.25, 0.09, 0, geoX], [-42.25, 0.09, 0, geoX]]
@@ -418,7 +427,10 @@ export function addSigns(group, centers) {
 // cross. Shared geometry/material, no lights, no AABBs, no sprites, no
 // Math.random.
 export function addOuterStrips(group) {
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff4433 })
+  // v17: same softening as the danger cross — a dim additive ember tint instead
+  // of an opaque red stripe, so the outer street ends read as a faint caution
+  // glow rather than a painted red line on the snow.
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff6a52, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })
   const geoV = new THREE.BoxGeometry(0.35, 0.05, 19.5) // runs along z
   const geoH = new THREE.BoxGeometry(19.5, 0.05, 0.35) // runs along x
   // v4 budget (B): 5 streets × 2 ends × 2 orientations = 20 strips share one
@@ -566,6 +578,40 @@ export function addGroundDressing(group, canvasFactory) {
   }
   drifts.instanceMatrix.needsUpdate = true
   group.add(drifts)
+  // v17 snow ground-splash (V2P-7): deterministic snow-accumulation speckles
+  // scattered across the WHOLE ground plane, so the pavement reads as fresh
+  // snow rather than as flat blue asphalt. Before this the only snow dressing
+  // was the 8 corner drifts + a faint compaction noise map, so the ground read
+  // ~50% saturated blue (the user's "blue lines on the ground"). One
+  // InstancedMesh of small soft white discs laid just above the plane
+  // (y=0.012, clear of the 0.005..0.055 strips so nothing z-fights), scaled +
+  // rotated per instance from a seeded LCG (no Math.random). 96 patches over
+  // the 180 m plane (one mesh, StaticDrawUsage, additive so it brightens the
+  // snow without new lights). Headless (canvasFactory null) still adds the
+  // mesh — it is geometry-only, so the count is stable in tests.
+  const splashGeo = new THREE.CircleGeometry(1, 12)
+  splashGeo.rotateX(-Math.PI / 2)
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xeef4ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })
+  const SPLASH_N = 96
+  const splash = new THREE.InstancedMesh(splashGeo, splashMat, SPLASH_N)
+  splash.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  let ss = 1337
+  const srnd = () => (ss = (Math.imul(ss, 48271) >>> 0) % 65537) / 65537
+  const sq = new THREE.Quaternion()
+  const eul = new THREE.Euler()
+  const sp = new THREE.Vector3()
+  const sc = new THREE.Vector3()
+  for (let j = 0; j < SPLASH_N; j++) {
+    sp.set((srnd() - 0.5) * 168, 0.012, (srnd() - 0.5) * 168)
+    const r = 1.2 + srnd() * 2.6 // patch radius 1.2..3.8 m
+    sc.set(r, 1, r * (0.6 + srnd() * 0.7)) // squash into an elongated drift
+    eul.set(0, srnd() * Math.PI * 2, 0)
+    sq.setFromEuler(eul)
+    m.compose(sp, sq, sc)
+    splash.setMatrixAt(j, m)
+  }
+  splash.instanceMatrix.needsUpdate = true
+  group.add(splash)
 }
 
 // Wanted poster: a weathered "WANTED — DEAD OR ALIVE" placard with a zombie
