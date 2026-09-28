@@ -941,16 +941,24 @@ export class Game {
       // can diverge (different collision resolution, packet loss, respawn). Small
       // prediction lag between the two is normal and must NOT be fought, or the
       // correction drags the player back every frame and they hit an "invisible
-      // wall" (the reported bug). So: dead-zone small drift (<2 m) entirely, and
-      // when the error is large, ease it out at a capped rate that never exceeds
+      // wall" (the reported bug). So: dead-zone tiny drift (<0.6 m) entirely, and
+      // when the error is larger, ease it out at a capped rate that never exceeds
       // what the player could move themselves in one frame — so a real desync
       // (e.g. after respawn) heals without ever blocking normal movement.
+      // v4 co-op (closer zombies): the dead-zone was 2 m, which let the client's
+      // predicted position sit up to 2 m AHEAD of the server's while running. The
+      // zombie (server-simulated) chases the SERVER player and stops 1.3 m from it,
+      // so it visually stopped short of the client's player by that lead distance.
+      // Tightening the dead-zone to 0.6 m keeps the client player hugging the server
+      // position the zombie actually targets, so co-op zombies close the same gap as
+      // single-player. The correction is still capped to a sprint-frame step, so it
+      // never blocks movement (no invisible wall).
       const sp = this.multiplayer.selfPos
       if (sp && !this.player.isDead) {
         const ex = sp.x - this.player.position.x
         const ez = sp.z - this.player.position.z
         const d = Math.hypot(ex, ez)
-        if (d > 2) {
+        if (d > 0.6) {
           const maxStep = 6 * dt // ≤ what a sprinting player moves in a frame
           const step = Math.min(maxStep, d)
           this.player.position.x += (ex / d) * step
