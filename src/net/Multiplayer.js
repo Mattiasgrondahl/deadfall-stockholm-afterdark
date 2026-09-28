@@ -51,6 +51,7 @@ export class Multiplayer {
     this.selfDead = false
     this.selfHealth = null
     this.selfStamina = null
+    this.selfPos = null
     this._wasSelfDead = false
     // Co-op respawn hooks the Game wires up (no-ops until assigned).
     this.onSelfDeath = null
@@ -137,6 +138,9 @@ export class Multiplayer {
         selfDead = !!p.dead
         if (Number.isFinite(p.health)) selfHealth = p.health
         if (Number.isFinite(p.stamina)) selfStamina = p.stamina
+        // v4: capture the authoritative self position so incoming-hit feedback can
+        // point the directional edge glow at the nearest attacker (see _attackerSource).
+        if (Number.isFinite(p.x) && Number.isFinite(p.z)) this.selfPos = { x: p.x, z: p.z }
         continue // self is first-person, not proxied
       }
       seen.add(p.id)
@@ -165,7 +169,12 @@ export class Multiplayer {
       // surface it so the Game plays the hit feedback. The server already applied
       // the health change (adopted via selfHealth above); this is the cue.
       if (ev.k === 'hit' && ev.victim === this.pid && this.onSelfHit) {
-        this.onSelfHit(ev.dmg || 0, ev.by || null, !!ev.ff)
+        // Pass a source with a world position so the HUD's directional edge glow
+        // points at the attacker exactly like single-player (where `source` is the
+        // live Zombie/Player). `ev.by` is a zombie type for melee, or a player id
+        // for friendly fire; resolve it to the nearest matching proxy's position.
+        const src = this._attackerSource(snap, ev.by, !!ev.ff)
+        this.onSelfHit(ev.dmg || 0, src, !!ev.ff)
       }
       // v12: match end — surface the final scoreboard to the Game once.
       if (ev.k === 'matchEnd' && !this.matchEnded) {
@@ -226,6 +235,36 @@ export class Multiplayer {
       }
     }
     this._renderScoreboard(snap)
+  }
+
+  /** Resolve an incoming-hit source to an object with a world `position` so the
+   *  HUD's directional edge glow points at the attacker exactly like single-player
+   *  (where `source` is the live Zombie/Player). `by` is a zombie type for melee
+   *  hits or a player id for friendly fire; read the position straight from the
+   *  snapshot (proxies may not exist yet this frame). Returns null when nothing
+   *  matches (the HUD then skips the directional cue). */
+  _attackerSource(snap, by, ff) {
+    if (!by || !snap) return null
+    if (ff) {
+      // Friendly fire: `by` is the shooter's player id.
+      for (const p of (snap.players || [])) {
+        if (p.id === by && Number.isFinite(p.x) && Number.isFinite(p.z)) return { position: { x: p.x, z: p.z } }
+      }
+      return null
+    }
+    // Zombie melee: `by` is the zombie type; pick the nearest live zombie of it to
+    // the self position (the one most likely to have landed the melee).
+    const self = this.selfPos
+    let best = null
+    let bestD2 = Infinity
+    for (const z of (snap.zombies || [])) {
+      if (z.type !== by) continue
+      if (z.dead || z.state === 'dead') continue
+      if (!Number.isFinite(z.x) || !Number.isFinite(z.z)) continue
+      const d2 = self ? (z.x - self.x) * (z.x - self.x) + (z.z - self.z) * (z.z - self.z) : 0
+      if (d2 < bestD2) { bestD2 = d2; best = { x: z.x, z: z.z } }
+    }
+    return best ? { position: best } : null
   }
 
   /** Hit-testable proxies for the live remote zombies, so the local weapon can

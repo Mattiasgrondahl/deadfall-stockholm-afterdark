@@ -846,8 +846,10 @@ export class Game {
     // the feedback cue — fire the same damage vignette + hit sound single-player
     // uses (player._onDamaged -> hud.dmgFeedback + audio.hitPlayer) so being
     // attacked is actually felt in co-op instead of health silently dropping.
-    mp.onSelfHit = (n, by, ff) => {
-      if (this.hud) this.hud.dmgFeedback(n, ff ? 'teammate' : 'zombie')
+    // `src` is a { position } proxy resolved by Multiplayer so the HUD's
+    // directional edge glow points at the attacker exactly like single-player.
+    mp.onSelfHit = (n, src, ff) => {
+      if (this.hud) this.hud.dmgFeedback(n, src || (ff ? 'teammate' : 'zombie'))
       if (this.audio && this.audio.hitPlayer) this.audio.hitPlayer()
     }
     return mp

@@ -562,14 +562,23 @@ test('v4 friendly fire: getPlayers exposes teammate proxies that send MSG.FF on 
 test('v4 friendly fire: a self hit event fires onSelfHit feedback', () => {
   const { mp } = makeMP()
   let hits = []
-  mp.onSelfHit = (dmg, by, ff) => hits.push({ dmg, by, ff })
-  mp.socket.receive({ t: MSG.SNAP, ...snap({ events: [
-    { k: 'hit', victim: 'me', dmg: 14, by: 'alice', ff: true },
-    { k: 'hit', victim: 'alice', dmg: 20, by: 'walker' },
-  ] }) })
+  mp.onSelfHit = (dmg, src, ff) => hits.push({ dmg, src, ff })
+  // A teammate present in the roster resolves to a source with a position so the
+  // HUD's directional edge glow points at the shooter (single-player parity).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({
+    players: [
+      { id: 'me', name: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+      { id: 'alice', name: 'Alice', x: 3, y: 1.7, z: 4, yaw: 1, pitch: 0, health: 70, stamina: 60, weapon: 'shotgun', ammo: 4, reserve: 20, dead: false }
+    ],
+    events: [
+      { k: 'hit', victim: 'me', dmg: 14, by: 'alice', ff: true },
+      { k: 'hit', victim: 'alice', dmg: 20, by: 'walker' },
+    ]
+  }) })
   assert.equal(hits.length, 1, 'only the self-targeted hit fires the hook')
   assert.equal(hits[0].dmg, 14)
-  assert.equal(hits[0].by, 'alice')
+  assert.ok(hits[0].src && hits[0].src.position, 'friendly-fire source resolves to the shooter position')
+  assert.equal(hits[0].src.position.x, 3, 'source points at the shooter')
   assert.equal(hits[0].ff, true, 'friendly-fire flag forwarded')
   mp.dispose()
 })
@@ -632,5 +641,29 @@ test('v4 co-op: a chasing remote zombie plays a walk cycle (legs swing, body bob
   e.update(1 / 60)
   assert.equal(e._legL.rotation.x, 0, 'legs return to rest when idle')
   assert.equal(e.group.rotation.x, 0, 'bob resets when idle')
+  mp.dispose()
+})
+
+test('v4 co-op: a zombie melee hit resolves the attacker position for directional feedback', () => {
+  const { mp } = makeMP()
+  let hits = []
+  mp.onSelfHit = (dmg, src, ff) => hits.push({ dmg, src, ff })
+  // A live walker proxy near the player is the attacker; the hit event names the
+  // type 'walker', so the source resolves to that proxy's position (single-player
+  // parity: the HUD edge glow points at the zombie that actually bit you).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({
+    players: [
+      { id: 'me', name: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false }
+    ],
+    zombies: [
+      { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state: 'attack', facing: 0 }
+    ],
+    events: [{ k: 'hit', victim: 'me', dmg: 8, by: 'walker' }]
+  }) })
+  assert.equal(hits.length, 1, 'self hit fires the hook')
+  assert.ok(hits[0].src && hits[0].src.position, 'zombie source resolves to a position')
+  assert.equal(hits[0].src.position.x, 1, 'source points at the attacking walker')
+  assert.equal(hits[0].src.position.z, 2, 'source z matches the walker')
+  assert.equal(hits[0].ff, false, 'not friendly fire')
   mp.dispose()
 })
