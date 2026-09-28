@@ -27,7 +27,11 @@ const SFX_FILES = {
   zombie_death: SFX_BASE + 'sfx_zombie_death.wav',
   hit_flesh: SFX_BASE + 'sfx_hit_flesh.wav',
   pickup: SFX_BASE + 'sfx_pickup.wav',
-  melee_swing: SFX_BASE + 'sfx_melee_swing.wav'
+  melee_swing: SFX_BASE + 'sfx_melee_swing.wav',
+  moan_distant: SFX_BASE + 'sfx_moan_distant.wav',
+  attack_hiss: SFX_BASE + 'sfx_attack_hiss.wav',
+  footstep: SFX_BASE + 'sfx_footstep.wav',
+  snowstorm: SFX_BASE + 'sfx_snowstorm.wav'
 }
 
 export const SFX_NAMES = Object.keys(SFX_FILES)

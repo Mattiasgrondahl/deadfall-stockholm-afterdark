@@ -24,6 +24,31 @@ const CLOSE_GROWL_RADIUS = 9
 const CLOSE_GROWL_MIN = 2.2   // period (s) when the zombie is right on top
 const CLOSE_GROWL_MAX = 5.5   // period (s) at the edge of the dread radius
 const CLOSE_GROWL_GAIN = 0.55 // gain at point-blank (scaled by proximity)
+// v4 distant moan: a long mournful far-away wail, distinct from the short
+// per-zombie groans. Fires on a slow independent LCG cadence for zombies in the
+// far band (between MOAN_NEAR and GROAN_CUTOFF) so distant hordes ache audibly
+// across the street. Its own voice slot so it never starves the groans.
+const MOAN_NEAR = 12          // inside this the zombie groans, not moans (too close)
+const MOAN_MIN = 7.0          // shortest moan period (s) at the near edge of the band
+const MOAN_MAX = 16.0         // longest moan period (s) at the far edge
+const MOAN_GAIN = 0.34        // gain at the near edge (falloff toward the cutoff)
+// v4 attack hiss: a sharp sibilant snarl a zombie lets off as it closes to
+// striking distance / winds up a melee swing. Fires on a short cadence only
+// while the nearest zombie is inside HISS_RADIUS, louder the closer it gets.
+const HISS_RADIUS = 3.2       // ~attack range + a little, so it reads as "about to strike"
+const HISS_MIN = 1.1          // period (s) point-blank
+const HISS_MAX = 2.6          // period (s) at the edge of the strike radius
+const HISS_GAIN = 0.5         // gain at point-blank (scaled by proximity)
+// v4 footsteps: cadence driven by the player's ground speed. A step fires every
+// FOOTSTEP_STRIDE metres travelled, so the rate tracks walk vs sprint naturally.
+const FOOTSTEP_STRIDE = 2.0   // metres travelled per footfall (alternates L/R)
+const FOOTSTEP_WALK_GAIN = 0.16
+const FOOTSTEP_RUN_GAIN = 0.26
+// v4 weather: a periodic snowstorm swell layered over the wind bed. Separate
+// from the short gusts above — a longer, louder blizzard sweep that rises and
+// falls every STORM_MIN..STORM_MAX seconds to sell the winter setting.
+const STORM_MIN = 22          // shortest gap between storms (s)
+const STORM_MAX = 48          // longest gap between storms (s)
 const GROAN_SPECS = {
   walker: { base: 2.5, voice: 0.5, gain: 0.35 },
   shambler: { base: 4.5, voice: 0.8, gain: 0.4 },
@@ -54,6 +79,27 @@ export class AudioBank {
     this._closeGrowlNextAt = 0
     this._closeGrowlSeed = 777001
     this._closeGrowlVoices = [] // { at, p } per active close growl (p = PannerNode) — freed on expiry
+    // v4 distant moan: independent LCG + next-fire clock + a last-moaned map so a
+    // given far zombie only moans on its own slow cadence. Own voice list (no leak).
+    this._moanNextAt = 0
+    this._moanSeed = 555001
+    this._moanMap = new Map() // zombie -> { nextAt }
+    this._moanVoices = [] // { at, p } per active moan voice
+    // v4 attack hiss: independent LCG + next-fire clock keyed on the nearest
+    // zombie inside the strike radius.
+    this._hissNextAt = 0
+    this._hissSeed = 333001
+    this._hissVoices = [] // { at, p } per active hiss voice
+    // v4 footsteps: distance travelled since the last footfall + a left/right
+    // toggle + a dedicated LCG so footstep timing never shares the groan RNG.
+    this._stepAccum = 0
+    this._stepFlip = false
+    this._stepSeed = 246001
+    // v4 weather: the snowstorm swell scheduler (own LCG + next-fire clock),
+    // independent of the short gusts so storms and gusts don't collide.
+    this._stormNextAt = 12
+    this._stormSeed = 135790
+    this._stormCount = 0
     // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
     // pure (advances with the per-frame updateGroans tick); each gust fires
     // transient burst nodes only - the persistent bed stays fixed (10 nodes:
@@ -599,6 +645,110 @@ export class AudioBank {
     return this._closeGrowlSeed / 65537
   }
 
+  /** Seeded LCG in [0,1) for the distant moan (independent). */
+  _moanRand() {
+    this._moanSeed = (Math.imul(this._moanSeed, 48271) >>> 0) % 65537
+    return this._moanSeed / 65537
+  }
+
+  /** Seeded LCG in [0,1) for the attack hiss (independent). */
+  _hissRand() {
+    this._hissSeed = (Math.imul(this._hissSeed, 48271) >>> 0) % 65537
+    return this._hissSeed / 65537
+  }
+
+  /** Seeded LCG in [0,1) for footstep timing jitter (independent). */
+  _stepRand() {
+    this._stepSeed = (Math.imul(this._stepSeed, 48271) >>> 0) % 65537
+    return this._stepSeed / 65537
+  }
+
+  /** Seeded LCG in [0,1) for the snowstorm swell (independent of the gust LCG). */
+  _stormRand() {
+    this._stormSeed = (Math.imul(this._stormSeed, 48271) >>> 0) % 65521
+    return this._stormSeed / 65537
+  }
+
+  /**
+   * v4 distant moan: a long mournful far-away wail routed through a panner at
+   * pos. Distance falloff is applied by the caller (gain already scaled). Falls
+   * back to a synthesized low formant wail when the sample has not decoded.
+   */
+  _playMoanPanned(distance, gain, pos, entry = null) {
+    if (!this.ctx) return
+    const p = this._pannerAt(pos)
+    if (!this._playSfx('moan_distant', { gain: Math.min(0.6, gain), dest: p })) {
+      // Synthesized stand-in: a slow descending low formant wail + breath noise.
+      this._playFormant({ freq: 110, freqEnd: 70, f1: 260, f2: 620, duration: 2.4, gain, dest: p })
+      this._playNoise({ duration: 2.2, filterType: 'lowpass', filterFreq: 500, gain: gain * 0.4, dest: p })
+    }
+    if (entry) entry.p = p
+  }
+
+  /**
+   * v4 attack hiss: a sharp sibilant snarl a zombie lets off as it closes to
+   * striking distance. Routed through a panner at pos; `entry` records the
+   * panner so updateGroans disconnects it on expiry. Synthesized hiss fallback.
+   */
+  _playHissPanned(gain, pos, entry = null) {
+    if (!this.ctx) return
+    const p = this._pannerAt(pos)
+    if (!this._playSfx('attack_hiss', { gain: Math.min(0.7, gain), dest: p })) {
+      // Synthesized hiss: a bright bandpassed noise burst (sibilant spit).
+      this._playNoise({ duration: 0.4, filterType: 'bandpass', filterFreq: 3200, gain, dest: p })
+    }
+    if (entry) entry.p = p
+  }
+
+  /**
+   * v4 footstep: one footfall at the listener (no panner — it is the player's
+   * own steps). `run` picks the louder/tighter variant. Synthesized crunch
+   * fallback when the sample has not decoded.
+   */
+  footstep(run = false) {
+    if (!this.ctx) return
+    this._resume()
+    const gain = run ? FOOTSTEP_RUN_GAIN : FOOTSTEP_WALK_GAIN
+    if (this._playSfx('footstep', { gain, rate: run ? 1.12 : 1 })) return
+    // Synthesized stand-in: a short lowpassed scuff + a soft thud.
+    this._playNoise({ duration: 0.09, filterType: 'lowpass', filterFreq: 900, gain })
+    this._playTone({ type: 'sine', freq: 120, freqEnd: 70, duration: 0.06, gain: gain * 0.5 })
+  }
+
+  /**
+   * v4 weather: a snowstorm swell layered over the wind bed. A long lowpassed
+   * noise sweep that rises then falls (blizzard gust), plus a faint highpassed
+   * "blowing snow" hiss. Transient (auto-stopped); nothing persistent added.
+   * Uses the sample when available, else synthesizes the sweep.
+   */
+  _scheduleStorm(t) {
+    if (!this.ctx) return
+    const at = this.ctx.currentTime
+    const dur = 6.0 + 4.0 * this._stormRand()
+    const peak = 0.09 + 0.05 * this._stormRand()
+    const gap = STORM_MIN + (STORM_MAX - STORM_MIN) * this._stormRand()
+    if (!this._playSfx('snowstorm', { gain: peak })) {
+      // Synthesized blizzard sweep: lowpassed noise rising then falling.
+      const src = this.ctx.createBufferSource()
+      src.buffer = this._noiseBuffer
+      src.loop = true
+      const f = this.ctx.createBiquadFilter()
+      f.type = 'lowpass'
+      f.frequency.value = 700
+      const b = this.ctx.createGain()
+      b.gain.setValueAtTime(0.001, at)
+      b.gain.linearRampToValueAtTime(peak, at + dur * 0.35)
+      b.gain.linearRampToValueAtTime(0.001, at + dur)
+      src.connect(f); f.connect(b); b.connect(this._fxDest())
+      src.start(at)
+      src.stop(at + dur + 0.05)
+      // Faint blowing-snow hiss on top.
+      this._playNoise({ duration: dur * 0.6, filterType: 'highpass', filterFreq: 3000, gain: peak * 0.25, when: dur * 0.2 })
+    }
+    this._stormCount++
+    this._stormNextAt = t + dur + gap
+  }
+
   /** Number of groan voices currently sounding (for tests/budget checks). */
   activeGroans() {
     return this._groanVoices.length
@@ -715,7 +865,7 @@ export class AudioBank {
    * voice slot is free (otherwise it retries next frame).
    * @returns groans scheduled this frame: [{ type, distance, gain }]
    */
-  updateGroans(dt, zombies, playerPos, playerYaw = 0) {
+  updateGroans(dt, zombies, playerPos, playerYaw = 0, playerState = null) {
     const scheduled = []
     this._groanClock += dt
     const t = this._groanClock
@@ -773,6 +923,29 @@ export class AudioBank {
         scheduled.push({ type: z.type, distance: d, gain })
         this._playGroanPanned(z.type, d, { x: z.position.x, z: z.position.z }, entry)
       }
+      // v4 distant moan: a far zombie (outside the close groan band) lets off a
+      // long mournful wail on its own slow LCG cadence, so distant hordes ache
+      // audibly across the street. Own voice slot (cap 2) so it never starves
+      // the groans; gain falls off toward the cutoff.
+      if (d >= MOAN_NEAR && this._moanVoices.length < 2) {
+        let me = this._moanMap.get(z)
+        if (!me) {
+          me = { nextAt: t + this._moanRand() * MOAN_MAX }
+          this._moanMap.set(z, me)
+        }
+        if (t >= me.nextAt) {
+          const prox = Math.max(0, 1 - (d - MOAN_NEAR) / (GROAN_CUTOFF - MOAN_NEAR))
+          const mgain = MOAN_GAIN * (0.4 + 0.6 * prox)
+          const period = MOAN_MAX - (MOAN_MAX - MOAN_MIN) * prox
+          me.nextAt = t + period * (0.7 + 0.6 * this._moanRand())
+          const mentry = { at: t + 2.6, p: null }
+          this._moanVoices.push(mentry)
+          scheduled.push({ type: 'moan', distance: d, gain: mgain })
+          this._playMoanPanned(d, mgain, { x: z.position.x, z: z.position.z }, mentry)
+        }
+      } else {
+        this._moanMap.delete(z)
+      }
     }
     // v4 proximity dread: a dedicated close growl when the nearest live zombie
     // is inside CLOSE_GROWL_RADIUS. The period shrinks and the gain rises as it
@@ -801,6 +974,62 @@ export class AudioBank {
       // first close growl sounds promptly the moment a zombie enters the radius.
       this._closeGrowlNextAt = Math.min(this._closeGrowlNextAt, t + CLOSE_GROWL_MAX)
     }
+    // v4 attack hiss: a sharp sibilant snarl when the nearest zombie is within
+    // striking distance (about to attack). Louder + faster the closer it gets,
+    // on its own LCG cadence so it layers over the close growl. Cap 1 voice.
+    if (nearest && minD < HISS_RADIUS && this._hissVoices.length < 1) {
+      const hprox = Math.max(0, 1 - minD / HISS_RADIUS)
+      if (t >= this._hissNextAt) {
+        const hperiod = HISS_MAX - (HISS_MAX - HISS_MIN) * hprox
+        this._hissNextAt = t + hperiod * (0.7 + 0.6 * this._hissRand())
+        const hgain = HISS_GAIN * (0.5 + 0.5 * hprox)
+        const hentry = { at: t + 0.5, p: null }
+        this._hissVoices.push(hentry)
+        scheduled.push({ type: 'hiss', distance: minD, gain: hgain })
+        this._playHissPanned(hgain, { x: nearest.position.x, z: nearest.position.z }, hentry)
+      }
+    } else {
+      this._hissNextAt = Math.min(this._hissNextAt, t + HISS_MAX)
+    }
+    // Expire finished hiss voices and release their panners (swap-pop).
+    if (this._hissVoices.length) {
+      let hi = 0
+      while (hi < this._hissVoices.length) {
+        const e = this._hissVoices[hi]
+        if (e.at > t) { hi++; continue }
+        if (e.p && typeof e.p.disconnect === 'function') e.p.disconnect()
+        this._hissVoices[hi] = this._hissVoices[this._hissVoices.length - 1]
+        this._hissVoices.pop()
+      }
+    }
+    // Expire finished moan voices and release their panners (swap-pop).
+    if (this._moanVoices.length) {
+      let mi = 0
+      while (mi < this._moanVoices.length) {
+        const e = this._moanVoices[mi]
+        if (e.at > t) { mi++; continue }
+        if (e.p && typeof e.p.disconnect === 'function') e.p.disconnect()
+        this._moanVoices[mi] = this._moanVoices[this._moanVoices.length - 1]
+        this._moanVoices.pop()
+      }
+    }
+    // v4 footsteps: fire a footfall every FOOTSTEP_STRIDE metres the player
+    // travels, so the cadence tracks walk vs sprint automatically. playerState
+    // is { speed, sprint } (speed = ground-plane m/s); silent when standing.
+    if (playerState && playerState.speed > 0.4) {
+      this._stepAccum += playerState.speed * dt
+      if (this._stepAccum >= FOOTSTEP_STRIDE) {
+        this._stepAccum -= FOOTSTEP_STRIDE
+        this._stepFlip = !this._stepFlip
+        const run = playerState.sprint === true || playerState.speed > 5
+        this.footstep(run)
+        scheduled.push({ type: 'step', distance: 0, gain: run ? FOOTSTEP_RUN_GAIN : FOOTSTEP_WALK_GAIN })
+      }
+    } else {
+      // Standing still: bleed off the partial stride so resuming doesn't fire a
+      // stale step immediately.
+      this._stepAccum = 0
+    }
     // Expire finished close-growl voices and release their panners (swap-pop,
     // no per-frame allocation), mirroring the ambient-groan voice cleanup above.
     if (this._closeGrowlVoices.length) {
@@ -818,6 +1047,14 @@ export class AudioBank {
     this._ambClock += dt
     if (this._ambientOn && this._gustGainNode && this._ambClock >= this._gustNextAt) {
       this._scheduleGust(this._ambClock)
+    }
+    // v4 weather: a periodic snowstorm swell (longer + louder than a gust) fires
+    // every STORM_MIN..STORM_MAX s, selling the winter setting. Independent of
+    // the (v9-removed) persistent wind bed — it is a self-contained transient
+    // burst, so it plays whenever there is a context. Own LCG so it never
+    // collides with the short gusts above. No-op headless (no ctx).
+    if (this.ctx && this._ambClock >= this._stormNextAt) {
+      this._scheduleStorm(this._ambClock)
     }
     // Procedural soundtrack scheduler tick (same per-frame piggyback): keeps
     // the pattern loop scheduled ahead of the clock. No-op headless.
@@ -1379,6 +1616,15 @@ export class AudioBank {
     this._groanClock = 0
     this._closeGrowlVoices = []
     this._closeGrowlNextAt = 0
+    this._moanVoices = []
+    this._moanMap = new Map()
+    this._moanNextAt = 0
+    this._hissVoices = []
+    this._hissNextAt = 0
+    this._stepAccum = 0
+    this._stepFlip = false
+    this._stormNextAt = 12
+    this._stormCount = 0
     this._ambClock = 0
     this._gustNextAt = 2
     this._gustSrc = null

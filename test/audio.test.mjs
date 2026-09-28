@@ -372,15 +372,22 @@ function bankWithFakeCtx() {
   b1.startAmbient(); b2.startAmbient()
   const bed = b1.ctx._created.length
   const n1 = [], n2 = []
+  const s1 = [], s2 = []
   for (let i = 0; i < 60 * 40; i++) {
     b1.updateGroans(1 / 60, [], { x: 0, z: 0 })
     b2.updateGroans(1 / 60, [], { x: 0, z: 0 })
     n1.push(b1._gustCount)
     n2.push(b2._gustCount)
+    s1.push(b1._stormCount)
+    s2.push(b2._stormCount)
   }
   assert.deepStrictEqual(n1, n2)
+  assert.deepStrictEqual(s1, s2)
   assert.ok(b1._gustCount >= 2, `too few gusts in 40 s: ${b1._gustCount}`)
-  assert.strictEqual(b1.ctx._created.length, bed + 3 * b1._gustCount, 'persistent node growth')
+  // v4 weather: each gust is 3 transient nodes; each snowstorm swell is 6
+  // (synthesized blizzard sweep: src+filter+gain, plus a blowing-snow noise
+  // burst = 3 more). Nothing else is persistent.
+  assert.strictEqual(b1.ctx._created.length, bed + 3 * b1._gustCount + 6 * b1._stormCount, 'persistent node growth')
   b1.dispose(); b2.dispose()
 }
 {
@@ -430,22 +437,34 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 {
-  // Every scheduled groan fires exactly one panner at the zombie's position;
-  // node growth is exact and bounded (fresh bank, walker "urgh" voice = 8 nodes).
+  // Every scheduled voice fires exactly one panner at the zombie's position;
+  // node growth is exact and bounded. v4: a walker at 3 m groans (8 nodes),
+  // close-growls (8 nodes: panner + formant + noise) and hisses (4 nodes:
+  // panner + one bandpassed noise burst); a snowstorm swell adds 6 transient
+  // nodes. Panner count must equal the total fires (every voice is panned).
   const bank = bankWithFakeCtx()
   const z = fakeZombie('walker', 3, 0)
   let fires = 0
-  for (let i = 0; i < 60 * 30; i++) fires += bank.updateGroans(1 / 60, [z], { x: 0, z: 0 }).length
+  const kinds = { walker: 0, close: 0, hiss: 0 }
+  for (let i = 0; i < 60 * 30; i++) {
+    for (const e of bank.updateGroans(1 / 60, [z], { x: 0, z: 0 })) {
+      fires++
+      if (kinds[e.type] != null) kinds[e.type]++
+    }
+  }
   const panners = bank.ctx._created.filter(n => n.name === 'panner')
   assert.ok(fires > 2, 'too few groans: ' + fires)
-  assert.strictEqual(panners.length, fires, 'panner count != fired groans')
+  assert.strictEqual(panners.length, fires, 'panner count != fired voices')
   for (const p of panners) {
     assert.strictEqual(p.position.x.value, 3)
     assert.strictEqual(p.position.y.value, 0.8)
     assert.strictEqual(p.position.z.value, 0)
   }
   // +2: master + limiter created by bankWithFakeCtx before the loop.
-  assert.strictEqual(bank.ctx._created.length, 2 + 8 * fires, 'unbounded node growth')
+  // v4 weather: each snowstorm swell adds 6 transient nodes (synthesized
+  // blizzard sweep + blowing-snow noise), independent of the panned voices.
+  const expected = 2 + 8 * (kinds.walker + kinds.close) + 4 * kinds.hiss + 6 * bank._stormCount
+  assert.strictEqual(bank.ctx._created.length, expected, 'unbounded node growth')
   bank.dispose()
 }
 {
@@ -866,6 +885,71 @@ function bankWithFakeCtx() {
   assert.ok(gNear > gEdge, `point-blank gain ${gNear} not > edge gain ${gEdge}`)
   nearBank.dispose()
   edgeBank.dispose()
+}
+
+// ---- v4: footsteps, attack hiss, distant moan, snowstorm ------------------
+{
+  // Footsteps: a moving player fires a step every FOOTSTEP_STRIDE metres; the
+  // cadence tracks speed (sprint fires faster than walk) and standing is silent.
+  const walk = bankWithFakeCtx()
+  const run = bankWithFakeCtx()
+  const still = bankWithFakeCtx()
+  let wf = 0, rf = 0, sf = 0
+  for (let i = 0; i < 60 * 20; i++) {
+    for (const e of walk.updateGroans(1 / 60, [], { x: 0, z: 0 }, 0, { speed: 3.4 })) if (e.type === 'step') wf++
+    for (const e of run.updateGroans(1 / 60, [], { x: 0, z: 0 }, 0, { speed: 5.8, sprint: true })) if (e.type === 'step') rf++
+    for (const e of still.updateGroans(1 / 60, [], { x: 0, z: 0 }, 0, { speed: 0 })) if (e.type === 'step') sf++
+  }
+  assert.ok(wf > 2, 'too few walk steps: ' + wf)
+  assert.ok(rf > wf, `sprint steps ${rf} not > walk steps ${wf}`)
+  assert.strictEqual(sf, 0, 'footsteps fired while standing still')
+  walk.dispose(); run.dispose(); still.dispose()
+}
+{
+  // Attack hiss: a zombie inside the strike radius hisses; a far one does not.
+  const near = bankWithFakeCtx()
+  const far = bankWithFakeCtx()
+  let nh = 0, fh = 0
+  for (let i = 0; i < 60 * 20; i++) {
+    for (const e of near.updateGroans(1 / 60, [fakeZombie('walker', 1.5, 0)], { x: 0, z: 0 })) if (e.type === 'hiss') nh++
+    for (const e of far.updateGroans(1 / 60, [fakeZombie('walker', 20, 0)], { x: 0, z: 0 })) if (e.type === 'hiss') fh++
+  }
+  assert.ok(nh > 1, 'no attack hiss for a zombie at strike range: ' + nh)
+  assert.strictEqual(fh, 0, 'hiss fired for a distant zombie')
+  near.dispose(); far.dispose()
+}
+{
+  // Distant moan: a far zombie (outside the close band) moans; a close one does
+  // not (it groans instead). Reuse one zombie object so the per-zombie moan
+  // scheduler (keyed on the object) can advance its cadence across frames.
+  const far = bankWithFakeCtx()
+  const near = bankWithFakeCtx()
+  const farZ = fakeZombie('walker', 20, 0)
+  const nearZ = fakeZombie('walker', 3, 0)
+  let fm = 0, nm = 0
+  for (let i = 0; i < 60 * 40; i++) {
+    for (const e of far.updateGroans(1 / 60, [farZ], { x: 0, z: 0 })) if (e.type === 'moan') fm++
+    for (const e of near.updateGroans(1 / 60, [nearZ], { x: 0, z: 0 })) if (e.type === 'moan') nm++
+  }
+  assert.ok(fm > 0, 'no distant moan for a far zombie: ' + fm)
+  assert.strictEqual(nm, 0, 'moan fired for a close zombie')
+  far.dispose(); near.dispose()
+}
+{
+  // Snowstorm swell: fires periodically on its own LCG, deterministically, and
+  // is independent of the persistent ambient bed (works with no startAmbient).
+  const b1 = bankWithFakeCtx()
+  const b2 = bankWithFakeCtx()
+  const s1 = [], s2 = []
+  for (let i = 0; i < 60 * 60; i++) {
+    b1.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    b2.updateGroans(1 / 60, [], { x: 0, z: 0 })
+    s1.push(b1._stormCount)
+    s2.push(b2._stormCount)
+  }
+  assert.deepStrictEqual(s1, s2, 'storm schedule not deterministic')
+  assert.ok(b1._stormCount >= 1, 'no snowstorm within 60 s: ' + b1._stormCount)
+  b1.dispose(); b2.dispose()
 }
 
 console.log('audio OK')

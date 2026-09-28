@@ -912,7 +912,16 @@ export class Game {
       updateWorld(dt, this._ws)
     }
     // WIRING:GROANS (V8)
-    if (this.audio) this.audio.updateGroans(dt, this.zombies, this.player ? this.player.position : this.camera.position, this.player ? this.player.yaw : 0)
+    if (this.audio) {
+      const p = this.player
+      const pPos = p ? p.position : this.camera.position
+      const pYaw = p ? p.yaw : 0
+      // v4: pass the player's ground speed so AudioBank drives footstep cadence
+      // (walk vs sprint) and silence-when-standing. Speed from the velocity
+      // plane; sprint is inferred from speed inside AudioBank.
+      const spd = p ? Math.hypot(p.velocity.x, p.velocity.z) : 0
+      this.audio.updateGroans(dt, this.zombies, pPos, pYaw, { speed: spd })
+    }
     // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
     // player is — alive-zombie pressure vs the wave cap, blended with low
     // health, plus a bump while the boss stands. Smoothed inside AudioBank.
