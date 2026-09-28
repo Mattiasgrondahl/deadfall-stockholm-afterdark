@@ -23,10 +23,16 @@ import { makeFFProxy } from './FFProxy.js'
 import * as THREE from 'three'
 const ZGEO = new THREE.BoxGeometry(0.6, 1.7, 0.4)
 const ZMAT = new THREE.MeshStandardMaterial({ color: 0x5f6b4a, roughness: 0.95, emissive: 0x3a4530, emissiveIntensity: 0.18 })
+// Per-type shotgun armor (mirrors Zombie.TABLE) so a fallback-box hit applies the
+// same buckshot armor the full body would.
+const SHOTGUN_ARMOR = { walker: 1, shambler: 1, screamer: 1, brute: 0.4 }
 // Cap the number of full primitive remote bodies so a full wave stays inside the
 // mesh budget AND the GPU draw-call budget on weak machines; overflow zombies
-// use the cheap shared fallback box instead of a full PBR body.
-const MAX_REMOTE = 12
+// use the cheap shared fallback box instead of a full PBR body. v4 co-op: raised
+// 12 → 16 to cover the wave-3 roster (total 14) plus a couple of lingering dead,
+// so the tail of a big wave shows real bodies instead of green boxes. Overflow
+// beyond this still gets a box, and boxes are now hit-testable (see getTargets).
+const MAX_REMOTE = 16
 
 export class Multiplayer {
   /**
@@ -203,7 +209,12 @@ export class Multiplayer {
       if (!entry) {
         if (liveCount >= MAX_REMOTE) {
           // Over budget: a shared fallback box so the zombie is still visible.
-          entry = { _box: null }
+          // v4 co-op: the box is now HIT-TESTABLE too (see getTargets) — before,
+          // overflow zombies were green boxes you could see but not shoot, which
+          // read as "unshootable green squares" at the tail of a big wave (e.g.
+          // wave 3's 14-zombie roster over the old 12 cap). The box carries the
+          // match id + type so a confirmed hit still routes an authoritative HIT.
+          entry = { _box: null, _id: z.id, _type: z.type, _dead: false, _predHp: 100, _predictedDead: false }
           const box = new THREE.Mesh(ZGEO, ZMAT)
           box.position.set(z.x, 0.85, z.z)
           this.scene.add(box)
@@ -221,7 +232,8 @@ export class Multiplayer {
       else if (entry._box) {
         entry._box.position.set(z.x, 0.85, z.z)
         if (z.facing != null) entry._box.rotation.y = z.facing
-        entry._box.visible = !(z.dead || z.state === 'dead')
+        entry._dead = !!(z.dead || z.state === 'dead')
+        entry._box.visible = !entry._dead
       }
     }
     for (const [id, entry] of this.zombies) {
@@ -277,9 +289,48 @@ export class Multiplayer {
       if (e instanceof RemoteZombie) {
         const t = e.getTarget()
         if (t && !t.isDead) out.push(t)
+      } else if (e._box && !e._dead && !e._predictedDead) {
+        // v4 co-op: overflow (fallback-box) zombies are shootable too. Expose the
+        // same minimal hitbox contract a RemoteZombie proxy does so the weapon hit
+        // loop registers the hit and routes an authoritative HIT to the server.
+        out.push(this._boxProxy(e))
       }
     }
     return out
+  }
+
+  // Reused per-frame box proxies (no allocation): one scratch object per entry id.
+  _boxProxy(e) {
+    let p = e._proxy
+    if (!p) {
+      const self = e
+      const net = this.net
+      const hb = [
+        { center: new THREE.Vector3(), radius: 0.45, isHead: false },
+        { center: new THREE.Vector3(), radius: 0.3, isHead: true }
+      ]
+      p = e._proxy = {
+        get isDead() { return self._dead || self._predictedDead },
+        _id: self._id,
+        position: { x: 0, y: 0.85, z: 0 },
+        knockback() {},
+        shotgunArmor: SHOTGUN_ARMOR[self._type] != null ? SHOTGUN_ARMOR[self._type] : 1,
+        getHitboxes() {
+          const x = self._box.position.x, z = self._box.position.z
+          p.position.x = x; p.position.y = 0; p.position.z = z
+          hb[0].center.set(x, 1.0, z)
+          hb[1].center.set(x, 1.7, z)
+          return hb
+        },
+        damage(amount) {
+          self._predHp = (self._predHp == null ? 100 : self._predHp) - amount
+          if (self._predHp <= 0) self._predictedDead = true
+          if (amount > 0 && net) net.sendHit(self._id, amount, false)
+        },
+        hitLimbAt() { return null }
+      }
+    }
+    return p
   }
 
   /** Friendly-fire proxies for the live teammates (excludes self), so the local

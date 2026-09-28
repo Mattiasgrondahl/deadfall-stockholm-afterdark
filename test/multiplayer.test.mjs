@@ -443,6 +443,25 @@ test('remote target exposes position + knockback + shotgunArmor (melee-safe)', (
   mp.dispose()
 })
 
+test('v4 co-op: overflow (fallback-box) zombies are still shootable', () => {
+  const { mp } = makeMP()
+  // Flood past MAX_REMOTE so the tail becomes shared green boxes, not full bodies.
+  const zs = []
+  for (let i = 0; i < 20; i++) zs.push({ id: 'z' + i, type: 'walker', x: i, z: 2, health: 100, state: 'chase', facing: 0 })
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: zs }) })
+  const overflowId = 'z19'
+  const entry = mp.zombies.get(overflowId)
+  assert.ok(entry && entry._box && !entry.getTarget, 'overflow entry is a box, not a RemoteZombie')
+  const t = mp.getTargets().find((q) => q._id === overflowId)
+  assert.ok(t, 'overflow box is exposed as a shootable target')
+  const hb = t.getHitboxes()
+  assert.equal(hb[0].center.x, 19, 'box hitbox tracks the snapshot x')
+  mp.net.sendHit = (v, d, h) => { mp._lastHit = { v, d, h } }
+  t.damage(30)
+  assert.deepEqual(mp._lastHit, { v: overflowId, d: 30, h: false }, 'box hit routes an authoritative HIT to the server')
+  mp.dispose()
+})
+
 test('v12: kill feed renders recent kills with killer names and headshot flags', () => {
   const { mp, doc } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })

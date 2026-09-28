@@ -24,7 +24,7 @@ test('stats: contract values exact', () => {
   assert.equal(axe.headRange, 0.6)
   assert.equal(axe.range, 2.1)   // v3 T3: longer reach (was 1.5)
   assert.equal(axe.arc, 0.7)
-  assert.equal(axe.cooldown, 0.6) // v3 T3: faster swings (was 0.9)
+  assert.equal(axe.cooldown, 0.18) // v4 co-op: rapid re-swing (double-click = 2 swings)
   assert.equal(axe.swingTime, 0.2) // v3 T3: shorter swing cycle (was 0.25)
   assert.equal(axe.infiniteAmmo, true)
   axe.dispose()
@@ -62,7 +62,7 @@ test('cooldown blocks rapid swings', () => {
   axe.update(0.016, player)
   assert.equal(axe.swing(), true)
   assert.equal(axe.swing(), false) // still in cooldown
-  for (let i = 0; i < 37; i++) axe.update(1 / 60, player) // ~0.617 s > 0.6 s (v3 T3)
+  for (let i = 0; i < 37; i++) axe.update(1 / 60, player) // ~0.617 s > 0.18 s cooldown (v4 rapid re-swing)
   assert.equal(axe.swing(), true)
   axe.dispose()
 })

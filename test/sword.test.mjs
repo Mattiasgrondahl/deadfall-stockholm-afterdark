@@ -28,7 +28,7 @@ test('stats: contract values exact', () => {
   assert.equal(sword.headRange, 0.7)
   assert.equal(sword.range, 2.4)   // v3 T3: longer reach (was 1.8)
   assert.equal(sword.arc, 0.8)
-  assert.equal(sword.cooldown, 0.8) // v3 T3: faster swings (was 1.15)
+  assert.equal(sword.cooldown, 0.22) // v4 co-op: rapid re-swing (double-click = 2 swings)
   assert.equal(sword.swingTime, 0.26) // v3 T3: shorter swing cycle (was 0.32)
   assert.equal(sword.infiniteAmmo, true)
   sword.dispose()
