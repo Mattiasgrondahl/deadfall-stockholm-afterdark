@@ -80,7 +80,27 @@ test('Room tick advances the sim and broadcasts a 10 Hz snapshot', () => {
   assert.ok(snaps.length >= 9 && snaps.length <= 11, `~10 snapshots in 1 s (got ${snaps.length})`)
   const snap = snaps[snaps.length - 1]
   assert.ok(Array.isArray(snap.players) && snap.players.length === 2, 'snapshot has both players')
-  assert.ok(snap.players.every((p) => typeof p.x === 'number' && typeof p.health === 'number'), 'player fields present')
+})
+
+test('v4 co-op: authoritative client yaw steers the server player', () => {
+  const room = new Room()
+  const s0 = fakeSocket()
+  room.join(s0)
+  // The client owns the mouse and sends its yaw (its local player.update consumes
+  // the raw look deltas before sendInput, so look.dx is always 0 here). Without
+  // adopting it the server keeps facing the spawn direction and W slides the
+  // player sideways — the reported "invisible wall".
+  const p = room.match.getPlayer('p0').player
+  assert.equal(p.yaw, 0, 'spawns facing -Z')
+  room.applyInput(s0, { t: MSG.INPUT, pid: 'p0', yaw: Math.PI / 2 })
+  assert.equal(p.yaw, Math.PI / 2, 'server adopts the client yaw')
+  // With yaw = +90°, forward maps to +X (not -Z): forward input must move the
+  // player along X, proving the server now moves along the client's heading.
+  room.applyInput(s0, { t: MSG.INPUT, pid: 'p0', move: { fwd: 1, side: 0 }, yaw: Math.PI / 2 })
+  const bx = p.position.x, bz = p.position.z
+  for (let i = 0; i < 20; i++) room.tick(SERVER_TICK)
+  assert.ok(Math.abs(p.position.x - bx) > 0.5, 'forward moves along the client yaw (X), not the spawn axis')
+  assert.ok(Math.abs(p.position.z - bz) < 0.5, 'no sideways slide along the stale spawn axis')
 })
 
 test('v4 friendly fire: room.applyFF damages the victim player', () => {

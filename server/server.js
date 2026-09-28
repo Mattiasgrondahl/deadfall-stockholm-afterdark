@@ -329,6 +329,13 @@ export class Room {
     is.reload = input.reload
     is.jump = input.jump
     if (input.switch !== null) is['switch' + (input.switch + 1)] = true
+    // v4 co-op: the client owns the mouse and sends its authoritative yaw (its
+    // local player.update consumes the raw look deltas before sendInput runs, so
+    // look.dx is always 0 here). Set the server player's facing from it so the
+    // server moves the player along the SAME heading the client sees — otherwise
+    // the server keeps facing the spawn direction and W slides the player
+    // sideways (the reported "invisible wall").
+    if (input.yaw != null) slot.player.yaw = input.yaw
     // Authoritative yaw from accumulated look; pitch is cosmetic but cheap.
     if (input.look.dx) is.turnX += input.look.dx
     if (input.look.dy) is.turnY = Math.max(-1.5, Math.min(1.5, is.turnY + input.look.dy))

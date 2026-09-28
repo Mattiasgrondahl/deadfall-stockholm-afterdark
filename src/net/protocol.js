@@ -55,6 +55,8 @@ export function parseInput(msg) {
     tick: Number.isFinite(msg.tick) ? Math.floor(msg.tick) : 0,
     move: { fwd: clamp(move.fwd, -1, 1), side: clamp(move.side, -1, 1) },
     sprint: !!msg.sprint,
+    // v4 co-op: authoritative client yaw (the client owns the mouse; see NetClient).
+    yaw: Number.isFinite(msg.yaw) ? msg.yaw : null,
     look: { dx: clamp(look.dx, -1, 1), dy: clamp(look.dy, -1, 1) },
     fire: !!msg.fire,
     reload: !!msg.reload,

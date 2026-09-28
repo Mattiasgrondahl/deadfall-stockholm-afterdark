@@ -111,6 +111,14 @@ export class NetClient {
     this.socket.send(JSON.stringify({
       t: MSG.INPUT, pid: this.pid, tick: this._inputAccum,
       move: { fwd, side }, sprint: !!inputState.sprint,
+      // v4 co-op: send the client's authoritative yaw. The client consumes its
+      // mouse deltas in player.update BEFORE sendInput runs (both read the same
+      // inputState), so look.dx would always be 0 here — the server player would
+      // never turn and would keep facing the spawn direction. The server then
+      // moves the player along the WRONG heading, so pressing W slid the player
+      // sideways and the position reconciliation dragged them back ("invisible
+      // wall"). Sending yaw lets the server set the player's facing directly.
+      yaw: Number.isFinite(yaw) ? yaw : 0,
       look: { dx: inputState.turnX || 0, dy: inputState.turnY || 0 },
       fire: !!inputState.fire, reload: !!inputState.reload, jump: !!inputState.jump,
       switch: sw,
