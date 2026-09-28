@@ -987,4 +987,25 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 
+{
+  // v14b: the screamer's melee WINDUP now plays the same "ahhhhh" scream sample
+  // (not the old square "blip"), and the ammo pickup plays the cardboard-box
+  // sample — both route a buffer source and skip their synthesized voices.
+  const bank = bankWithFakeCtx()
+  bank.loadSfx('assets/')
+  bank._sfx.buffers.set('screamer_scream', { duration: 1.5, getChannelData: () => new Float32Array(8) })
+  bank._sfx.buffers.set('pickup', { duration: 0.24, getChannelData: () => new Float32Array(8) })
+  let before = bank.ctx._created.length
+  bank.zombieWindup('screamer', { x: 0, z: 2 })
+  let created = bank.ctx._created.slice(before)
+  assert.ok(created.some(n => n.name === 'src' && n.buffer), 'screamer windup routed as a buffer source')
+  assert.ok(!created.some(n => n.name === 'osc'), 'screamer windup skips the synthesized chirp')
+  before = bank.ctx._created.length
+  bank.pickup()
+  created = bank.ctx._created.slice(before)
+  assert.ok(created.some(n => n.name === 'src' && n.buffer), 'pickup routed as a buffer source')
+  assert.ok(!created.some(n => n.name === 'osc'), 'pickup skips the two rising chirps')
+  bank.dispose()
+}
+
 console.log('audio OK')

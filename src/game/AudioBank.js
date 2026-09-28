@@ -54,7 +54,9 @@ const STORM_MAX = 48          // longest gap between storms (s)
 const GROAN_SPECS = {
   walker: { base: 2.5, voice: 0.5, gain: 0.35 },
   shambler: { base: 4.5, voice: 0.8, gain: 0.4 },
-  screamer: { base: 3.2, voice: 0.4, gain: 0.3 },
+  // v14b: screamer gain 0.3 → 0.55 so its "ahhhhh" scream reads clearly and
+  // audibly swells as the fast zombie closes (still falls off toward the cutoff).
+  screamer: { base: 3.2, voice: 0.4, gain: 0.55 },
   brute: { base: 6.0, voice: 1.1, gain: 0.5 }
 }
 
@@ -412,16 +414,21 @@ export class AudioBank {
   }
 
   /** Telegraph cue: the sound a zombie makes as it winds up a melee swing,
-   *  before the hit lands. Per-type so the player can hear what is about to
-   *  swing: a short intake hiss (walker/shambler), a sharp chirp (screamer),
-   *  a low growl swell (brute). Panned to the attacker when a position is
-   *  given (same era-tolerant routing as zombieAttack). */
+   *  before the hit lands. Per type so the player can hear what is about to
+   *  swing: a long "ahhh" zombie scream (screamer), a short intake hiss
+   *  (walker/shambler), a low growl swell (brute). Panned to the attacker when
+   *  a position is given (same era-tolerant routing as zombieAttack). */
   zombieWindup(type = 'walker', pos = null) {
     if (!this.ctx) return
     this._resume()
     const dest = this._pannerAt(pos)
     if (type === 'screamer') {
-      this._playTone({ type: 'square', freq: 700, freqEnd: 1100, duration: 0.12, gain: 0.18, dest })
+      // v14b: the fast screamer's windup is now the SAME long "ahhhhh" scream as
+      // its groan (not the old 700→1100 square "blip"), so approaching screamers
+      // read as a swelling scream instead of a repeating beep. Synthesized
+      // sawtooth stand-in when the sample has not decoded.
+      if (this._playSfx('screamer_scream', { gain: 0.5, dest })) return
+      this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: 0.4, gain: 0.3, dest })
     } else if (type === 'brute') {
       this._playTone({ type: 'sawtooth', freq: 55, freqEnd: 75, duration: 0.4, gain: 0.22, dest })
     } else {
@@ -501,7 +508,8 @@ export class AudioBank {
     this._playTone({ type: 'sine', freq: 2200, duration: 0.08, gain: 0.1, when: 0.06 })
   }
 
-  // Ammo pickup: two short rising chirps.
+  // Ammo pickup: a generated cardboard-box handling sound (v14b); the old
+  // synthesized two rising chirps are the fallback when the sample is absent.
   pickup() {
     if (!this.ctx) return
     this._resume()

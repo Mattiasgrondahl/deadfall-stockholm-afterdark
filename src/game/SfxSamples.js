@@ -27,7 +27,9 @@ const SFX_FILES = {
   screamer_scream: SFX_BASE + 'sfx_screamer_scream.wav',
   zombie_death: SFX_BASE + 'sfx_zombie_death.wav',
   hit_flesh: SFX_BASE + 'sfx_hit_flesh.wav',
-  pickup: SFX_BASE + 'sfx_pickup.wav',
+  // v14b: ammo pickup is now a generated cardboard-box handling sound (was the
+  // synthesized two-chirp "blip" / a generic pickup blip).
+  pickup: SFX_BASE + 'sfx_pickup_box.wav',
   melee_swing: SFX_BASE + 'sfx_melee_swing.wav',
   moan_distant: SFX_BASE + 'sfx_moan_distant.wav',
   attack_hiss: SFX_BASE + 'sfx_attack_hiss.wav',
