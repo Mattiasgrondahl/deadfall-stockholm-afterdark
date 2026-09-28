@@ -57,6 +57,10 @@ for (const type of ['walker', 'shambler', 'screamer', 'brute']) {
 const zombieSrc = read('src/game/Zombie.js') || ''
 const skinBlock = zombieSrc.match(/const SKIN_ASSET = \{[^}]*\}/)
 if (skinBlock) for (const m of skinBlock[0].matchAll(/'([^']+)'/g)) addRef(`assets/zombies/${m[1]}`, 'src/game/Zombie.js (SKIN_ASSET)')
+// A2: per-type distinct body meshes — every value of MESH_ASSET in Zombie.js
+// (walker has no entry there and keeps the primitive body).
+const meshBlock = zombieSrc.match(/const MESH_ASSET = \{[^}]*\}/)
+if (meshBlock) for (const m of meshBlock[0].matchAll(/'([^']+)'/g)) addRef(`assets/zombies/${m[1]}`, 'src/game/Zombie.js (MESH_ASSET)')
 // Outfit textures: OUTFIT* maps in Zombie.js list file stems.
 for (const m of zombieSrc.matchAll(/'([a-z0-9-]+)-(top|pants|skirt)'/g)) addRef(`assets/outfits/${m[1]}-${m[2]}.jpg`, 'src/game/Zombie.js (outfits)')
 // v3 T7: moon texture (loaded via ASSET_BASE + 'assets/sky/moon.jpg' in sky.js).

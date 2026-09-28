@@ -516,6 +516,19 @@ let skinLoader = null
 // 2340 tris, 14 animations preserved) and exports walker-fixed.glb. The skinned
 // path is now enabled for that repaired rig.
 const USE_SKINNED_RIG = true
+// A2: distinct per-type BODY meshes. The skinned rig above is shared by every
+// type (walker-fixed.glb) and is kept loaded-but-hidden; these GLBs are the
+// visible bodies instead. Each is a single unrigged Mesh (0 bones, 0 clips)
+// authored at 1.8 m with the type's own proportions baked into the geometry,
+// so the body needs only a uniform height scale — no SKIN_WIDTH multiplier.
+// walker has NO entry: it has no distinct mesh and keeps the primitive body.
+const MESH_ASSET = { shambler: 'shambler-mesh.glb', screamer: 'screamer-mesh.glb', brute: 'brute-mesh.glb' }
+// Shared per-type loaded body mesh. One GLB parse per type is shared by every
+// zombie of that type; each zombie clones the mesh (clone shares geometry) and
+// owns only its own tinted material clone.
+const meshCache = {} // type -> { scene } | 'loading' | 'missing'
+let meshLoader = null
+const USE_MESH_BODY = true
 
 function loadSkin(type, onReady) {
   if (!USE_SKINNED_RIG) return // primitive body is the visual; skip the rig
@@ -567,6 +580,60 @@ function loadSkin(type, onReady) {
   }
 }
 
+/** Load the per-type distinct BODY mesh (A2). Mirrors loadSkin exactly: the
+ *  same headless guard, the same macrotask retry for an in-flight load, the same
+ *  lazy GLTFLoader import. A type with no MESH_ASSET entry (walker) resolves to
+ *  'missing' immediately so it keeps the primitive body and never loads a GLB. */
+function loadSkinMesh(type, onReady) {
+  if (!USE_MESH_BODY) return // primitive body is the visual; skip the mesh
+  if (typeof document === 'undefined') return // headless: never load
+  const file = MESH_ASSET[type]
+  if (!file) {
+    // No distinct mesh for this type: mark it missing so a later zombie of the
+    // same type does not kick off a load, and resolve without calling onReady.
+    if (meshCache[type] === undefined) meshCache[type] = 'missing'
+    return
+  }
+  const entry = meshCache[type]
+  if (entry && entry !== 'loading') {
+    if (entry !== 'missing') onReady(entry)
+    return
+  }
+  if (entry === 'loading') {
+    // Same reason as loadSkin: retry on a MACROTASK timer, never a microtask
+    // poll, or a wave of simultaneous spawns starves the render loop.
+    const wait = () => {
+      const e = meshCache[type]
+      if (e && e !== 'loading') { if (e !== 'missing') onReady(e); return }
+      setTimeout(wait, 32)
+    }
+    setTimeout(wait, 32)
+    return
+  }
+  meshCache[type] = 'loading'
+  if (!meshLoader) {
+    import('three/examples/jsm/loaders/GLTFLoader.js').then((m) => {
+      meshLoader = new m.GLTFLoader()
+      start()
+    }).catch(() => { meshCache[type] = 'missing' })
+  } else {
+    start()
+  }
+  function start() {
+    const url = ASSET_BASE + 'assets/zombies/' + file
+    meshLoader.load(url, (gltf) => {
+      // Static unrigged mesh: no clips to strip, no skeleton to rebind. Store
+      // the source scene as the shared template every instance clones from.
+      const rec = { scene: gltf.scene }
+      meshCache[type] = rec
+      onReady(rec)
+    }, undefined, () => {
+      meshCache[type] = 'missing'
+      console.warn(`body mesh failed to load; keeping primitive body (${type})`)
+    })
+  }
+}
+
 /** Clone a loaded rig scene into a per-zombie skinned mesh + mixer. Cloning the
  *  SkinnedMesh shares geometry but gives each instance an independent Skeleton
  *  (so one zombie's animation never poses another's). Returns the skinned mesh,
@@ -606,6 +673,7 @@ function buildSkin(rec) {
 // Skin helpers exported so the co-op controller can give remote (server-
 // authoritative) zombies the same skinned walker body as local zombies.
 export { loadSkin, buildSkin, SKIN_TINT }
+export { loadSkinMesh, MESH_ASSET, meshCache }
 
 /** Build a face portrait + glowing eyes for a remote co-op zombie (the same
  *  primitives the local Zombie nests under its head). Returns owned meshes the
@@ -940,6 +1008,13 @@ export class Zombie {
     this._skin = null // { root, skinned, mixer, clips, actions, current }
     this._skinState = 'idle'
     loadSkin(type, (rec) => this._attachSkin(rec))
+    // A2: try to swap the primitive TORSO/LIMBS for this type's distinct body
+    // mesh (browser-only, async). The head primitive always stays, so headshots
+    // and the face keep working; walker has no mesh and keeps the full primitive.
+    this._skinMesh = null // { root, body } — per-instance clone of the shared mesh
+    this._meshRestMat = null // per-instance tinted body material (owned here)
+    this._meshRestY = 0 // rest y-lift of the mesh root (feet on local y 0)
+    loadSkinMesh(type, (rec) => this._attachSkinMesh(rec))
   }
 
   /** Swap the primitive body for a cloned skinned mesh + mixer once the rigged
@@ -1085,18 +1160,92 @@ export class Zombie {
     this._applyLOD(this.position, null)
   }
 
+  /** A2: swap the primitive torso + limbs for this type's distinct BODY mesh
+   *  (browser-only, async). The head primitive stays visible with its face /
+   *  eyes / hair / accessory so headshots, the hit-flash and the walk-bob all
+   *  keep working. Torso + limbs are only hidden, never removed from _parts,
+   *  because dismemberment and the flash restore index into _parts. The shared
+   *  hidden rig (_skin) is untouched — it stays loaded-but-hidden and its
+   *  mixer/bob/material swaps keep running harmlessly on it. */
+  _attachSkinMesh(rec) {
+    if (this._skinMesh || this.isDead) return
+    const root = rec.scene.clone(true) // shares geometry + materials with the cache
+    let body = null
+    root.traverse((o) => { if (o.isMesh && !body) body = o })
+    if (!body) return
+    // Scale to this zombie's silhouette height (same rule as _attachSkin). The
+    // GLB already encodes each type's distinct width/depth, so the scale is
+    // UNIFORM — applying SKIN_WIDTH here would double the silhouette variance.
+    const h = this._skinHeight()
+    const bb = new THREE.Box3().setFromObject(body)
+    const dim = bb.getSize(new THREE.Vector3())
+    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? BOSS_SCALE : 1) : 1
+    root.scale.set(scale, scale, scale)
+    // Same feet-on-y-0 lift as _attachSkin: the authored origin is not the feet,
+    // so lift by the scaled bbox floor or the body hangs half-buried.
+    root.position.set(0, -bb.min.y * scale, 0)
+    this._meshRestY = root.position.y
+    // Per-instance material clone so this zombie can flash/death-repaint without
+    // touching the material shared by every zombie of the type in the cache.
+    const srcMat = Array.isArray(body.material) ? body.material[0] : body.material
+    const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
+    // Drop the baked maps and render the type color + emissive (same recipe as
+    // _attachSkin) so the body reads under the dim flashlight instead of as a
+    // featureless shadow, and so each type reads as a distinct silhouette.
+    bodyMat.map = null
+    bodyMat.emissiveMap = null
+    bodyMat.color.setHex(SKIN_TINT[this.type])
+    bodyMat.emissive = new THREE.Color(SKIN_TINT[this.type])
+    bodyMat.emissiveIntensity = 0.55
+    bodyMat.roughness = 0.9
+    bodyMat.needsUpdate = true
+    body.material = bodyMat
+    this._meshRestMat = bodyMat
+    body.castShadow = true
+    body.receiveShadow = true
+    // The mesh is authored in a fixed rest pose; its bind-pose culling sphere is
+    // not reliable once the group bobs/rotates, so never cull the whole body.
+    body.frustumCulled = false
+    this.group.add(root)
+    root.visible = true
+    // Hide the primitive torso + limbs (indices 0,2,3,4,5). The head (1) stays
+    // visible because it carries the face/eyes/hair/accessory and is the
+    // headshot target. _parts is NOT spliced — dismemberment/flash still index it.
+    for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+    this._headVisible = true
+    // _applyLOD must keep this policy (hide primitives, show the mesh body)
+    // instead of re-showing the primitive torso/limbs.
+    this._lodMesh = true
+    this._lodSkinned = false
+    this._skinMesh = { root, body }
+  }
+
   /** Visual policy: the primitive body (clothed humanoid with the face image)
    *  is the always-on visual — it reads as a zombie at any distance, keeps the
    *  face visible, and supports headshots. The skinned rig (a pale, featureless
    *  body with a buried face) is hidden so it never overrides the primitive up
    *  close. Primitives + face stay visible always; the rig root stays hidden.
-   *  No-op when no skin is attached. */
+   *  A2: once a distinct BODY mesh is attached (_skinMesh), the policy flips —
+   *  the mesh body is the visual, the primitive torso/limbs hide, and only the
+   *  head primitive stays for the face + headshots. No-op when neither is set. */
   _applyLOD(playerPos) {
     if (!this._skin) return
-    if (this._lodSkinned === false) return
-    this._lodSkinned = false
-    this._skin.root.visible = false
-    for (const p of this._parts) p.visible = true
+    // A2: when a distinct BODY mesh is attached, the mesh-vs-primitive policy is
+    // NOT a one-shot — _attachSkin (the rig loader) re-shows every primitive part
+    // and calls _applyLOD again, so without re-enforcing here the primitive torso
+    // + limbs would reappear behind the mesh body (a double body). So the mesh
+    // branch runs on every call; only the no-mesh (rig/primitive) path is gated
+    // by the one-shot _lodSkinned flag.
+    if (this._skinMesh) {
+      this._skin.root.visible = false
+      this._skinMesh.root.visible = true
+      for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+    } else {
+      if (this._lodSkinned === false) return
+      this._lodSkinned = false
+      this._skin.root.visible = false
+      for (const p of this._parts) p.visible = true
+    }
     // Face + eyes live on the primitive head (which carries them), so they read
     // at every distance and there is never a buried-face or double-head state.
     const host = this._parts[1]
@@ -1194,6 +1343,8 @@ export class Zombie {
       if (this._flashT <= 0) {
         for (let i = 0; i < this._parts.length; i++) this._parts[i].material = this._restMats[i]
         if (this._skin) this._skin.skinned.material = this._skinRestMat
+        // A2: the visible mesh body flashes too, so restore its own rest mat.
+        if (this._skinMesh) this._skinMesh.body.material = this._meshRestMat
       }
     }
     if (!player || player.isDead) return
@@ -1662,10 +1813,14 @@ export class Zombie {
       for (const e of this._eyes) e.material = DEADEYEMAT
       this._face.material = DEADMAT
       if (this._skin) this._skin.skinned.material = DEADMAT
+      // A2: the visible mesh body greys out with the corpse like the primitive.
+      if (this._skinMesh) this._skinMesh.body.material = DEADMAT
     } else {
       this._flashT = 0.15
       for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
       if (this._skin) this._skin.skinned.material = HITMAT
+      // A2: the visible mesh body flashes red with the primitive parts.
+      if (this._skinMesh) this._skinMesh.body.material = HITMAT
     }
   }
 
@@ -1694,6 +1849,18 @@ export class Zombie {
       this._skin.mixer.stopAllAction()
       this._skin.mixer.uncacheRoot(this._skin.mixer.getRoot())
       this._skin = null
+    }
+    // A2: detach this instance's mesh-body clone only. The clone shares
+    // geometry + materials with the shared cached scene, so neither may be
+    // disposed here (other zombies of the type still use them). The per-instance
+    // tinted material below IS owned by this zombie and is disposed.
+    if (this._skinMesh) {
+      this.group.remove(this._skinMesh.root)
+      this._skinMesh = null
+    }
+    if (this._meshRestMat) {
+      this._meshRestMat.dispose()
+      this._meshRestMat = null
     }
     if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
       FABRIC_NORMAL.dispose()
