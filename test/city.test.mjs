@@ -9,6 +9,29 @@ const scene = new THREE.Scene()
 const collision = new CollisionWorld(180, 180)
 const city = new City(scene, collision, { canvasFactory: () => null })
 
+// v4 budget (B): several dressing groups are now InstancedMeshes (one mesh, N
+// instances). These helpers expand an instanced mesh into per-instance records
+// (position + material + geometry + castShadow) so the existing per-instance
+// assertions still hold, and sum instance counts across a mesh list.
+const _mm = new THREE.Matrix4()
+const _pv = new THREE.Vector3()
+function expandInstances(mesh) {
+  const out = []
+  if (mesh.isInstancedMesh) {
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, _mm)
+      _pv.setFromMatrixPosition(_mm)
+      out.push({ position: { x: _pv.x, y: _pv.y, z: _pv.z }, material: mesh.material, geometry: mesh.geometry, castShadow: mesh.castShadow })
+    }
+  } else {
+    out.push({ position: mesh.position, material: mesh.material, geometry: mesh.geometry, castShadow: mesh.castShadow })
+  }
+  return out
+}
+function instanceCount(meshes) {
+  return meshes.reduce((n, m) => n + (m.isInstancedMesh ? m.count : 1), 0)
+}
+
 test('city group: single group named city, ground at y=0', () => {
   assert.equal(scene.getObjectByName('city'), city.group)
   const ground = city.group.children[0]
@@ -195,8 +218,17 @@ test('landmarks: center spire, 4 corner beacons, 10 strips, 5 halos, aabbs uncha
     seen.add(key)
     assert.ok(Math.abs(Math.abs(b.position.x) - 84) < 1e-6 && Math.abs(Math.abs(b.position.z) - 84) < 1e-6 && Math.abs(b.position.y - 3.5) < 1e-6, `beacon position ${b.position}`)
   }
-  assert.equal(strips.length, 10, `expected 10 street strips, got ${strips.length}`)
-  for (const s of strips) assert.ok(Math.abs(s.position.y - 0.03) < 1e-6, `strip y ${s.position.y}`)
+  // v4 budget (B): the 10 street strips are now two InstancedMeshes (5
+  // instances each), so count instances, not meshes.
+  const stripCount = strips.reduce((n, s) => n + (s.isInstancedMesh ? s.count : 1), 0)
+  assert.equal(stripCount, 10, `expected 10 street strips, got ${stripCount}`)
+  for (const s of strips) {
+    if (s.isInstancedMesh) {
+      const mm = new THREE.Matrix4()
+      const p = new THREE.Vector3()
+      for (let k = 0; k < s.count; k++) { s.getMatrixAt(k, mm); p.setFromMatrixPosition(mm); assert.ok(Math.abs(p.y - 0.03) < 1e-6, `strip y ${p.y}`) }
+    } else assert.ok(Math.abs(s.position.y - 0.03) < 1e-6, `strip y ${s.position.y}`)
+  }
   const spireHalos = []
   const beaconHalos = []
   city.group.traverse(o => {
@@ -267,9 +299,11 @@ test('V3P-1b: 24 red strips total; 4 central-cross danger strips at exact positi
   const posts = []
   city.group.traverse(o => {
     if (!o.isMesh) return
-    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) strips.push(o)
-    if (o.material.emissive && o.material.emissive.getHex() === 0xffd9a5) panels.push(o)
-    if (o.material.isMeshStandardMaterial && o.material.color.getHex() === 0x1a202a && Math.abs(o.position.y - 0.8) < 1e-6) posts.push(o)
+    if (o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) strips.push(...expandInstances(o))
+    if (o.material.emissive && o.material.emissive.getHex() === 0xffd9a5) panels.push(...expandInstances(o))
+    if (o.material.isMeshStandardMaterial && o.material.color.getHex() === 0x1a202a) {
+      for (const inst of expandInstances(o)) if (Math.abs(inst.position.y - 0.8) < 1e-6) posts.push(inst)
+    }
   })
   assert.equal(strips.length, 24, 'expected 24 red strips total (4 central-cross + 20 outer), got ' + strips.length)
   const central = strips.filter(s => Math.max(Math.abs(s.position.x), Math.abs(s.position.z)) <= 45)
@@ -313,7 +347,9 @@ test('V3P-4: 20 red caution strips on the poleless outer end segments; 87 aabbs,
   const city = new City(scene, collision, { canvasFactory: () => null })
   const strips = []
   city.group.traverse(o => {
-    if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433 && Math.max(Math.abs(o.position.x), Math.abs(o.position.z)) === 69.75) strips.push(o)
+    if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xff4433) {
+      for (const inst of expandInstances(o)) if (Math.max(Math.abs(inst.position.x), Math.abs(inst.position.z)) === 69.75) strips.push(inst)
+    }
   })
   assert.equal(strips.length, 20, 'expected 20 outer strips, got ' + strips.length)
   for (const s of strips) {
@@ -376,11 +412,15 @@ test('facade: buildings use 6-slot material arrays (shared roof, window emissive
   city2.dispose()
 })
 
-test('roof detail + car glass/lights: 5 InstancedMeshes, deterministic, headless-safe maps', () => {
+test('roof detail + car glass/lights: 18 InstancedMeshes, deterministic, headless-safe maps', () => {
   const c = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
   const inst = []
   c.group.traverse(o => { if (o.isInstancedMesh) inst.push(o) })
-  assert.equal(inst.length, 5, 'exactly 5 InstancedMeshes (clutter + cornice + contact-shadow + car glass/lights + v4 facade-trim), got ' + inst.length)
+  // v4 budget (B): the original 5 (clutter + cornice + contact-shadow + car
+  // glass/lights + v4 facade-trim) plus 13 new dressing batches (pools,
+  // barricades, landmark strips ×2, danger strips ×2, outer strips ×2, sign
+  // posts + panels, crosswalk bands ×2, drifts) = 18 InstancedMeshes.
+  assert.equal(inst.length, 18, 'exactly 18 InstancedMeshes, got ' + inst.length)
   // Cornice has one instance per building; clutter is capped at 160; shadows = 20.
   const counts = inst.map(m => m.count).sort((a, b) => a - b)
   assert.ok(counts.includes(67), 'cornice instance count matches 67 buildings')
@@ -400,8 +440,10 @@ test('roof detail + car glass/lights: 5 InstancedMeshes, deterministic, headless
   assert.equal(checked, 67, 'all 67 facade buildings checked')
   // Deterministic: a twin instance produces identical instance matrices.
   const c2 = new City(new THREE.Scene(), new CollisionWorld(180, 180), { canvasFactory: () => null })
-  const a = inst[0].instanceMatrix.array
-  const b = c2.group.children.filter(o => o.isInstancedMesh)[0].instanceMatrix.array
+  const clutterA = inst.find(m => m.count === 160)
+  const clutterB = [...c2.group.children].filter(o => o.isInstancedMesh).find(m => m.count === 160)
+  const a = clutterA.instanceMatrix.array
+  const b = clutterB.instanceMatrix.array
   assert.deepEqual(Array.from(a), Array.from(b), 'roof clutter placement is deterministic')
   c.dispose(); c2.dispose()
 })
@@ -433,7 +475,7 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   const collision = new CollisionWorld(180, 180)
   const city = new City(scene, collision, { canvasFactory: () => null })
   const pools = []
-  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xffb066) pools.push(o) })
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xffb066) pools.push(...expandInstances(o)) })
   assert.equal(pools.length, 40, 'expected 40 streetlight pools, got ' + pools.length)
   for (const p of pools) {
     assert.ok(Math.abs(p.position.y - 0.02) < 1e-6, 'pool y ' + p.position.y)
@@ -442,19 +484,24 @@ test('streetlight pools + ground dressing: 40 pools at anchors, 16 crosswalk ban
   }
   assert.equal(new Set(pools.map(p => p.material)).size, 1, 'pools share one material')
   const bands = []
-  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xd8e2f0) bands.push(o) })
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.color.getHex() === 0xd8e2f0) bands.push(...expandInstances(o)) })
   assert.equal(bands.length, 16, 'expected 16 crosswalk bands, got ' + bands.length)
   for (const b of bands) {
     assert.ok(Math.abs(b.position.y - 0.085) < 1e-6, 'band y ' + b.position.y)
     assert.ok(Math.abs(Math.abs(b.position.x) - 36) < 1e-6 || Math.abs(Math.abs(b.position.z) - 36) < 1e-6, 'band near a +-36 intersection')
   }
   const drifts = []
-  city.group.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && o.material.color.getHex() === 0xbcd0e6) drifts.push(o) })
+  city.group.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && o.material.color.getHex() === 0xbcd0e6) drifts.push(...expandInstances(o)) })
   assert.equal(drifts.length, 8, 'expected 8 snowdrifts, got ' + drifts.length)
   assert.equal(city.group.children[0].material.map, null, 'headless: no ground map')
   let meshes = 0
   city.group.traverse(o => { if (o.isMesh) meshes++ })
-  assert.equal(meshes, 389, 'mesh count 319 + 64 dressing + 1 poster + 2 roof-detail + 1 contact-shadow + 1 car glass/lights + 1 facade-trim, got ' + meshes)
+  // v4 budget (B): dressing collapsed to InstancedMeshes — 40 pools→1, 16
+  // barricade planks→1, 10 landmark strips→2, 4 danger strips→2, 20 outer
+  // strips→2, 44 sign posts+panels→2, 16 crosswalk bands→2, 8 drifts→1.
+  // 319 base + collapsed dressing batches + 1 poster + 2 roof-detail + 1
+  // contact-shadow + 1 car glass/lights + 1 facade-trim = 244 meshes.
+  assert.equal(meshes, 244, 'instanced city mesh count, got ' + meshes)
   assert.equal(collision.aabbs.length, 127, 'dressing adds no collision (lamps do: 127)')
   let sprites = 0
   city.group.traverse(o => { if (o.isSprite) sprites++ })

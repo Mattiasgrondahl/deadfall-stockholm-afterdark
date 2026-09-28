@@ -136,7 +136,10 @@ test('hierarchy: no scenery surface out-shines the darkest body in the rough ban
 test('hierarchy: the changes cost no meshes, lights, or points', () => {
   let meshes = 0, lights = 0
   city.group.traverse((o) => { if (o.isMesh) meshes++; if (o.isLight) lights++ })
-  assert.equal(meshes, 389, `city mesh count must stay 389 (388 v6 + 1 v4 facade-trim), got ${meshes}`)
+  // v4 budget (B): repeated dressing (pools, barricades, strips, signs,
+  // crosswalks, drifts) collapsed into InstancedMeshes, dropping the city mesh
+  // count 389 -> 244. The material work itself still adds no meshes/lights.
+  assert.equal(meshes, 244, `city mesh count must stay 244 (post v4-B instancing), got ${meshes}`)
   assert.equal(lights, 0, `city group must add no lights, got ${lights}`)
 })
 

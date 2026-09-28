@@ -246,17 +246,26 @@ export function addBarricades(group, collision) {
   // timber under the moon rather than as painted metal like the bus.
   const plankMat = new THREE.MeshStandardMaterial({ color: 0x5f4734, roughness: 0.68, metalness: 0 })
   const aabbs = []
+  // v4 budget (B): 8 barricades × 2 planks = 16 identical meshes sharing one
+  // geometry + material. Collapse to ONE InstancedMesh (16 instances). The
+  // collision AABBs stay per-barricade (unchanged) — only the render path merges.
+  const mesh = new THREE.InstancedMesh(plankGeo, plankMat, TABLE.length * 2)
+  mesh.castShadow = true
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  let i = 0
   for (const { x, z } of TABLE) {
     // 2 planks at the same (x, z): plank 1 center y = 0.5, plank 2 center y = 0.9
-    const plank1 = new THREE.Mesh(plankGeo, plankMat)
-    plank1.position.set(x, 0.5, z)
-    group.add(plank1)
-    const plank2 = new THREE.Mesh(plankGeo, plankMat)
-    plank2.position.set(x, 0.9, z)
-    group.add(plank2)
+    pos.set(x, 0.5, z); m.compose(pos, quat, scl); mesh.setMatrixAt(i++, m)
+    pos.set(x, 0.9, z); m.compose(pos, quat, scl); mesh.setMatrixAt(i++, m)
     collision.addAABB(x - 1.75, z - 0.7, x + 1.75, z + 0.7, 1.1)
     aabbs.push(collision.aabbs[collision.aabbs.length - 1])
   }
+  mesh.instanceMatrix.needsUpdate = true
+  group.add(mesh)
   return aabbs
 }
 
@@ -304,18 +313,25 @@ export function addLandmarks(group) {
   const stripMat = new THREE.MeshBasicMaterial({ color: 0x3d6fa8 })
   const stripGeoV = new THREE.BoxGeometry(0.35, 0.05, 176)
   const stripGeoH = new THREE.BoxGeometry(176, 0.05, 0.35)
-  for (const x of STREETS) {
-    const strip = new THREE.Mesh(stripGeoV, stripMat)
-    strip.castShadow = false
-    strip.position.set(x, 0.03, 0)
-    group.add(strip)
+  // v4 budget (B): 5 vertical + 5 horizontal strips share one material but were
+  // 10 meshes. Collapse to two InstancedMeshes (one per orientation), 10→2.
+  const addStrips = (geo, axis) => {
+    const mesh = new THREE.InstancedMesh(geo, stripMat, STREETS.length)
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    const m = new THREE.Matrix4()
+    const pos = new THREE.Vector3()
+    const quat = new THREE.Quaternion()
+    const scl = new THREE.Vector3(1, 1, 1)
+    let i = 0
+    for (const c of STREETS) {
+      if (axis === 'v') pos.set(c, 0.03, 0); else pos.set(0, 0.03, c)
+      m.compose(pos, quat, scl); mesh.setMatrixAt(i++, m)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    group.add(mesh)
   }
-  for (const z of STREETS) {
-    const strip = new THREE.Mesh(stripGeoH, stripMat)
-    strip.castShadow = false
-    strip.position.set(0, 0.03, z)
-    group.add(strip)
-  }
+  addStrips(stripGeoV, 'v')
+  addStrips(stripGeoH, 'h')
 }
 
 // Task V3P-1a: safe-zone language - one shared additive halo material,
@@ -341,11 +357,26 @@ export function addDangerStrips(group) {
   const geoZ = new THREE.BoxGeometry(0.35, 0.05, 76.5) // along z at x=0
   const geoX = new THREE.BoxGeometry(74.5, 0.05, 0.35) // along x at z=0
   const pos = [[0, 0.09, 41.25, geoZ], [0, 0.09, -41.25, geoZ], [42.25, 0.09, 0, geoX], [-42.25, 0.09, 0, geoX]]
+  // v4 budget (B): 4 red strips share one material. Group by geometry into two
+  // InstancedMeshes (2 each), 4→2. Same look, no per-strip logic.
+  const byGeo = new Map()
   for (const [x, y, z, geo] of pos) {
-    const strip = new THREE.Mesh(geo, mat)
-    strip.castShadow = false
-    strip.position.set(x, y, z)
-    group.add(strip)
+    if (!byGeo.has(geo)) byGeo.set(geo, [])
+    byGeo.get(geo).push([x, y, z])
+  }
+  const m = new THREE.Matrix4()
+  const p = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  for (const [geo, list] of byGeo) {
+    const mesh = new THREE.InstancedMesh(geo, mat, list.length)
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    let i = 0
+    for (const [x, y, z] of list) {
+      p.set(x, y, z); m.compose(p, quat, scl); mesh.setMatrixAt(i++, m)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    group.add(mesh)
   }
 }
 
@@ -357,16 +388,28 @@ export function addSigns(group, centers) {
   const postMat = new THREE.MeshStandardMaterial({ color: 0x1a202a, roughness: 0.6, metalness: 0.3 })
   const panelGeo = new THREE.BoxGeometry(0.9, 0.6, 0.1)
   const panelMat = new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0xffd9a5, emissiveIntensity: 2.0, roughness: 0.6, metalness: 0.1 })
+  // v4 budget (B): one post + one panel per plaza were 2×N meshes sharing two
+  // shared geometry/material pairs. Collapse to two InstancedMeshes (posts,
+  // panels), 2N→2. Same look, no per-sign logic.
+  const n = centers.length
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  const posts = new THREE.InstancedMesh(postGeo, postMat, n)
+  posts.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  const panels = new THREE.InstancedMesh(panelGeo, panelMat, n)
+  panels.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  let i = 0
   for (const c of centers) {
-    const post = new THREE.Mesh(postGeo, postMat)
-    post.castShadow = false
-    post.position.set(c.x, 0.8, c.z)
-    group.add(post)
-    const panel = new THREE.Mesh(panelGeo, panelMat)
-    panel.castShadow = false
-    panel.position.set(c.x, 1.7, c.z)
-    group.add(panel)
+    pos.set(c.x, 0.8, c.z); m.compose(pos, quat, scl); posts.setMatrixAt(i, m)
+    pos.set(c.x, 1.7, c.z); m.compose(pos, quat, scl); panels.setMatrixAt(i, m)
+    i++
   }
+  posts.instanceMatrix.needsUpdate = true
+  panels.instanceMatrix.needsUpdate = true
+  group.add(posts)
+  group.add(panels)
 }
 
 // Task V3P-4: street directionality — mark the poleless outer end segments
@@ -378,22 +421,28 @@ export function addOuterStrips(group) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xff4433 })
   const geoV = new THREE.BoxGeometry(0.35, 0.05, 19.5) // runs along z
   const geoH = new THREE.BoxGeometry(19.5, 0.05, 0.35) // runs along x
-  for (const x of STREETS) {
-    for (const s of [-1, 1]) {
-      const strip = new THREE.Mesh(geoV, mat)
-      strip.castShadow = false
-      strip.position.set(x, 0.09, s * 69.75)
-      group.add(strip)
-    }
+  // v4 budget (B): 5 streets × 2 ends × 2 orientations = 20 strips share one
+  // material. Collapse to two InstancedMeshes (10 each), 20→2.
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  const meshV = new THREE.InstancedMesh(geoV, mat, STREETS.length * 2)
+  meshV.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  let i = 0
+  for (const x of STREETS) for (const s of [-1, 1]) {
+    pos.set(x, 0.09, s * 69.75); m.compose(pos, quat, scl); meshV.setMatrixAt(i++, m)
   }
-  for (const z of STREETS) {
-    for (const s of [-1, 1]) {
-      const strip = new THREE.Mesh(geoH, mat)
-      strip.castShadow = false
-      strip.position.set(s * 69.75, 0.09, z)
-      group.add(strip)
-    }
+  meshV.instanceMatrix.needsUpdate = true
+  group.add(meshV)
+  const meshH = new THREE.InstancedMesh(geoH, mat, STREETS.length * 2)
+  meshH.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  i = 0
+  for (const z of STREETS) for (const s of [-1, 1]) {
+    pos.set(s * 69.75, 0.09, z); m.compose(pos, quat, scl); meshH.setMatrixAt(i++, m)
   }
+  meshH.instanceMatrix.needsUpdate = true
+  group.add(meshH)
 }
 
 // Task V3P-6a: streetlight ground pools — one flat disc per streetlight
@@ -404,12 +453,24 @@ export function addStreetlightPools(group, anchors) {
   const geo = new THREE.CircleGeometry(1.6, 20)
   geo.rotateX(-Math.PI / 2)
   const mat = new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false })
+  // v4 budget (B): 40 identical discs shared one geometry + material but were 40
+  // separate meshes (40 draw calls). Collapse to ONE InstancedMesh — same look,
+  // 40→1 meshes. Positions come straight from the streetlight anchors; no
+  // per-pool logic, so instancing is behaviour-preserving.
+  const mesh = new THREE.InstancedMesh(geo, mat, anchors.length)
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  let i = 0
   for (const a of anchors) {
-    const pool = new THREE.Mesh(geo, mat)
-    pool.castShadow = false
-    pool.position.set(a.x, 0.02, a.z)
-    group.add(pool)
+    pos.set(a.x, 0.02, a.z)
+    m.compose(pos, quat, scl)
+    mesh.setMatrixAt(i++, m)
   }
+  mesh.instanceMatrix.needsUpdate = true
+  group.add(mesh)
 }
 
 // Task V3P-6b: ground dressing — subtle snow-compaction noise map on the
@@ -461,35 +522,50 @@ export function addGroundDressing(group, canvasFactory) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xd8e2f0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
   const geoX = new THREE.BoxGeometry(9, 0.05, 0.9)
   const geoZ = new THREE.BoxGeometry(0.9, 0.05, 9)
+  // v4 budget (B): 4 intersections × 2 streets × 2 bands = 16 crosswalk bands
+  // share one material across two geometries (8 per orientation). Collapse to
+  // two InstancedMeshes (8 each), 16→2. Same look, no per-band logic.
+  const m = new THREE.Matrix4()
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scl = new THREE.Vector3(1, 1, 1)
+  const bandsX = new THREE.InstancedMesh(geoX, mat, 8)
+  const bandsZ = new THREE.InstancedMesh(geoZ, mat, 8)
+  bandsX.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  bandsZ.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  let i = 0
   for (const sx of [36, -36]) {
     for (const sz of [36, -36]) {
       for (const s of [3.2, -3.2]) {
-        const bx = new THREE.Mesh(geoX, mat)
-        bx.castShadow = false
-        bx.position.set(sx, 0.085, sz + s)
-        group.add(bx)
-        const bz = new THREE.Mesh(geoZ, mat)
-        bz.castShadow = false
-        bz.position.set(sx + s, 0.085, sz)
-        group.add(bz)
+        pos.set(sx, 0.085, sz + s); m.compose(pos, quat, scl); bandsX.setMatrixAt(i, m)
+        pos.set(sx + s, 0.085, sz); m.compose(pos, quat, scl); bandsZ.setMatrixAt(i, m)
+        i++
       }
     }
   }
+  bandsX.instanceMatrix.needsUpdate = true
+  bandsZ.instanceMatrix.needsUpdate = true
+  group.add(bandsX)
+  group.add(bandsZ)
   // Snowdrift patches at street corners: flat discs, 2 per intersection,
   // offset off the centerline strips so nothing z-fights.
   const driftGeo = new THREE.CircleGeometry(2.2, 16)
   driftGeo.rotateX(-Math.PI / 2)
   const driftMat = new THREE.MeshStandardMaterial({ color: 0xbcd0e6, roughness: 1 })
+  // v4 budget (B): 4 intersections × 2 corners × 2 offsets = 8 drifts share one
+  // geometry + material. Collapse to ONE InstancedMesh (8 instances), 8→1.
+  const drifts = new THREE.InstancedMesh(driftGeo, driftMat, 8)
+  drifts.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+  i = 0
   for (const sx of [36, -36]) {
     for (const sz of [36, -36]) {
       for (const s of [2.6, -2.6]) {
-        const d = new THREE.Mesh(driftGeo, driftMat)
-        d.castShadow = false
-        d.position.set(sx + s, 0.04, sz + s)
-        group.add(d)
+        pos.set(sx + s, 0.04, sz + s); m.compose(pos, quat, scl); drifts.setMatrixAt(i++, m)
       }
     }
   }
+  drifts.instanceMatrix.needsUpdate = true
+  group.add(drifts)
 }
 
 // Wanted poster: a weathered "WANTED — DEAD OR ALIVE" placard with a zombie
