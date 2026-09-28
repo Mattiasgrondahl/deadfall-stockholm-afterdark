@@ -591,10 +591,46 @@ test('v4 co-op: a remote zombie in the attack state plays a melee pose', () => {
   for (let i = 0; i < 12; i++) e.update(1 / 60)
   assert.notEqual(e._armL.rotation.x, restL, 'arm moved off rest during the swing')
   assert.ok(e.group.rotation.x > 0, 'torso leans into the lunge')
-  // Leaving the attack state eases the arms + lean back to rest.
+  // Leaving the attack state into `chase` hands off to the walk cycle, so the
+  // arm moves again (it does NOT return to a static rest while chasing).
   mp.socket.receive(attackSnap('chase'))
+  e._attackT = 0
   e.update(1 / 60)
-  assert.equal(e._armL.rotation.x, restL, 'arm returns to rest when the attack ends')
+  assert.equal(e._wasAttacking, false, 'attack edge cleared')
+  // Idle (no target) eases the limbs back to rest.
+  mp.socket.receive(attackSnap('idle'))
+  e.update(1 / 60)
+  assert.equal(e._armL.rotation.x, restL, 'arm returns to rest when idle')
   assert.equal(e.group.rotation.x, 0, 'lean resets')
+  mp.dispose()
+})
+
+test('v4 co-op: a chasing remote zombie plays a walk cycle (legs swing, body bobs)', () => {
+  const { mp } = makeMP()
+  const chaseSnap = { t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state: 'chase', facing: 0 }
+  ] }) }
+  mp.socket.receive(chaseSnap)
+  const e = mp.zombies.get('z1')
+  assert.equal(e._chasing, true, 'chase state drives the walk flag')
+  const restLeg = e._legL.rotation.x
+  // Drive several frames: the legs must swing off rest and the body must bob.
+  let legMoved = false, bobbed = false
+  for (let i = 0; i < 20; i++) {
+    e.update(1 / 60)
+    if (e._legL.rotation.x !== restLeg) legMoved = true
+    if (e.group.rotation.x !== 0) bobbed = true
+  }
+  assert.ok(legMoved, 'legs swing while chasing (no rigid slide)')
+  assert.ok(bobbed, 'body bobs while chasing')
+  // Arms counter-swing the legs (opposite signs) while chasing.
+  assert.notEqual(e._armL.rotation.x, e._armRest.l, 'arm left the rest pose while walking')
+  // Idle stops the gait: limbs ease back to rest.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state: 'idle', facing: 0 }
+  ] }) })
+  e.update(1 / 60)
+  assert.equal(e._legL.rotation.x, 0, 'legs return to rest when idle')
+  assert.equal(e.group.rotation.x, 0, 'bob resets when idle')
   mp.dispose()
 })

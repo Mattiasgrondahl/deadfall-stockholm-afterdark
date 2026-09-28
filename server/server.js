@@ -39,6 +39,28 @@ const HS_CTRL = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
 // text. Rendering is textContent-only, but neutralizing at the source keeps the
 // shared board clean and removes reliance on the render path alone.
 const HS_MARKUP = new RegExp('[<>&"\']', 'g')
+
+// v4 request logging: make writes attributable. The server had no per-request
+// logging at all, so a hostile POST (e.g. the XSS name) left no trace of who
+// sent it. These helpers log method + path + the best-known client IP for the
+// high-score API and for co-op join/leave. Lightweight: one line per event, no
+// dependency, and the IP falls back to the socket's remote address when no
+// proxy set X-Forwarded-For (there is no reverse proxy in front today).
+/** Best-known client IP: X-Forwarded-For's first hop, else the socket address. */
+function clientIp(req) {
+  const xff = req.headers && req.headers['x-forwarded-for']
+  if (typeof xff === 'string' && xff.length) return xff.split(',')[0].trim()
+  return (req.socket && req.socket.remoteAddress) || '?'
+}
+/** Log one high-score API request: method + path + client IP. */
+function logReq(req) {
+  console.log(`[http] ${req.method} ${(req.url || '/').split('?')[0]} from ${clientIp(req)}`)
+}
+/** Log a co-op socket join/leave with its client IP. */
+function logWs(event, socket, extra) {
+  const ip = (socket && socket._socket && socket._socket.remoteAddress) || '?'
+  console.log(`[ws] ${event} ${ip}${extra ? ' ' + extra : ''}`)
+}
 // v7: the room code is now a first-class key — each room code gets its own
 // leaderboard + its own Match. Codes are sanitized like names (control chars
 // stripped, whitespace collapsed, clamped) and fall back to 'default' so a
@@ -183,6 +205,7 @@ function serveHighScore(req, res, store) {
     return { best: lead ? lead.score : 0, name: lead ? lead.name : '', top }
   }
   if (req.method === 'GET') {
+    logReq(req)
     const room = roomOf(req.url)
     let st = store.get(room)
     if (!st) { st = readHighScore(room); store.set(room, st) }
@@ -191,6 +214,7 @@ function serveHighScore(req, res, store) {
     return
   }
   if (req.method === 'POST') {
+    logReq(req)
     let body = ''
     req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy() })
     req.on('end', () => {
@@ -367,7 +391,7 @@ export function startServer(opts = {}) {
   const roomFor = (code) => {
     const key = sanitizeRoom(code)
     let r = rooms.get(key)
-    if (!r) { r = new Room(opts.difficulty); rooms.set(key, r) }
+    if (!r) { r = new Room(opts.difficulty); r.code = key; rooms.set(key, r) }
     return r
   }
   const defaultRoom = roomFor(DEFAULT_ROOM)
@@ -399,6 +423,7 @@ export function startServer(opts = {}) {
         const id = room.join(socket, msg.name)
         if (id === null) { socket.close(); return }
         joined = true
+        logWs('join', socket, `room=${room.code || DEFAULT_ROOM} id=${id} name=${JSON.stringify(msg.name || '')}`)
         socket.send(JSON.stringify(buildWelcome(id, room.match.snapshot().players)))
         return
       }
@@ -410,7 +435,7 @@ export function startServer(opts = {}) {
         case MSG.LEAVE: room.leave(socket); socket.close(); break
       }
     })
-    socket.on('close', () => { if (room) room.leave(socket) })
+    socket.on('close', () => { if (room) { logWs('leave', socket, `room=${room.code || DEFAULT_ROOM}`); room.leave(socket) } })
     socket.on('error', () => { if (room) room.leave(socket) })
   })
 

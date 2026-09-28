@@ -49,6 +49,8 @@ export class RemoteZombie {
     this.onHit = opts.onHit || null
     const phase = (seedFromId(this.id) / 0x7fffffff) * 2 * Math.PI
     const b = buildPrimitiveBody(this.type, phase)
+    this._phase = phase
+    this._time = 0
     this.group = b.group
     this._parts = b.parts
     this._restMats = b.restMats
@@ -93,6 +95,10 @@ export class RemoteZombie {
     // attack state keeps the arms raised, and leaving it relaxes them.
     this._state = z.state || 'idle'
     const attacking = this._state === 'attack'
+    // v4 co-op: the server emits `chase` while a zombie is pursuing a player.
+    // Mirror that as a walk cycle so a moving remote zombie shambles like the
+    // single-player zombie instead of sliding across the ground rigidly.
+    this._chasing = this._state === 'chase'
     if (attacking && !this._wasAttacking) this._attackT = 0
     this._wasAttacking = attacking
     const dead = z.dead || z.state === 'dead'
@@ -190,11 +196,13 @@ export class RemoteZombie {
       if (p._life > 4) { this.scene.remove(p); this._falling.splice(i, 1) }
     }
     if (!this.isDead) {
-      // v4 co-op: play the melee attack pose when the server has this zombie in
-      // `attack`. A short windup pulls both arms back, then a swing drives them
-      // forward — the same reach-out-and-swipe the single-player zombie makes —
-      // plus a slight forward lean so the lunge reads. When not attacking the
-      // arms ease back to rest. No new meshes, so the budget is unchanged.
+      // v4 co-op: drive the same gait the single-player zombie uses. The server
+      // snapshot carries a per-zombie `state`; `attack` plays the melee lunge,
+      // `chase` plays the walk cycle (legs swing, arms counter-swing, body bobs),
+      // and anything else (idle/stagger) eases the limbs back to rest. Without
+      // this a moving remote zombie slid across the ground rigidly, which read
+      // as "different movement / different look" versus single-player.
+      this._time += dt
       if (this._wasAttacking) {
         this._attackT += dt
         const t = Math.min(this._attackT / 0.5, 1) // 0→1 over ~0.5 s
@@ -207,12 +215,33 @@ export class RemoteZombie {
         if (this._armL && this._armL.visible) this._armL.rotation.x = this._armRest.l + raise + strike
         if (this._armR && this._armR.visible) this._armR.rotation.x = this._armRest.r + raise + strike
         this.group.rotation.x = lean
-      } else if (this._attackT > 0) {
-        // Just left the attack state: ease the arms + lean back to rest once.
+      } else if (this._chasing) {
+        // Walk cycle, same shape + frequency (6) as Zombie.update so the gait
+        // matches single-player: legs stride, arms counter-swing, the body bobs
+        // and sways, and the head counter-bobs. Deterministic (phase from id).
+        const t = this._time * 6 + this._phase
+        const swing = Math.sin(t) * 0.42
+        const legSwing = Math.sin(t) * 0.5
+        if (this._legL && this._legL.visible) this._legL.rotation.x = legSwing + Math.sin(t * 2) * 0.06
+        if (this._legR && this._legR.visible) this._legR.rotation.x = -legSwing + Math.sin(t * 2 + Math.PI) * 0.06
+        if (this._armL && this._armL.visible) { this._armL.rotation.x = this._armRest.l - swing; this._armL.rotation.z = -0.12 }
+        if (this._armR && this._armR.visible) { this._armR.rotation.x = this._armRest.r + swing; this._armR.rotation.z = 0.12 }
+        this.group.rotation.z = Math.sin(t) * 0.05
+        this.group.rotation.x = Math.sin(this._time * 6) * 0.08
+        if (this._head && this._head.visible) this._head.rotation.z = Math.sin(t + Math.PI) * 0.04
         this._attackT = 0
-        if (this._armL && this._armL.visible) this._armL.rotation.x = this._armRest.l
-        if (this._armR && this._armR.visible) this._armR.rotation.x = this._armRest.r
+      } else {
+        // Not attacking and not chasing (idle or knocked back): ease limbs + torso
+        // back to rest once, so a stopped zombie stands still instead of freezing
+        // mid-stride. No per-frame allocation.
+        if (this._armL && this._armL.visible) { this._armL.rotation.x = this._armRest.l; this._armL.rotation.z = 0 }
+        if (this._armR && this._armR.visible) { this._armR.rotation.x = this._armRest.r; this._armR.rotation.z = 0 }
+        if (this._legL && this._legL.visible) this._legL.rotation.x = 0
+        if (this._legR && this._legR.visible) this._legR.rotation.x = 0
+        if (this._head && this._head.visible) this._head.rotation.z = 0
         this.group.rotation.x = 0
+        this.group.rotation.z = 0
+        this._attackT = 0
       }
     }
     if (!this.isDead) return
