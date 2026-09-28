@@ -626,17 +626,38 @@ export function addWantedPoster(group, building, env) {
   const { w, d, h } = building
   const pw = Math.min(2.2, w * 0.5)
   const ph = pw * 1.35
-  const map = makePosterTexture(env)
   const mat = new THREE.MeshStandardMaterial({
-    color: map ? 0xffffff : 0xd8c9a0,
+    color: 0xffffff,
     roughness: 0.92,
     metalness: 0.0,
     emissive: 0x2a2016,
-    emissiveIntensity: map ? 0.25 : 0.6
+    emissiveIntensity: 0.25
   })
-  // Assign the image map only once it has decoded; assigning it up front makes
-  // the renderer upload an empty texture and warn "no image data found" (r185).
-  if (map) map.addEventListener('load', () => { mat.map = map; mat.needsUpdate = true })
+  // Load the poster texture. The image map is assigned ONLY once it has decoded
+  // (via the loader's onLoad callback) — assigning it up front makes the renderer
+  // upload an empty texture and warn "no image data found" (r185). The canvas
+  // fallback is already decoded, so it is assigned immediately. When neither is
+  // available (headless, no canvasFactory) the material keeps a paper-tan color.
+  const map = makePosterTexture(env, (tex) => {
+    mat.map = tex
+    mat.color.setHex(0xffffff)
+    mat.emissiveIntensity = 0.25
+    mat.needsUpdate = true
+  })
+  // Attach the map immediately when we already have a decoded image (canvas
+  // fallback) OR a loader texture whose decode will complete shortly. Assigning
+  // up front guarantees the material compiles WITH a map define on its first
+  // frame — attaching only later (needsUpdate) can leave a cached no-map program
+  // that renders the placard blank white. The paper-tan color is the fallback
+  // when no texture exists at all (headless / no canvasFactory).
+  if (map) {
+    mat.map = map
+    mat.color.setHex(0xffffff)
+    mat.emissiveIntensity = 0.25
+  } else {
+    mat.color.setHex(0xd8c9a0)
+    mat.emissiveIntensity = 0.6
+  }
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat)
   mesh.castShadow = false
   // Front face of the box is at local +z = d/2; nudge 0.02 off the wall so the
@@ -648,12 +669,14 @@ export function addWantedPoster(group, building, env) {
 
 // Build the poster texture: prefer the generated image (browser), else draw a
 // WANTED placard on a canvas (browser or any canvasFactory), else null.
-function makePosterTexture(env) {
+function makePosterTexture(env, onLoaded) {
   if (typeof document !== 'undefined') {
     try {
       const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
       const url = base.replace(/\/$/, '') + '/assets/posters/poster.jpg'
-      const tex = new THREE.TextureLoader().load(url)
+      // onLoad fires once the JPEG has decoded; that is when we attach it to the
+      // material (see addWantedPoster). onError leaves the paper-tan fallback.
+      const tex = new THREE.TextureLoader().load(url, (t) => { if (onLoaded) onLoaded(t) })
       tex.colorSpace = THREE.SRGBColorSpace
       tex.anisotropy = 4
       return tex
