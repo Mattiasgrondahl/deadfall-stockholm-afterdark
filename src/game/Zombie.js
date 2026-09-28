@@ -528,7 +528,14 @@ const MESH_ASSET = { shambler: 'shambler-mesh.glb', screamer: 'screamer-mesh.glb
 // owns only its own tinted material clone.
 const meshCache = {} // type -> { scene } | 'loading' | 'missing'
 let meshLoader = null
-const USE_MESH_BODY = true
+// A2 mesh bodies are DISABLED (Sep 28): the Pixal3D bodies are solid in isolation
+// but under the dim night lighting + single-color emissive tint they read as dark,
+// thin SILHOUETTES with no solid torso — the user saw them as skeletons. The
+// primitive clothed humanoid (face + per-type tint/width) is the solid, proven
+// visual, so every type falls back to it. The mesh path (MESH_ASSET/
+// loadSkinMesh/_attachSkinMesh/_applyLOD mesh branch) is kept intact so a future
+// higher-quality mesh pass can flip this back to true.
+const USE_MESH_BODY = false
 
 function loadSkin(type, onReady) {
   if (!USE_SKINNED_RIG) return // primitive body is the visual; skip the rig
