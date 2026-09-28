@@ -19,15 +19,19 @@ export const MAX_NAME = 24
 // Control-character class (C0 + DEL) as an escape-only regex so this source
 // file stays plain ASCII — no literal control bytes in the file.
 const CTRL_RE = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
+// v4 XSS defense-in-depth: strip HTML-significant characters so a hostile name
+// is neutralized at input, not only at render. Mirrors the server sanitizer.
+const MARKUP_RE = new RegExp('[<>&"\']', 'g')
 
 /** v3 T6: sanitize a player-supplied name for the hosted high score. Strips
- *  control characters (incl. newlines/tabs), collapses runs of whitespace,
- *  trims, and clamps to MAX_NAME. This is the INPUT-side guard; the value is
- *  always rendered with textContent (never innerHTML), so even a leftover
- *  `<img src=x onerror=...>` becomes inert text — zero markup nodes. */
+ *  control characters (incl. newlines/tabs) and HTML-significant characters
+ *  (`< > & " '`), collapses runs of whitespace, trims, and clamps to MAX_NAME.
+ *  This is the INPUT-side guard; the value is also always rendered with
+ *  textContent (never innerHTML), so a hostile payload is doubly neutralized. */
 export function sanitizeName(raw) {
   const s = String(raw == null ? '' : raw)
     .replace(CTRL_RE, '')
+    .replace(MARKUP_RE, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_NAME)

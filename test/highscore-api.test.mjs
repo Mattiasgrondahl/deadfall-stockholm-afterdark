@@ -86,11 +86,12 @@ test('v3 T6: a hostile XSS name is sanitized server-side, never stored as markup
     assert.ok(holder.name.length <= 24, `name clamped to 24 (${holder.name.length})`)
     assert.ok(!new RegExp('[\\u0000-\\u001f\\u007f]').test(holder.name), 'no control characters survive')
     assert.ok(!/\s{2,}/.test(holder.name), 'no runs of whitespace survive')
-    // The payload survives as inert TEXT (it is rendered via textContent), but
-    // crucially it is never markup: the server stores the raw characters, and
-    // the client never uses innerHTML. Assert the record holder is exactly the
-    // sanitized string, so a downstream textContent render yields zero nodes.
-    assert.equal(holder.name, '<img src=x onerror=alert(1)> <b>zz</b>'.slice(0, 24))
+    // v4 XSS defense-in-depth: HTML-significant characters are stripped at the
+    // source too, so the payload is neutralized even before the textContent
+    // render. Assert no markup-significant char survives and the exact cleaned
+    // string (control chars + markup removed, whitespace collapsed, clamped 24).
+    assert.ok(!/[<>&"']/.test(holder.name), 'no HTML-significant characters survive')
+    assert.equal(holder.name, 'img src=x onerror=alert(')
   } finally { s.close() }
 })
 

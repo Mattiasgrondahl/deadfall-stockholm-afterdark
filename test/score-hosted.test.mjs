@@ -47,10 +47,15 @@ test('v6: adoptBest adopts the hosted top-10 leaderboard', async () => {
   assert.equal(s.bestName, 'Zed')
   assert.deepEqual(s.top, [{ name: 'Zed', score: 900 }, { name: 'Ana', score: 500 }], 'leaderboard adopted')
   assert.equal(fired, 1, 'change callback fired once')
-  // A hostile name in the list is re-sanitized defensively on the client too
-  // (control chars stripped first, so the newlines vanish entirely).
+  // A hostile name in the list is re-sanitized defensively on the client too:
+  // control chars AND HTML-significant characters are stripped, so a markup
+  // payload is neutralized at the source (not only at render).
   await s.adoptBest(fakeFetch({ json: { best: 10, top: [{ name: '<b>x</b>\n\ny', score: 10 }] } }))
-  assert.equal(s.top[0].name, '<b>x</b>y', 'control chars stripped')
+  assert.equal(s.top[0].name, 'bx/by', 'control chars + markup stripped (slash survives)')
+  // v4 XSS: a classic img/onerror payload loses every angle bracket + quote.
+  await s.adoptBest(fakeFetch({ json: { best: 500, top: [{ name: '<img src=x onerror=alert(1)>', score: 500 }] } }))
+  assert.equal(s.top[0].name, 'img src=x onerror=alert(', 'XSS payload stripped of < > "')
+  assert.ok(!/[<>&"']/.test(s.top[0].name), 'no markup-significant chars survive')
 })
 
 test('submitBest POSTs the best and commitRecord chains both', async () => {

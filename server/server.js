@@ -34,6 +34,11 @@ const DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.re
 // test can redirect it via HIGHSCORE_FILE after the module is loaded.
 const HS_MAX_NAME = 24
 const HS_CTRL = new RegExp('[\\u0000-\\u001f\\u007f]', 'g')
+// v4 XSS defense-in-depth: strip HTML-significant characters so a hostile name
+// (e.g. `<img src=x onerror=alert(1)>`) can never be stored as markup-shaped
+// text. Rendering is textContent-only, but neutralizing at the source keeps the
+// shared board clean and removes reliance on the render path alone.
+const HS_MARKUP = new RegExp('[<>&"\']', 'g')
 // v7: the room code is now a first-class key — each room code gets its own
 // leaderboard + its own Match. Codes are sanitized like names (control chars
 // stripped, whitespace collapsed, clamped) and fall back to 'default' so a
@@ -69,6 +74,7 @@ function roomFileFragment(room) {
 function sanitizeName(raw) {
   return String(raw == null ? '' : raw)
     .replace(HS_CTRL, '')
+    .replace(HS_MARKUP, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, HS_MAX_NAME)

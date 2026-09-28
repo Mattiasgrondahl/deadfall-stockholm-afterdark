@@ -800,7 +800,7 @@ function fakeWave(o) {
   // START routes through _startSolo -> score.setName (sanitized by Score) then startGame.
   screens._startSolo()
   assert.strictEqual(started, 1, 'START starts a solo run')
-  assert.strictEqual(game.score.name, '<img src=x onerror=alert', 'name sanitized + clamped to 24')
+  assert.strictEqual(game.score.name, 'img src=x onerror=alert(', 'name sanitized: markup stripped + clamped to 24')
   // XSS safety: the record holder name is rendered via textContent only — the
   // high-score element gains NO child markup nodes from it (zero markup nodes).
   game.score.bestName = '<img src=x onerror=alert(1)>'
