@@ -90,6 +90,31 @@ test('remote zombies get bodies, dead ones collapse, vanished removed', () => {
   mp.dispose()
 })
 
+test('co-op melee (axe/sword) kills a remote zombie via predicted death', () => {
+  // v4 co-op melee fix: the remote-zombie proxy must mirror the server's
+  // authoritative HP so a melee swing (which predicts the kill off _hp/_predHp,
+  // unlike guns that predict off the limb chain) marks the zombie dead client-
+  // side and routes an authoritative HIT. Before the fix _hp stayed at 100, so
+  // two 25-dmg axe hits never crossed _predHp<=0 and the zombie never died.
+  const { mp } = makeMP()
+  const hits = []
+  mp.net.sendHit = (v, d, h) => { hits.push({ v, d, h }) }
+  // A wounded walker at 50 hp (two axe body hits kill it).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 0, z: -1, health: 50, state: 'chase', facing: 0 }
+  ] }) })
+  const target = mp.getTargets().find(t => t._id === 'z1')
+  assert.ok(target, 'walker proxy is a melee target')
+  assert.equal(target.isDead, false, 'alive before the swings')
+  target.damage(25, null, 'me', false) // first axe hit
+  assert.equal(target.isDead, false, 'one hit is not lethal')
+  target.damage(25, null, 'me', false) // second axe hit -> lethal
+  assert.equal(target.isDead, true, 'two axe hits kill the remote zombie client-side')
+  assert.equal(hits.length, 2, 'both hits routed an authoritative HIT to the server')
+  assert.equal(hits[0].d, 25, 'damage forwarded to the server')
+  mp.dispose()
+})
+
 test('avatar leaves the roster -> RemotePlayer disposed', () => {
   const { mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })

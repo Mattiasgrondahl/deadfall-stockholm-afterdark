@@ -233,6 +233,12 @@ export class Multiplayer {
         entry._box.position.set(z.x, 0.85, z.z)
         if (z.facing != null) entry._box.rotation.y = z.facing
         entry._dead = !!(z.dead || z.state === 'dead')
+        // v4 co-op melee fix: mirror authoritative HP so melee predicted-death
+        // works for overflow (box) zombies too — pull the local prediction back
+        // to the server's health when it is higher, never raising a real kill.
+        if (typeof z.health === 'number' && (entry._predHp == null || entry._predHp > z.health)) {
+          entry._predHp = z.health
+        }
         entry._box.visible = !entry._dead
       }
     }

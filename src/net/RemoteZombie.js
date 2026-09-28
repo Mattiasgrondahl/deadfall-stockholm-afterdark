@@ -119,6 +119,21 @@ export class RemoteZombie {
     this._applyLimb('legL', L.legs >= 1)
     this._applyLimb('legR', L.legs >= 2)
     this._applyHead(L.head >= 1)
+    // v4 co-op melee fix: mirror the server's authoritative HP so melee
+    // predicted-death works. Melee weapons damage the proxy via damage(),
+    // which predicts the kill off _hp/_predHp (unlike guns, which predict off
+    // the limb chain). Without this, _hp stayed at the constructor default 100
+    // forever, so two axe hits (50 dmg) never crossed _predHp<=0 and the zombie
+    // never died client-side until the snapshot flipped `dead` — reading as
+    // "axe/sword can't kill zombies" in co-op. Pull the local prediction back
+    // to the authoritative HP when the server shows MORE health than we
+    // predicted (a prediction that ran ahead of the server is clamped here,
+    // mirroring the _chainShots clamp above); never raise a prediction that is
+    // already at/below authoritative, so a real kill isn't un-predicted.
+    if (typeof z.health === 'number') {
+      this._hp = z.health
+      if (this._predHp == null || this._predHp > z.health) this._predHp = z.health
+    }
     // v3 chain: the server's limb counts are authoritative, so the local
     // round counter is clamped to what actually happened (a prediction that
     // ran ahead of the server is pulled back here).

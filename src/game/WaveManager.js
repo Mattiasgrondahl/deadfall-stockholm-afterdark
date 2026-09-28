@@ -168,7 +168,7 @@ export class WaveManager {
     // own cadence.
     this.timer = 0
     this.cb.onWaveStart?.(this.startWave)
-    this.audio?.playWave?.(this.startWave)
+    // v4: no wave-start sound — the opening stinger + growls carry the moment.
   }
 
   /**
@@ -236,7 +236,7 @@ export class WaveManager {
         this._bossTimer = 0
         this._bossSpawned = false
         this.cb.onWaveStart?.(this.wave)
-        this.audio?.playWave?.(this.wave)
+        // v4: no wave-start sound on wave rollover either (see reset()).
       }
       return
     }
