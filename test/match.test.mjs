@@ -130,6 +130,31 @@ test('melee hits damage only the targeted player (health)', () => {
   assert.ok(hits.every(e => e.by === 'walker'))
 })
 
+test('v4 friendly fire: a teammate shot damages the victim + emits a hit event', () => {
+  const m = makeMatch([{ id: 'A', x: 12, z: 0 }, { id: 'B', x: -12, z: 0 }])
+  const a = m.getPlayer('A').player, b = m.getPlayer('B').player
+  // B shoots A: 40 raw damage scaled by the 0.35 friendly-fire fraction = 14.
+  m.applyFF('A', 40, 'B')
+  assert.equal(a.health, 86, 'friendly fire applies 40 * 0.35 = 14 damage')
+  assert.equal(b.health, 100, 'shooter is untouched')
+  const ff = m.snapshot().events.filter(e => e.k === 'hit' && e.victim === 'A' && e.ff)
+  assert.equal(ff.length, 1, 'one friendly-fire hit event')
+  assert.equal(ff[0].by, 'B', 'attributed to the shooter')
+  assert.equal(ff[0].dmg, 14, 'rounded applied damage')
+})
+
+test('v4 friendly fire: self-hit and dead/unknown victims are ignored', () => {
+  const m = makeMatch([{ id: 'A', x: 12, z: 0 }, { id: 'B', x: -12, z: 0 }])
+  const a = m.getPlayer('A').player
+  m.applyFF('A', 40, 'A') // self-hit: no-op
+  assert.equal(a.health, 100, 'self friendly fire is ignored')
+  m.applyFF('ghost', 40, 'A') // unknown victim: no-op
+  assert.equal(m.snapshot().events.filter(e => e.k === 'hit' && e.ff).length, 0, 'no ff events')
+  a.isDead = true
+  m.applyFF('A', 40, 'B') // dead victim: no-op
+  assert.equal(a.health, 100, 'a dead victim absorbs no friendly fire')
+})
+
 test('corpses sink, then are removed about 5 s after death', () => {
   const m = makeMatch([{ id: 'A', x: 12, z: 0 }])
   const z = m.spawnZombie('walker', 12, -3)

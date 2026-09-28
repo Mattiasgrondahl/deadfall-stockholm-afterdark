@@ -526,3 +526,75 @@ test('v12: matchEnd snapshot ends the co-op run and shows the game-over screen',
     else globalThis.fetch = prevFetch
   }
 })
+
+test('v4 friendly fire: getPlayers exposes teammate proxies that send MSG.FF on damage', () => {
+  const { mp } = makeMP()
+  mp.socket.receive({ t: MSG.SNAP, ...snap() })
+  const players = mp.getPlayers()
+  assert.equal(players.length, 2, 'two teammates (self excluded)')
+  const alice = players.find((p) => p.id === 'alice')
+  assert.ok(alice, 'alice proxied')
+  assert.equal(alice.isDead, false)
+  assert.ok(alice.getHitboxes().length === 2, 'torso + head hitboxes')
+  assert.equal(alice.getHitboxes().find((h) => h.isHead).isHead, true, 'head hitbox flagged')
+  // No-op zombie-only surface so the weapon hit loop never misfires on a player.
+  assert.equal(alice.hitLimbAt(0, 0, 0), null, 'no severable limbs')
+  assert.equal(typeof alice._chainShot, 'function', 'chain shot is a no-op fn')
+  alice._chainShot(1)
+  alice.knockback(1, 1, 5)
+  // A confirmed hit sends an authoritative friendly-fire message to the server.
+  mp.socket.sent.length = 0
+  alice.damage(40)
+  const ff = mp.socket.sent.filter((m) => m.t === MSG.FF)
+  assert.equal(ff.length, 1, 'one FF message sent')
+  assert.equal(ff[0].victim, 'alice')
+  assert.equal(ff[0].dmg, 40, 'raw damage forwarded (server scales it)')
+  // A dead teammate is not offered as a target.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ players: [
+    { id: 'me', name: 'me', x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0, health: 100, stamina: 100, weapon: 'axe', ammo: 5, reserve: 20, dead: false },
+    { id: 'alice', name: 'Alice', x: 3, y: 1.7, z: 4, yaw: 1, pitch: 0, health: 0, stamina: 0, weapon: 'shotgun', ammo: 4, reserve: 20, dead: true },
+    { id: 'bob', name: 'Bob', x: -2, y: 1.7, z: 6, yaw: 2, pitch: 0, health: 70, stamina: 60, weapon: 'pistol', ammo: 12, reserve: 36, dead: false }
+  ] }) })
+  assert.equal(mp.getPlayers().find((p) => p.id === 'alice'), undefined, 'dead teammate dropped')
+  mp.dispose()
+})
+
+test('v4 friendly fire: a self hit event fires onSelfHit feedback', () => {
+  const { mp } = makeMP()
+  let hits = []
+  mp.onSelfHit = (dmg, by, ff) => hits.push({ dmg, by, ff })
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ events: [
+    { k: 'hit', victim: 'me', dmg: 14, by: 'alice', ff: true },
+    { k: 'hit', victim: 'alice', dmg: 20, by: 'walker' },
+  ] }) })
+  assert.equal(hits.length, 1, 'only the self-targeted hit fires the hook')
+  assert.equal(hits[0].dmg, 14)
+  assert.equal(hits[0].by, 'alice')
+  assert.equal(hits[0].ff, true, 'friendly-fire flag forwarded')
+  mp.dispose()
+})
+
+test('v4 co-op: a remote zombie in the attack state plays a melee pose', () => {
+  const { mp } = makeMP()
+  const attackSnap = (state) => ({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state, facing: 0 },
+    { id: 'z2', type: 'brute', x: -3, z: 1, health: 300, state: 'chase', facing: 1 }
+  ] }) })
+  mp.socket.receive(attackSnap('chase'))
+  const e = mp.zombies.get('z1')
+  const restL = e._armL.rotation.x
+  // Entering the attack state kicks off a swing timer.
+  mp.socket.receive(attackSnap('attack'))
+  assert.equal(e._state, 'attack', 'snapshot state captured')
+  assert.equal(e._wasAttacking, true, 'attack edge latched')
+  // Drive the pose: arms swing away from rest + the torso leans forward.
+  for (let i = 0; i < 12; i++) e.update(1 / 60)
+  assert.notEqual(e._armL.rotation.x, restL, 'arm moved off rest during the swing')
+  assert.ok(e.group.rotation.x > 0, 'torso leans into the lunge')
+  // Leaving the attack state eases the arms + lean back to rest.
+  mp.socket.receive(attackSnap('chase'))
+  e.update(1 / 60)
+  assert.equal(e._armL.rotation.x, restL, 'arm returns to rest when the attack ends')
+  assert.equal(e.group.rotation.x, 0, 'lean resets')
+  mp.dispose()
+})

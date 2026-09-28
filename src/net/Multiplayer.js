@@ -16,6 +16,7 @@
 import { RemotePlayer } from '../game/RemotePlayer.js'
 import { NetClient } from './NetClient.js'
 import { RemoteZombie } from './RemoteZombie.js'
+import { makeFFProxy } from './FFProxy.js'
 
 // A tiny primitive zombie silhouette used as the over-budget fallback body.
 // Shared geometry/material so fallback boxes add only 1 mesh each.
@@ -54,6 +55,12 @@ export class Multiplayer {
     // Co-op respawn hooks the Game wires up (no-ops until assigned).
     this.onSelfDeath = null
     this.onSelfRespawn = null
+    // Friendly-fire / incoming-damage feedback: the server emits a `hit` event
+    // when this client takes damage (zombie melee or a teammate's friendly fire).
+    // The Game wires this to the same hit-flash/vignette + hit sound single-player
+    // uses, so being attacked is actually felt in co-op instead of health silently
+    // dropping. `n` is the damage applied this snapshot.
+    this.onSelfHit = null
     // v12: match-end hook. The server emits a `matchEnd` event (wave-5 cleared /
     // time cap / all-dead) in a snapshot; Multiplayer surfaces it once so the
     // Game can stop the co-op run and show the final scoreboard.
@@ -154,6 +161,12 @@ export class Multiplayer {
     for (const ev of (snap.events || [])) {
       if (!ev) continue
       if (ev.k === 'respawn' && ev.victim === this.pid) this.onSelfRespawn && this.onSelfRespawn()
+      // Incoming damage on THIS client (zombie melee or teammate friendly fire):
+      // surface it so the Game plays the hit feedback. The server already applied
+      // the health change (adopted via selfHealth above); this is the cue.
+      if (ev.k === 'hit' && ev.victim === this.pid && this.onSelfHit) {
+        this.onSelfHit(ev.dmg || 0, ev.by || null, !!ev.ff)
+      }
       // v12: match end — surface the final scoreboard to the Game once.
       if (ev.k === 'matchEnd' && !this.matchEnded) {
         this.matchEnded = true
@@ -226,6 +239,22 @@ export class Multiplayer {
         const t = e.getTarget()
         if (t && !t.isDead) out.push(t)
       }
+    }
+    return out
+  }
+
+  /** Friendly-fire proxies for the live teammates (excludes self), so the local
+   *  weapon's hit loop can register shots that land on a teammate and send an
+   *  authoritative MSG.FF to the server. Rebuilt from the last snapshot's roster
+   *  so positions track the interpolated avatars. */
+  getPlayers() {
+    const snap = this.lastSnap
+    if (!snap || !Array.isArray(snap.players)) return []
+    const out = []
+    const sendFF = (victim, dmg) => this.net.sendFF(victim, dmg)
+    for (const p of snap.players) {
+      if (!p || p.id === this.pid || p.dead) continue
+      out.push(makeFFProxy(p, sendFF))
     }
     return out
   }

@@ -21,7 +21,7 @@ import { WebSocketServer } from 'ws'
 import { Match, TICK } from '../src/net/Match.js'
 import {
   MSG, SERVER_TICK, SNAPSHOT_INTERVAL, MAX_PLAYERS,
-  parseInput, buildSnap, buildWelcome, buildHello,
+  parseInput, parseFF, buildSnap, buildWelcome, buildHello,
 } from '../src/net/protocol.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -316,6 +316,17 @@ export class Room {
     this.match.applyHit(victim, dmg, !!msg.head, id)
   }
 
+  /** Apply an authoritative friendly-fire hit: a client's shot landed on a
+   *  teammate, so the server applies the reduced friendly-fire damage to the
+   *  victim's player (attributed to the shooter). */
+  applyFF(socket, msg) {
+    const id = this.sockets.get(socket)
+    if (!id) return
+    const ff = parseFF(msg)
+    if (!ff) return
+    this.match.applyFF(ff.victim, ff.dmg, id)
+  }
+
   /** Advance one authoritative tick and, on the snapshot cadence, broadcast. */
   tick(dt = SERVER_TICK) {
     this.match.step(dt)
@@ -388,6 +399,7 @@ export function startServer(opts = {}) {
       switch (msg.t) {
         case MSG.INPUT: room.applyInput(socket, msg); break
         case MSG.HIT: room.applyHit(socket, msg); break
+        case MSG.FF: room.applyFF(socket, msg); break
         case MSG.PING: socket.send(JSON.stringify({ t: MSG.PONG, now: msg.now })); break
         case MSG.LEAVE: room.leave(socket); socket.close(); break
       }

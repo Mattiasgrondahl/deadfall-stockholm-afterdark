@@ -396,7 +396,13 @@ export class Game {
     if (this.input) this.input.on('musicSkip', () => { if (this.audio) this.audio.skipPlaylistTrack() })
     // WIRING:WEAPON
     this.weapon = new WeaponBank(this.scene, this.camera, this.collision, this.audio)
-    this.weapon.getZombies = () => (this.multiplayer ? this.zombies.concat(this.multiplayer.getTargets()) : this.zombies)
+    // Co-op: the weapon's target set is zombies + remote-zombie proxies + remote
+    // teammate proxies. The teammate proxies make the existing hit loop register
+    // friendly fire (a shot that lands on a teammate sends MSG.FF to the server);
+    // single-player has no multiplayer so it stays zombies-only, byte-identical.
+    this.weapon.getZombies = () => (this.multiplayer
+      ? this.zombies.concat(this.multiplayer.getTargets(), this.multiplayer.getPlayers())
+      : this.zombies)
     this.weapon.inputState = this.inputState
     // WIRING:DROPS (V6)
     this.drops = new AmmoDrops(this.scene, this.audio)
@@ -835,6 +841,15 @@ export class Game {
     // v12: the server ended the co-op match — stop the run + show the final
     // scoreboard via the shared game-over screen.
     mp.onMatchEnd = () => this._endCoopRun()
+    // Incoming damage on this client (zombie melee or teammate friendly fire):
+    // the server already dropped the health (adopted via MP-HEALTH), so this is
+    // the feedback cue — fire the same damage vignette + hit sound single-player
+    // uses (player._onDamaged -> hud.dmgFeedback + audio.hitPlayer) so being
+    // attacked is actually felt in co-op instead of health silently dropping.
+    mp.onSelfHit = (n, by, ff) => {
+      if (this.hud) this.hud.dmgFeedback(n, ff ? 'teammate' : 'zombie')
+      if (this.audio && this.audio.hitPlayer) this.audio.hitPlayer()
+    }
     return mp
   }
 

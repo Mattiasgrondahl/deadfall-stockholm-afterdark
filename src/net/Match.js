@@ -40,6 +40,10 @@ const SPAWN = { x: 0, y: 1.7, z: 12 } // same shared spawn as the single-player 
 // screamer 25, brute 150, plus 50 × wave).
 const KILL_VALUES = { walker: 10, shambler: 15, screamer: 25, brute: 150 }
 const WAVE_BONUS = 50
+// Friendly-fire fraction: a shot that lands on a teammate deals this fraction of
+// its listed damage. <1 so teammates can shoot each other without instantly
+// deleting each other, but enough that standing in a line of fire is punished.
+const FRIENDLY_FIRE = 0.35
 
 /** Plain input data object, same shape as Game's (the server ignores
  *  pause/flashlight, which are client-only in Phase 0). */
@@ -332,6 +336,23 @@ export class Match {
         return
       }
     }
+  }
+
+  /** Authoritative friendly-fire hit from a client: a client's shot landed on a
+   *  TEAMMATE (victim is the victim's player id, `by` is the shooter's id). The
+   *  client has the authoritative crosshair, so the server applies a reduced
+   *  fraction of the weapon damage to the victim's player. A dead/unknown victim
+   *  or a self-hit is ignored. The victim's death (if any) flows through the
+   *  existing player.setOnDeath respawn path. */
+  applyFF(victim, dmg, by) {
+    if (!(dmg > 0) || !victim || victim === by) return
+    const slot = this.players.get(victim)
+    if (!slot || slot.disconnected) return
+    const p = slot.player
+    if (!p || p.isDead) return
+    const applied = dmg * FRIENDLY_FIRE
+    p.damage(applied, null, by !== null && by !== undefined ? by : null, false)
+    this.events.push({ k: 'hit', victim, dmg: Math.round(applied), by: by !== null && by !== undefined ? by : null, ff: true })
   }
 
   _onDropPickup(d, p) {

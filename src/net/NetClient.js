@@ -125,6 +125,13 @@ export class NetClient {
     try { this.socket.send(JSON.stringify({ t: MSG.HIT, victim, dmg: Math.round(dmg), head: !!head })) } catch { /* socket closed */ }
   }
 
+  /** Send an authoritative friendly-fire hit: the local crosshair landed on a
+   *  teammate, so the server applies the reduced friendly-fire damage to them. */
+  sendFF(victim, dmg) {
+    if (!this.connected || this.pid === null || victim == null || !(dmg > 0)) return
+    try { this.socket.send(JSON.stringify({ t: MSG.FF, victim, dmg: Math.round(dmg) })) } catch { /* socket closed */ }
+  }
+
   /** Advance timers by dt (called from the Game loop). Accumulates input rate. */
   update(dt) {
     this.snapAge += dt

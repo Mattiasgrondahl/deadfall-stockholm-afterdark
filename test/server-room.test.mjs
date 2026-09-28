@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Room, startServer } from '../server/server.js'
-import { MSG, SERVER_TICK, SNAPSHOT_INTERVAL, MAX_PLAYERS, parseInput, buildHello, buildWelcome } from '../src/net/protocol.js'
+import { MSG, SERVER_TICK, SNAPSHOT_INTERVAL, MAX_PLAYERS, parseInput, parseFF, buildHello, buildWelcome } from '../src/net/protocol.js'
 
 // Minimal fake socket: records sent frames, reports OPEN.
 function fakeSocket() {
@@ -30,6 +30,15 @@ test('protocol.parseInput clamps and normalizes', () => {
   assert.equal(parseInput({ t: MSG.INPUT }), null, 'missing pid rejected')
   const bad = parseInput({ t: MSG.INPUT, pid: 'p0', switch: 9 })
   assert.equal(bad.switch, null, 'out-of-range switch dropped')
+})
+
+test('protocol.parseFF validates a friendly-fire frame', () => {
+  const good = parseFF({ t: MSG.FF, victim: 'p1', dmg: 40 })
+  assert.deepEqual(good, { victim: 'p1', dmg: 40 }, 'valid ff parses')
+  assert.equal(parseFF({ t: MSG.FF, victim: 'p1', dmg: 400 }).dmg, 200, 'dmg clamped to 200')
+  assert.equal(parseFF({ t: MSG.FF, victim: 'p1', dmg: -5 }), null, 'non-positive dmg rejected')
+  assert.equal(parseFF({ t: MSG.FF, victim: '', dmg: 10 }), null, 'missing victim rejected')
+  assert.equal(parseFF({ t: MSG.INPUT, victim: 'p1', dmg: 10 }), null, 'wrong type rejected')
 })
 
 test('buildHello / buildWelcome shape', () => {
@@ -72,6 +81,19 @@ test('Room tick advances the sim and broadcasts a 10 Hz snapshot', () => {
   const snap = snaps[snaps.length - 1]
   assert.ok(Array.isArray(snap.players) && snap.players.length === 2, 'snapshot has both players')
   assert.ok(snap.players.every((p) => typeof p.x === 'number' && typeof p.health === 'number'), 'player fields present')
+})
+
+test('v4 friendly fire: room.applyFF damages the victim player', () => {
+  const room = new Room()
+  const s0 = fakeSocket(), s1 = fakeSocket()
+  room.join(s0); room.join(s1)
+  const victim = room.match.getPlayer('p1').player
+  // p0 fires on p1: 60 raw -> 21 applied (0.35 fraction).
+  room.applyFF(s0, { t: MSG.FF, victim: 'p1', dmg: 60 })
+  assert.equal(victim.health, 79, 'friendly fire applied 60 * 0.35 = 21 damage')
+  // A malformed frame (no victim) is a no-op.
+  room.applyFF(s0, { t: MSG.FF, victim: '', dmg: 60 })
+  assert.equal(victim.health, 79, 'malformed ff frame ignored')
 })
 
 test('leave holds the player slot in disconnect grace, then frees it', () => {

@@ -72,6 +72,13 @@ export class RemoteZombie {
     this._hp = 100
     this._predHp = null
     this._predictedDead = false
+    // v4 co-op: the snapshot's `state` is only used for death today, so remote
+    // zombies never visibly attack. Track the attack state so the arms can play
+    // a windup→swing when the server has the zombie in `attack`, matching the
+    // single-player zombie's melee lunge so co-op attacks are actually visible.
+    this._state = 'idle'
+    this._attackT = 0
+    this._wasAttacking = false
     this._flashT = 0
     this.scene.add(this.group)
   }
@@ -81,6 +88,13 @@ export class RemoteZombie {
     if (!z) return
     this._x = z.x; this._z = z.z
     if (z.facing != null) this._facing = z.facing
+    // v4 co-op: remember the authoritative state so update() can pose an attack.
+    // A fresh transition into `attack` kicks off a swing timer; holding the
+    // attack state keeps the arms raised, and leaving it relaxes them.
+    this._state = z.state || 'idle'
+    const attacking = this._state === 'attack'
+    if (attacking && !this._wasAttacking) this._attackT = 0
+    this._wasAttacking = attacking
     const dead = z.dead || z.state === 'dead'
     // Mirror the server's limb state (arms/legs/head severed).
     const L = z.limbs || { arms: 0, legs: 0, head: 0 }
@@ -174,6 +188,32 @@ export class RemoteZombie {
       if (p.position.y < 0.06) { p.position.y = 0.06; p._vy = 0; p._vx *= 0.6; p._vz *= 0.6 }
       p.rotation.x += p._spin * dt
       if (p._life > 4) { this.scene.remove(p); this._falling.splice(i, 1) }
+    }
+    if (!this.isDead) {
+      // v4 co-op: play the melee attack pose when the server has this zombie in
+      // `attack`. A short windup pulls both arms back, then a swing drives them
+      // forward — the same reach-out-and-swipe the single-player zombie makes —
+      // plus a slight forward lean so the lunge reads. When not attacking the
+      // arms ease back to rest. No new meshes, so the budget is unchanged.
+      if (this._wasAttacking) {
+        this._attackT += dt
+        const t = Math.min(this._attackT / 0.5, 1) // 0→1 over ~0.5 s
+        // Windup (first 35%) raises the arms back, swing (rest) drives them down.
+        const wind = t < 0.35 ? t / 0.35 : 1
+        const swing = t < 0.35 ? 0 : (t - 0.35) / 0.65
+        const raise = -0.6 * wind            // arms back/up during windup
+        const strike = 1.1 * swing           // arms forward/down during swing
+        const lean = 0.18 * swing            // torso lunge
+        if (this._armL && this._armL.visible) this._armL.rotation.x = this._armRest.l + raise + strike
+        if (this._armR && this._armR.visible) this._armR.rotation.x = this._armRest.r + raise + strike
+        this.group.rotation.x = lean
+      } else if (this._attackT > 0) {
+        // Just left the attack state: ease the arms + lean back to rest once.
+        this._attackT = 0
+        if (this._armL && this._armL.visible) this._armL.rotation.x = this._armRest.l
+        if (this._armR && this._armR.visible) this._armR.rotation.x = this._armRest.r
+        this.group.rotation.x = 0
+      }
     }
     if (!this.isDead) return
     this._deathT += dt

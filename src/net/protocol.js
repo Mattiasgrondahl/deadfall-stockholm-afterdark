@@ -27,6 +27,7 @@ export const MSG = {
   PONG: 'pong', // server -> client: latency reply
   LEAVE: 'leave', // client -> server: voluntary disconnect
   HIT: 'hit', // client -> server: a confirmed client-side hit on a zombie (authoritative damage)
+  FF: 'ff', // client -> server: a confirmed client-side hit on a TEAMMATE (friendly fire)
 }
 
 export const WEAPONS = ['axe', 'shotgun', 'pistol', 'sword']
@@ -65,6 +66,20 @@ export function parseInput(msg) {
 /** Build a snapshot frame (§5.2) from a Match's snapshot() output. */
 export function buildSnap(matchSnapshot) {
   return { t: MSG.SNAP, ...matchSnapshot }
+}
+
+/**
+ * Validate + normalize an inbound friendly-fire frame (client -> server). A
+ * client's crosshair confirmed a shot landed on a TEAMMATE, so the server
+ * applies the reduced friendly-fire damage. Returns { victim, dmg } or null
+ * when the frame is malformed. dmg is clamped to [0, 200] like a zombie HIT.
+ */
+export function parseFF(msg) {
+  if (!msg || typeof msg !== 'object' || msg.t !== MSG.FF) return null
+  if (typeof msg.victim !== 'string' || !msg.victim) return null
+  const dmg = Number.isFinite(msg.dmg) ? Math.min(Math.max(msg.dmg, 0), 200) : 0
+  if (!(dmg > 0)) return null
+  return { victim: msg.victim, dmg }
 }
 
 /** Build a server->client welcome frame with the assigned pid + roster. */
