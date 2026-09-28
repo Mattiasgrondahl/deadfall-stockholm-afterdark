@@ -33,11 +33,14 @@ const snap = await p1.evaluate(() => {
     client: pp ? { x: +pp.x.toFixed(2), z: +pp.z.toFixed(2) } : null,
     server: sp ? { x: +sp.x.toFixed(2), z: +sp.z.toFixed(2) } : null,
     drift: (pp && sp) ? +Math.hypot(pp.x - sp.x, pp.z - sp.z).toFixed(2) : null,
+    travelled: pp ? +Math.hypot(pp.x, pp.z).toFixed(2) : null,
     remoteZombies: mp ? mp.zombies.size : 0
   }
 })
-console.log('Ada drift check:', JSON.stringify(snap))
-const ok = snap.drift != null && snap.drift < 1.5
-console.log(ok ? 'COOP-DRIFT: PASS (client tracks server position, zombies chase the live player)' : 'COOP-DRIFT: INCONCLUSIVE (drift too large or no selfPos)')
+console.log('Ada movement check:', JSON.stringify(snap))
+// The player must travel freely (no invisible wall): ~3 m/s forward for 4 s ≈ 12 m.
+const moved = snap.travelled != null && snap.travelled > 8
+const inSync = snap.drift != null && snap.drift < 2
+console.log(moved && inSync ? 'COOP-MOVE: PASS (player walks freely, stays in sync with server)' : 'COOP-MOVE: FAIL (player blocked or out of sync)')
 await browser.close().catch(() => {})
-process.exit(ok ? 0 : 1)
+process.exit(moved && inSync ? 0 : 1)
