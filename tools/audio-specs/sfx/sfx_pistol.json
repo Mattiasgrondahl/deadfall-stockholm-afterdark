@@ -3,6 +3,6 @@
   "model_type": "stable_audio3_small_sfx",
   "name": "sfx_pistol",
   "duration_seconds": 2,
-  "prompt": "A single pistol gunshot: crisp sharp crack with a short dry tail, close-mic, no reverb, one shot only.",
-  "seed": 2275
+  "prompt": "An extremely loud close-up pistol shot recorded right at the muzzle, first-person like the gun is in your hand: a sharp aggressive crack with a punchy low-mid body and a short dry tail, no room reverb, in-your-face and powerful, single shot only.",
+  "seed": 5223
 }

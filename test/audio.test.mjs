@@ -824,4 +824,48 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 
+{
+  // v4 proximity dread: a dedicated close growl fires only when the nearest
+  // live zombie is inside CLOSE_GROWL_RADIUS (9 m), on its own cadence, and
+  // gets louder the closer the zombie is. Headless path is a pure no-op.
+  const headless = new AudioBank()
+  let headlessClose = 0
+  for (let i = 0; i < 60 * 20; i++) {
+    for (const g of headless.updateGroans(1 / 60, [fakeZombie('walker', 2, 0)], { x: 0, z: 0 })) {
+      if (g.type === 'close') headlessClose++
+    }
+  }
+  assert.ok(headlessClose > 0, 'close growl must schedule even headless (bookkeeping is pure)')
+  headless.dispose()
+
+  // A far zombie (>= radius) never triggers the close growl.
+  const far = new AudioBank()
+  let farClose = 0
+  for (let i = 0; i < 60 * 30; i++) {
+    for (const g of far.updateGroans(1 / 60, [fakeZombie('walker', 15, 0)], { x: 0, z: 0 })) {
+      if (g.type === 'close') farClose++
+    }
+  }
+  assert.strictEqual(farClose, 0, 'close growl fired for a zombie beyond the radius')
+  far.dispose()
+
+  // Proximity scaling: a point-blank zombie yields a higher close-growl gain
+  // than one sitting at the edge of the radius.
+  const nearBank = new AudioBank()
+  const edgeBank = new AudioBank()
+  let gNear = null, gEdge = null
+  for (let i = 0; i < 60 * 30 && (gNear === null || gEdge === null); i++) {
+    for (const g of nearBank.updateGroans(1 / 60, [fakeZombie('walker', 1, 0)], { x: 0, z: 0 })) {
+      if (g.type === 'close' && gNear === null) gNear = g.gain
+    }
+    for (const g of edgeBank.updateGroans(1 / 60, [fakeZombie('walker', 8, 0)], { x: 0, z: 0 })) {
+      if (g.type === 'close' && gEdge === null) gEdge = g.gain
+    }
+  }
+  assert.ok(gNear !== null && gEdge !== null, 'close growl never fired for near/edge zombies')
+  assert.ok(gNear > gEdge, `point-blank gain ${gNear} not > edge gain ${gEdge}`)
+  nearBank.dispose()
+  edgeBank.dispose()
+}
+
 console.log('audio OK')

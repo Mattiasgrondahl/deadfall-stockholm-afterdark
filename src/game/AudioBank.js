@@ -15,6 +15,15 @@ import { SfxSamples } from './SfxSamples.js'
 // base gain at 0 m. Cutoff 30 m; at most 4 concurrent groan voices.
 const GROAN_CUTOFF = 30
 const GROAN_MAX_VOICES = 4
+// v4: Minecraft-style proximity dread. When the nearest live zombie closes
+// inside CLOSE_GROWL_RADIUS, a dedicated low "close growl" fires on a short
+// LCG cadence that speeds up and gets louder the closer the zombie gets — a
+// "something is right behind you" cue layered on top of the per-zombie ambient
+// groans above. Independent voice slot so it never starves the ambient groans.
+const CLOSE_GROWL_RADIUS = 9
+const CLOSE_GROWL_MIN = 2.2   // period (s) when the zombie is right on top
+const CLOSE_GROWL_MAX = 5.5   // period (s) at the edge of the dread radius
+const CLOSE_GROWL_GAIN = 0.55 // gain at point-blank (scaled by proximity)
 const GROAN_SPECS = {
   walker: { base: 2.5, voice: 0.5, gain: 0.35 },
   shambler: { base: 4.5, voice: 0.8, gain: 0.4 },
@@ -40,6 +49,11 @@ export class AudioBank {
     this._groanClock = 0
     this._groanVoices = [] // { at, p } per active groan voice (p = PannerNode, null headless)
     this._groanSeed = 4242
+    // v4 proximity-dread growl: separate LCG + next-fire clock so the close
+    // growl cadence is independent of the per-zombie ambient groans.
+    this._closeGrowlNextAt = 0
+    this._closeGrowlSeed = 777001
+    this._closeGrowlVoices = [] // { at, p } per active close growl (p = PannerNode) — freed on expiry
     // V4P-1a: LCG-scheduled wind gusts on the ambient bed. Bookkeeping is
     // pure (advances with the per-frame updateGroans tick); each gust fires
     // transient burst nodes only - the persistent bed stays fixed (10 nodes:
@@ -579,6 +593,12 @@ export class AudioBank {
     return this._gustSeed / 65537
   }
 
+  /** Seeded LCG in [0,1) for the proximity-dread close growl (independent). */
+  _closeGrowlRand() {
+    this._closeGrowlSeed = (Math.imul(this._closeGrowlSeed, 48271) >>> 0) % 65537
+    return this._closeGrowlSeed / 65537
+  }
+
   /** Number of groan voices currently sounding (for tests/budget checks). */
   activeGroans() {
     return this._groanVoices.length
@@ -728,6 +748,9 @@ export class AudioBank {
       this._set3([L.forward, ft], sy, 0, -cy)
       this._set3([L.position, pt], px, 1.7, pz)
     }
+    // v4 proximity dread: track the nearest live zombie for the close growl.
+    let minD = Infinity
+    let nearest = null
     for (const z of zombies) {
       if (z.isDead) { this._groanMap.delete(z); continue }
       const spec = GROAN_SPECS[z.type]
@@ -736,6 +759,7 @@ export class AudioBank {
       const dz = z.position.z - pz
       const d = Math.hypot(dx, dz)
       if (d >= GROAN_CUTOFF) { this._groanMap.delete(z); continue }
+      if (d < minD) { minD = d; nearest = z }
       let e = this._groanMap.get(z)
       if (!e) {
         e = { nextAt: t + this._groanRand() * spec.base }
@@ -748,6 +772,45 @@ export class AudioBank {
         this._groanVoices.push(entry)
         scheduled.push({ type: z.type, distance: d, gain })
         this._playGroanPanned(z.type, d, { x: z.position.x, z: z.position.z }, entry)
+      }
+    }
+    // v4 proximity dread: a dedicated close growl when the nearest live zombie
+    // is inside CLOSE_GROWL_RADIUS. The period shrinks and the gain rises as it
+    // closes (Minecraft-style "it's right behind you"), on its own LCG cadence
+    // so it layers over — never starves — the ambient groans above.
+    if (nearest && minD < CLOSE_GROWL_RADIUS) {
+      const prox = Math.max(0, 1 - minD / CLOSE_GROWL_RADIUS) // 0 at edge, 1 point-blank
+      if (t >= this._closeGrowlNextAt) {
+        const period = CLOSE_GROWL_MAX - (CLOSE_GROWL_MAX - CLOSE_GROWL_MIN) * prox
+        this._closeGrowlNextAt = t + period * (0.7 + 0.6 * this._closeGrowlRand())
+        const gain = CLOSE_GROWL_GAIN * (0.4 + 0.6 * prox)
+        const pos = { x: nearest.position.x, z: nearest.position.z }
+        // Route through a panner at the nearest zombie so the growl sits in 3D;
+        // track it so the node is disconnected when the voice expires (no leak).
+        const p = this._pannerAt(pos)
+        if (!this._playSfx('growl_close', { gain, dest: p })) {
+          // No sample yet (headless / not loaded): synthesize a low close snarl.
+          this._playFormant({ freq: 78, freqEnd: 58, f1: 300, f2: 820, duration: 0.5, gain, dest: p })
+          this._playNoise({ duration: 0.4, filterType: 'lowpass', filterFreq: 420, gain: gain * 0.5, dest: p })
+        }
+        this._closeGrowlVoices.push({ at: t + 0.6, p })
+        scheduled.push({ type: 'close', distance: minD, gain })
+      }
+    } else {
+      // No one close: keep the next-fire clock pinned near the present so the
+      // first close growl sounds promptly the moment a zombie enters the radius.
+      this._closeGrowlNextAt = Math.min(this._closeGrowlNextAt, t + CLOSE_GROWL_MAX)
+    }
+    // Expire finished close-growl voices and release their panners (swap-pop,
+    // no per-frame allocation), mirroring the ambient-groan voice cleanup above.
+    if (this._closeGrowlVoices.length) {
+      let ci = 0
+      while (ci < this._closeGrowlVoices.length) {
+        const e = this._closeGrowlVoices[ci]
+        if (e.at > t) { ci++; continue }
+        if (e.p && typeof e.p.disconnect === 'function') e.p.disconnect()
+        this._closeGrowlVoices[ci] = this._closeGrowlVoices[this._closeGrowlVoices.length - 1]
+        this._closeGrowlVoices.pop()
       }
     }
     // V4P-1a gust tick (piggybacks on this per-frame call): fire a gust when
@@ -1314,6 +1377,8 @@ export class AudioBank {
     this._groanMap = new Map()
     this._groanVoices = []
     this._groanClock = 0
+    this._closeGrowlVoices = []
+    this._closeGrowlNextAt = 0
     this._ambClock = 0
     this._gustNextAt = 2
     this._gustSrc = null
