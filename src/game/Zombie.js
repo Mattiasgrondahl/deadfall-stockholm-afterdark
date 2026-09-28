@@ -147,7 +147,30 @@ const POSE2 = {
 // night scene is dim, so a scene-lit face would still blend into the head; the
 // same texture is also set as emissiveMap (self-lit) so the face stays visible
 // wherever the zombie is.
-const FACE_GEO = new THREE.PlaneGeometry(0.26, 0.26)
+// v17: the face was a square PlaneGeometry(0.26,0.26) that showed the whole
+// square portrait (background corners visible around the head). The user wants
+// only the head shown, so the face is now a CIRCLE inscribed in the same square
+// (radius 0.13 keeps the same head width). A shared circular alphaMap + alphaTest
+// clips the corners so only the centered head reads (the portraits are head-
+// centered and fill the frame, per vision inspection).
+const FACE_GEO = new THREE.CircleGeometry(0.13, 24)
+// One shared round alpha mask: white disc (opaque) on black (transparent), so
+// alphaTest discards the square corners and keeps the head.
+const FACE_ALPHA = (() => {
+  if (typeof document === 'undefined') return null
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, 64, 64)
+  g.fillStyle = '#fff'
+  g.beginPath()
+  g.arc(32, 32, 32, 0, Math.PI * 2)
+  g.fill()
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.NoColorSpace
+  return t
+})()
 // v6 visuals (5): base colors mirror MAT2 exactly (see the MAT2 comment) so the
 // flat face blends with the lifted head color.
 const FACEMAT = {
@@ -431,6 +454,9 @@ function loadFaceTextures() {
         mat.emissiveMap = tex
         mat.emissive.set(0xffffff)
         mat.emissiveIntensity = 0.5
+        // v17: clip the square portrait to a round head — the circular alphaMap
+        // + alphaTest discard the corners so only the centered head shows.
+        if (FACE_ALPHA) { mat.alphaMap = FACE_ALPHA; mat.alphaTest = 0.5; mat.transparent = true }
         mat.needsUpdate = true
       }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type} variant ${i})`))
     }
@@ -441,6 +467,30 @@ function loadFaceTextures() {
 // colors). Each top/bottom pair is one file per outfit; .jpg is guaranteed by
 // tools/generate-outfit-textures.mjs. Nine archetypes, order matches OUTFITMATS.
 let outfitTexturesLoading = false
+// v17: per-instance outfit tint. All zombies of the same archetype shared one
+// material, so every lawyer looked identical. Now each zombie clones its
+// top/bottom/sleeve pair and applies a small deterministic hue+brightness shift
+// derived from its spawn LCG phase, so crowds read as varied clothing. The
+// clones are registered here so the async loadOutfitTextures() can hand them the
+// albedo map too (a clone made before the texture resolved would otherwise stay
+// flat). dispose() unregisters. Keyed by the clone itself.
+const OUTFIT_CLONES = new Set()
+// Deterministic tint: one LCG draw from the phase → a small HSL nudge around the
+// archetype's base color (±12° hue, ±12% lightness), clamped so outfits stay
+// recognizable. Reuses the standard LCG shape; no Math.random.
+function outfitTint(phase, mat) {
+  let s = Math.imul(Math.round(phase * 1000) ^ 0x9e3779b9, 48271) >>> 0
+  s = (s % 65537) / 65537
+  const hsl = {}
+  mat.color.getHSL(hsl)
+  const dh = (s - 0.5) * 0.066 // ±0.033 (~±12°)
+  const dl = (s - 0.5) * 0.24 // ±0.12 (~±12%)
+  mat.color.setHSL(
+    (hsl.h + dh + 1) % 1,
+    THREE.MathUtils.clamp(hsl.s * 0.92, 0, 1),
+    THREE.MathUtils.clamp(hsl.l + dl, 0.08, 0.92)
+  )
+}
 const OUTFIT_FILES = [
   'lawyer-top', 'lawyer-pants',
   'mailman-top', 'mailman-pants',
@@ -473,6 +523,15 @@ function loadOutfitTextures() {
         sleeve.color.set(0xffffff)
         sleeve.map = tex
         sleeve.needsUpdate = true
+        // v17: live per-instance clones must receive the same albedo. A clone
+        // keeps its tinted color (so the texture reads as a colored garment) but
+        // needs the map. Tagged clones are matched by archetype index + part.
+        for (const cl of OUTFIT_CLONES) {
+          if (cl._outfitIdx === i && cl._outfitPart === (j === 0 ? 'top' : 'bottom')) {
+            cl.map = tex
+            cl.needsUpdate = true
+          }
+        }
       }, () => console.warn(`outfit texture failed to load; keeping flat color (${file})`))
     }
   }
@@ -854,6 +913,12 @@ export class Zombie {
     // scale by HITBOX_SCALE (the two-sphere contract and the per-type radii
     // 0.45/0.3 stay exact for the three regular types).
     this.isBoss = type === 'brute'
+    // v17: the wave-10 boss is a GIANT — 5× larger than any other zombie (user
+    // request). Previously BOSS_SCALE only touched the hitbox + GLB roots, so a
+    // boss without a loaded GLB rendered at normal size. Now the visible
+    // primitive group carries the scale too, so the brute actually looks giant.
+    // Wave 10 is 5×; other boss waves keep the existing 5.6× hitbox contract.
+    this._bossScale = this.isBoss ? (wave === 10 ? 5 : BOSS_SCALE) : 1
     // Shotgun armor: the boss's hide shrugs off most buckshot (×0.4 per pellet),
     // so it needs ≥10 full blasts; every other type is unarmored (×1). The
     // pistol/axe/sword ignore this and apply full damage.
@@ -863,7 +928,7 @@ export class Zombie {
     // (×0.35) is barely moved — it cannot be staggered out of its charge.
     // 1 = normal stagger (walker/shambler).
     this.staggerResist = TABLE[type].staggerResist
-    this._hitboxScale = this.isBoss ? BOSS_SCALE : 1
+    this._hitboxScale = this._bossScale
     // Charge (boss only): when the player is within CHARGE_RANGE the brute
     // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
     this._chargeT = 0
@@ -934,9 +999,21 @@ export class Zombie {
     // variant pick (below) is unaffected.
     const outfit = Math.floor((((this._phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
     this._outfit = outfit
-    const topMat = OUTFITMATS.tops[outfit]
-    const bottomMat = OUTFITMATS.bottoms[outfit]
-    const sleeveMat = SLEEVE_MATS[outfit]
+    // v17: clone the archetype's top/bottom/sleeve pair and tint each clone by a
+    // deterministic per-spawn nudge, so two zombies in the same archetype read as
+    // different garments. The clones are registered so the async outfit-texture
+    // load can attach the albedo map to them too; dispose() unregisters + frees.
+    const topMat = OUTFITMATS.tops[outfit].clone()
+    const bottomMat = OUTFITMATS.bottoms[outfit].clone()
+    const sleeveMat = SLEEVE_MATS[outfit].clone()
+    topMat._outfitIdx = outfit; topMat._outfitPart = 'top'
+    bottomMat._outfitIdx = outfit; bottomMat._outfitPart = 'bottom'
+    sleeveMat._outfitIdx = outfit; sleeveMat._outfitPart = 'top'
+    outfitTint(this._phase, topMat)
+    outfitTint(this._phase + 1.7, bottomMat)
+    outfitTint(this._phase + 3.1, sleeveMat)
+    this._outfitMats = [topMat, bottomMat, sleeveMat]
+    OUTFIT_CLONES.add(topMat); OUTFIT_CLONES.add(bottomMat); OUTFIT_CLONES.add(sleeveMat)
     const parts = []
     const torso = new THREE.Mesh(GEO2.torso, topMat)
     torso.position.set(0, 1.2, 0)
@@ -1011,6 +1088,11 @@ export class Zombie {
       this._acc = prop
     }
     this.group.add(...parts)
+    // v17: giant-boss visual scale (see _bossScale). The group origin is the
+    // feet, so scaling grows the silhouette upward from the ground; position
+    // stays unscaled (position.copy of the feet point), so gameplay/hitboxes
+    // are unaffected. Wave-10 boss = 5×, other bosses = BOSS_SCALE, others = 1.
+    if (this._bossScale !== 1) this.group.scale.setScalar(this._bossScale)
     this.group.position.copy(this.position)
     scene.add(this.group)
     this._parts = parts
@@ -1888,6 +1970,17 @@ export class Zombie {
     if (this._meshRestMat) {
       this._meshRestMat.dispose()
       this._meshRestMat = null
+    }
+    // v17: unregister + dispose this zombie's per-instance outfit clones. The
+    // clones share the module-level weave normalMap + (once loaded) the archetype
+    // albedo texture, so dispose() frees only the clone's own program, never the
+    // shared textures — those are released by the FABRIC/SKIN refcounts below.
+    if (this._outfitMats) {
+      for (const m of this._outfitMats) {
+        OUTFIT_CLONES.delete(m)
+        m.dispose()
+      }
+      this._outfitMats = null
     }
     if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
       FABRIC_NORMAL.dispose()

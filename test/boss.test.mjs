@@ -119,7 +119,9 @@ test('brute visuals: own skin/eye/face materials, hulking pose', () => {
   // v6 visuals (11): arms wear the shared per-outfit SLEEVE materials (clones of
   // the outfit top) so they read as clothed, not bare brute skin.
   assert.equal(head.material, MAT2.brute)
-  assert.ok(SLEEVE_MATS.includes(zombie.group.children[2].material), 'brute arm is a shared sleeve material')
+  // v17: arms wear a per-instance clone of the outfit sleeve material (not the
+  // shared pool, not bare brute skin) so the brute reads as clothed.
+  assert.ok(!SLEEVE_MATS.includes(zombie.group.children[2].material) && zombie.group.children[2].material !== MAT2.brute, 'brute arm is a per-instance sleeve clone')
   assert.ok(FACEMAT.brute.includes(head.children[2].material))
   for (const eye of head.children.slice(0, 2)) assert.equal(eye.material, EYEMAT.brute)
   assert.ok(POSE2.brute.torsoS[0] > 1 && POSE2.brute.torsoS[2] > 1, 'torso wider than a walker')

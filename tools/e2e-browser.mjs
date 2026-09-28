@@ -58,6 +58,11 @@ try {
   const startBtn = await page.$('.screen.visible button.btn.primary')
   if (startBtn) await startBtn.click()
   out.startClicked = !!startBtn
+  // v17: START now plays a ~5 s intro movie that holds the run until it ends or
+  // is skipped. Skip it immediately (any key) so the gameplay checks below see
+  // a live PLAYING state instead of the intro overlay.
+  await page.waitForTimeout(300)
+  await page.keyboard.press('Space')
   await page.waitForTimeout(2500) // wave 1 spawns (~0.7 s cadence)
 
   // 4) Gameplay state

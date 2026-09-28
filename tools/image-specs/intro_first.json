@@ -1,0 +1,12 @@
+{
+  "kind": "image",
+  "name": "intro_first",
+  "prompt": "Cinematic horror game still, night. A lone undead zombie stands in the middle of a rain-slicked Stockholm alley, seen from BEHIND (back to the camera), a few metres away, full body visible. Tattered dark clothes, hunched posture, matted hair, faint moonlight rim on the shoulders, wet asphalt reflections, thin fog, cold blue tones, desaturated, moody. The zombie faces away into the dark alley, we see only its back. Photoreal, film grain, no text, no watermark.",
+  "alt_prompt": "zombie seen from behind standing in dark alley, back to camera, cinematic horror, photoreal, no text",
+  "seed": 20260928,
+  "resolution": "832x480",
+  "steps": 30,
+  "cfg": 4.0,
+  "loras": ["/home/mgr/Wan2GP/loras/z_image/mattias_1024_z_2.safetensors"],
+  "model_type": "z_image"
+}

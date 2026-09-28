@@ -201,6 +201,37 @@ export class Screens {
     // inside the centered panel.
     this._title.appendChild(board)
     this._root.appendChild(this._title)
+    // v17 INTRO MOVIE: a ~5 s clip that plays when the player starts a solo run
+    // — a zombie stands with its back to the camera, turns around and lunges at
+    // the lens (blood on its face). Browser-only like the rest of this file. It
+    // is a sibling overlay (its own .intro-overlay, above the title) with an
+    // UNMUTED autoplay <video>; the run is held until the clip ends or the
+    // player skips it with any click/key. Missing mp4 → the video errors, the
+    // 'error'/'ended' path fires and the run starts immediately (no broken box).
+    const intro = d.createElement('video')
+    intro.className = 'intro-video'
+    intro.autoplay = true
+    intro.playsInline = true
+    intro.preload = 'auto'
+    intro.src = `${bgUrl}assets/posters/intro.mp4`
+    this._introVideo = intro
+    const introBox = d.createElement('div')
+    introBox.className = 'intro-overlay'
+    introBox.appendChild(intro)
+    const introHint = d.createElement('div')
+    introHint.className = 'intro-hint'
+    introHint.textContent = 'click or press any key to skip'
+    introBox.appendChild(introHint)
+    this._intro = introBox
+    this._root.appendChild(introBox)
+    intro.addEventListener('ended', () => this._endIntro())
+    intro.addEventListener('error', () => this._endIntro())
+    // Any mouse button or key during the intro skips it. The click is caught on
+    // the overlay itself (it has pointer-events:auto); the key is caught on the
+    // document while the intro is active (a keydown targets the focused element /
+    // body, not the overlay div), added in _beginRun and removed in _endIntro.
+    this._introSkip = (ev) => { if (this._introActive) { ev.preventDefault(); this._endIntro() } }
+    introBox.addEventListener('pointerdown', this._introSkip)
 
     // PAUSE — clicking the overlay re-locks the pointer (or resumes directly
     // when the lock cannot be acquired) and resumes.
@@ -426,9 +457,11 @@ export class Screens {
   // pause it re-locks when possible and falls back to a direct resume when
   // the browser cannot grant the lock (headless, denied, or unsupported).
   _onKey(e) {
+    if (this._introActive) return // intro is playing; its own handler skips it
     if (e.key !== 'Enter') return
     const s = this._game.state
-    if (s === 'title' || s === 'gameover') this._game.startGame()
+    if (s === 'title') this._startSolo()
+    else if (s === 'gameover') this._game.startGame()
     else if (s === 'paused') this._resume()
   }
 
@@ -491,7 +524,38 @@ export class Screens {
   _startSolo() {
     const name = (this._nameInput && this._nameInput.value || '').trim()
     if (this._game.score && name) this._game.score.setName(name)
-    this._game.startGame()
+    // v17: play the intro movie first; the run begins when it ends or is skipped.
+    this._beginRun(() => this._game.startGame())
+  }
+
+  // v17 INTRO MOVIE: hold the run behind the intro clip. `_pendingStart` is the
+  // action to run once the intro finishes (skipped or played out). If the video
+  // is missing/unavailable the 'error'/'ended' path fires immediately, so the
+  // run still starts. Headless / no-<video> builds skip straight through.
+  _beginRun(startFn) {
+    this._pendingStart = startFn
+    const v = this._introVideo
+    if (!v || typeof v.play !== 'function') { this._pendingStart = null; startFn(); return }
+    this._introActive = true
+    this._intro.classList.add('visible')
+    // Catch any key on the document while the intro is up (keydown targets the
+    // focused element/body, not the overlay div). Removed in _endIntro.
+    if (this._doc.addEventListener) this._doc.addEventListener('keydown', this._introSkip)
+    try { v.currentTime = 0 } catch (e) { /* headless/no-src */ }
+    const p = v.play()
+    if (p && p.catch) p.catch(() => { /* autoplay blocked — skip straight in */ this._endIntro() })
+  }
+
+  _endIntro() {
+    if (!this._introActive) return
+    this._introActive = false
+    this._intro.classList.remove('visible')
+    if (this._doc.removeEventListener) this._doc.removeEventListener('keydown', this._introSkip)
+    const v = this._introVideo
+    if (v) { try { v.pause() } catch (e) { /* already stopped */ } }
+    const fn = this._pendingStart
+    this._pendingStart = null
+    if (fn) fn()
   }
 
   _hideAll() {
@@ -499,6 +563,7 @@ export class Screens {
     this._pause.classList.remove('visible')
     this._over.classList.remove('visible')
     this._settings.classList.remove('visible')
+    if (this._intro) this._intro.classList.remove('visible')
     this._banner.classList.remove('show')
     if (this._bannerTimer) { clearTimeout(this._bannerTimer); this._bannerTimer = 0 }
     if (this._game.hud) this._game.hud.hide()
@@ -688,6 +753,20 @@ export class Screens {
       try { this._titleVideo.load() } catch (e) { /* headless-safe */ }
       this._titleVideo = null
     }
+    // v17: stop + unload the intro clip the same way, and drop its skip listener.
+    if (this._introVideo) {
+      try { this._introVideo.pause() } catch (e) { /* headless-safe */ }
+      if (this._introVideo.removeAttribute) this._introVideo.removeAttribute('src')
+      else this._introVideo.src = ''
+      try { this._introVideo.load() } catch (e) { /* headless-safe */ }
+      this._introVideo = null
+    }
+    if (this._intro && this._introSkip) {
+      this._intro.removeEventListener('pointerdown', this._introSkip)
+      if (this._doc.removeEventListener) this._doc.removeEventListener('keydown', this._introSkip)
+    }
+    this._introActive = false
+    this._pendingStart = null
     while (this._root.firstChild) this._root.removeChild(this._root.firstChild)
   }
 }

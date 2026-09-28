@@ -143,18 +143,20 @@ test('shared geometry/materials; dispose detaches only the group', () => {
     if (i === 1) {
       assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
     } else if (i === 2 || i === 3) {
-      // v6 visuals (11): arms wear per-outfit SLEEVE materials (clones of the
-      // outfit top) so they read as clothed, not bare skin. Both spawns are
-      // walkers but pick different outfits, so per-part identity is NOT
-      // expected; membership in the shared sleeve pool is the guarantee.
-      assert.ok(SLEEVE_MATS.includes(ma), 'a arm is a shared sleeve material')
-      assert.ok(SLEEVE_MATS.includes(mb), 'b arm is a shared sleeve material')
+      // v17: arms wear a PER-INSTANCE clone of the outfit sleeve material (so two
+      // zombies in the same archetype read as different garments). The clone is
+      // NOT a member of the shared sleeve pool and NOT the bare skin material.
+      assert.ok(!SLEEVE_MATS.includes(ma) && ma !== MAT2.walker, 'a arm is a per-instance sleeve clone')
+      assert.ok(!SLEEVE_MATS.includes(mb) && mb !== MAT2.walker, 'b arm is a per-instance sleeve clone')
+      assert.equal(ma.isMeshStandardMaterial, true)
+      assert.equal(mb.isMeshStandardMaterial, true)
     } else if (i === 0) {
-      assert.ok(OUTFITMATS.tops.includes(ma), 'a torso is a shared top material')
-      assert.ok(OUTFITMATS.tops.includes(mb), 'b torso is a shared top material')
+      // v17: torso wears a per-instance clone of the archetype top material.
+      assert.ok(!OUTFITMATS.tops.includes(ma) && ma !== MAT2.walker, 'a torso is a per-instance top clone')
+      assert.ok(!OUTFITMATS.tops.includes(mb) && mb !== MAT2.walker, 'b torso is a per-instance top clone')
     } else {
-      assert.ok(OUTFITMATS.bottoms.includes(ma), 'a leg is a shared bottom material')
-      assert.ok(OUTFITMATS.bottoms.includes(mb), 'b leg is a shared bottom material')
+      assert.ok(!OUTFITMATS.bottoms.includes(ma) && ma !== MAT2.walker, 'a leg is a per-instance bottom clone')
+      assert.ok(!OUTFITMATS.bottoms.includes(mb) && mb !== MAT2.walker, 'b leg is a per-instance bottom clone')
     }
   }
   // Face: same type, different spawn positions -> possibly DIFFERENT shared
@@ -357,13 +359,16 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   assert.equal(c.getOutfit(), 8)
 
   for (const z of [a, b, c]) {
-    const o = z.getOutfit()
+    // v17: each zombie clones its archetype top/bottom/sleeve and tints them, so
+    // the parts wear the zombie's OWN clone materials (not the shared pool). The
+    // outfit INDEX is still deterministic; the clones are per-instance.
     const [torso, head, armL, armR, legL, legR] = z._parts
-    assert.equal(torso.material, OUTFITMATS.tops[o])
-    assert.equal(armL.material, SLEEVE_MATS[o]) // v6 visuals (11): arms wear the outfit sleeve twin
-    assert.equal(armR.material, SLEEVE_MATS[o])
-    assert.equal(legL.material, OUTFITMATS.bottoms[o])
-    assert.equal(legR.material, OUTFITMATS.bottoms[o])
+    const [topC, bottomC, sleeveC] = z._outfitMats
+    assert.equal(torso.material, topC)
+    assert.equal(armL.material, sleeveC) // arms wear the sleeve clone twin
+    assert.equal(armR.material, sleeveC)
+    assert.equal(legL.material, bottomC)
+    assert.equal(legR.material, bottomC)
     assert.equal(head.material, MAT2[z.type]) // head keeps the type skin color
     for (let i = 0; i < z._parts.length; i++) assert.equal(z._restMats[i], z._parts[i].material)
   }
@@ -372,11 +377,11 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   a.damage(5, null)
   for (const p of a._parts) assert.equal(p.material, HITMAT)
   a.update(0.2, null, [], null, null)
-  assert.equal(a._parts[0].material, OUTFITMATS.tops[1])
+  assert.equal(a._parts[0].material, a._outfitMats[0])
   assert.equal(a._parts[1].material, MAT2.walker)
-  assert.equal(a._parts[2].material, SLEEVE_MATS[1]) // sleeve restored, not bare skin
-  assert.equal(a._parts[3].material, SLEEVE_MATS[1])
-  assert.equal(a._parts[4].material, OUTFITMATS.bottoms[1])
+  assert.equal(a._parts[2].material, a._outfitMats[2]) // sleeve restored, not bare skin
+  assert.equal(a._parts[3].material, a._outfitMats[2])
+  assert.equal(a._parts[4].material, a._outfitMats[1])
 
   // Death behavior unchanged: every part (including clothing) -> DEADMAT
   b.damage(200, null)

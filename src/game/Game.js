@@ -47,13 +47,13 @@ export const LEVEL_TRACKS = [
 // forever). The player can skip ahead with the B key. Per-track known lengths
 // drive the rotation (each song advances at its own end, no same-track loop).
 export const SONG_PLAYLIST = [
+  ASSET_BASE + 'assets/audio/song_doden_sv.mp3',
+  ASSET_BASE + 'assets/audio/song_nightfall_en.mp3',
   ASSET_BASE + 'assets/audio/song_hord_en.mp3',
   ASSET_BASE + 'assets/audio/song_matsubou_ja.mp3',
-  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3',
-  ASSET_BASE + 'assets/audio/song_doden_sv.mp3',
-  ASSET_BASE + 'assets/audio/song_nightfall_en.mp3'
+  ASSET_BASE + 'assets/audio/song_javelin_sv.mp3'
 ]
-export const SONG_PLAYLIST_SECONDS = [71, 86, 180, 80, 193]
+export const SONG_PLAYLIST_SECONDS = [80, 193, 71, 86, 180]
 // v3 boss fight: a dedicated mystical / slow / scary track (Wan2GP
 // tools/audio-specs/df_boss.json) that replaces the mp3 playlist for the
 // duration of a boss fight, then the playlist resumes.
