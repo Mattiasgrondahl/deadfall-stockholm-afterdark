@@ -69,7 +69,10 @@ export class Pistol {
     // View model: slide, frame, barrel, grip — camera-attached.
     this.view = new THREE.Group()
     this.view.position.set(0.2, -0.24, -0.55)
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2e3033, roughness: 0.5, metalness: 0.6 })
+    // v6 look (weapons): the AI-generated pistol.jpg photo skin read as a flat
+    // decal and clashed with the night palette, so the skin is dropped entirely
+    // and the slide/frame is a flat DARK GUNMETAL metal instead.
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.42, metalness: 0.85 })
     const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a5157, roughness: 0.4, metalness: 0.7 })
     // Receiver: one box spanning the slide + frame (kept to a single mesh so the
     // scene stays inside the 600-mesh budget with the sniper as a fifth weapon).
@@ -116,10 +119,11 @@ export class Pistol {
     this._loadSkin()
   }
 
-  // Browser-only: load the pistol skin onto the slide/frame material. Headless
-  // keeps the flat dark color. Color flips to white so the map renders at true
-  // color (MeshStandardMaterial multiplies map by color). Mirrors Sniper._loadSkin.
+  // v6 look (weapons): no-op. The photo skin is dropped — the body material is
+  // flat dark gunmetal metal now, so no texture is ever loaded onto _skinMat.
+  // The method and its headless guard stay so callers and dispose() are unchanged.
   _loadSkin() {
+    return // weapon skins switched to flat dark gunmetal; photo overlay dropped
     if (typeof document === 'undefined') return
     const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
       ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''

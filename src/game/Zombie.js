@@ -1173,10 +1173,12 @@ export class Zombie {
     let body = null
     root.traverse((o) => { if (o.isMesh && !body) body = o })
     if (!body) return
-    // Scale to this zombie's silhouette height (same rule as _attachSkin). The
-    // GLB already encodes each type's distinct width/depth, so the scale is
-    // UNIFORM — applying SKIN_WIDTH here would double the silhouette variance.
-    const h = this._skinHeight()
+    // Scale to a fixed humanoid height. The mesh already encodes each type's
+    // distinct width/depth, so the scale is UNIFORM. Do NOT use _skinHeight()
+    // here: that inflates by the POSE2 head scale (screamer/brute have oversized
+    // heads), which would stretch the whole body ~15% too tall. The head is a
+    // separate primitive scaled by POSE2, so the body stays a clean 1.8 m.
+    const h = 1.8
     const bb = new THREE.Box3().setFromObject(body)
     const dim = bb.getSize(new THREE.Vector3())
     const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? BOSS_SCALE : 1) : 1

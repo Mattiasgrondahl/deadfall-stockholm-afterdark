@@ -66,7 +66,10 @@ export class Sniper {
     // weapon keeps the whole scene inside the 600-mesh budget.
     this.view = new THREE.Group()
     this.view.position.set(0.22, -0.22, -0.6)
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.7, metalness: 0.1 })
+    // v6 look (weapons): the AI sniper.jpg photo skin read as a flat decal, so it
+    // is dropped and the stock/receiver is flat DARK GUNMETAL metal (the wood
+    // look is gone; the variable name stays `woodMat` to avoid touching refs).
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.45, metalness: 0.8 })
     // Receiver/stock box carries the rifle skin (loaded in the browser).
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.9), woodMat)
     stock.position.set(0, 0, -0.2)
@@ -105,10 +108,11 @@ export class Sniper {
     this._loadSkin()
   }
 
-  // Browser-only: load the rifle skin onto the stock material. Headless keeps
-  // the flat wood color. Color flips to white so the map renders at true color
-  // (MeshStandardMaterial multiplies map by color).
+  // v6 look (weapons): no-op. The photo skin is dropped — the stock material is
+  // flat dark gunmetal metal now, so no texture is ever loaded onto _skinMat.
+  // The method and its headless guard stay so callers and dispose() are unchanged.
   _loadSkin() {
+    return // weapon skins switched to flat dark gunmetal; photo overlay dropped
     if (typeof document === 'undefined') return
     const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
       ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''

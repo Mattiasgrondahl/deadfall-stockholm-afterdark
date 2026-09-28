@@ -92,15 +92,13 @@ export class Axe {
     // axe-head image loads, replace the head's wide faces (+z/-z; box face
     // order is +x -x +y -y +z -z) with a textured material. Flat steel
     // remains in Node/headless and if the file is missing.
-    if (typeof document !== 'undefined') {
-      new THREE.TextureLoader().load(ASSET_BASE + 'assets/weapons/axe.jpg', (tex) => {
-        if (!this.camera.children.includes(this.view)) return // disposed in flight
-        tex.colorSpace = THREE.SRGBColorSpace
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, roughness: 0.45, metalness: 0.55 })
-        this._head.material = [steelMat, steelMat, steelMat, steelMat, mat, mat]
-        this._texMat = mat
-      })
-    }
+    // v6 look (weapons): the AI axe.jpg photo skin is dropped — it read as a flat
+    // decal over the head, so the head keeps its flat steelMat look instead. The
+    // TextureLoader block that built a white+map material and swapped it onto the
+    // head's wide faces is gone; `steelMat` stays the head's only material.
+    // dispose() still guards `mat.map`, which is null-safe because no textured
+    // material is ever assigned. The jpg stays in public/assets/weapons/ for the
+    // asset tooling that references it.
   }
 
   /** Per frame: cooldown recovery, phased slash animation, fire input edge.

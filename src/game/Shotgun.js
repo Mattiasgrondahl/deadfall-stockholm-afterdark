@@ -75,7 +75,9 @@ export class Shotgun {
     // View model: receiver, barrel, pump, stock — camera-attached.
     this.view = new THREE.Group()
     this.view.position.set(0.26, -0.26, -0.55)
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a3328, roughness: 0.7, metalness: 0.3 })
+    // v6 look (weapons): the AI shotgun.jpg photo skin read as a flat decal, so it
+    // is dropped and the receiver/pump/stock are flat DARK GUNMETAL metal.
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x212429, roughness: 0.45, metalness: 0.8 })
     const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a5157, roughness: 0.4, metalness: 0.7 })
     const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.09, 0.34), bodyMat)
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.3, 8), steelMat)
@@ -119,10 +121,11 @@ export class Shotgun {
     this._loadSkin()
   }
 
-  // Browser-only: load the shotgun skin onto the receiver/pump/stock material.
-  // Headless keeps the flat color. Color flips to white so the map renders at
-  // true color. Mirrors Sniper._loadSkin.
+  // v6 look (weapons): no-op. The photo skin is dropped — the body material is
+  // flat dark gunmetal metal now, so no texture is ever loaded onto _skinMat.
+  // The method and its headless guard stay so callers and dispose() are unchanged.
   _loadSkin() {
+    return // weapon skins switched to flat dark gunmetal; photo overlay dropped
     if (typeof document === 'undefined') return
     const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
       ? (import.meta.env.BASE_URL.replace(/\/$/, '') + '/') : ''
