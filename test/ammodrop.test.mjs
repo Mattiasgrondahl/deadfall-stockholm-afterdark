@@ -17,7 +17,7 @@ test('constants match the contract', () => {
   assert.equal(SHELLS_PER_DROP, 8)
   assert.equal(BULLETS_PER_DROP, 18)
   assert.equal(BULLET_CHANCE, 0.5)
-  assert.equal(PICKUP_RADIUS, 1.2)
+  assert.equal(PICKUP_RADIUS, 2.2)
   assert.equal(LIFETIME, 30)
   assert.equal(BLINK_AFTER, 25)
   assert.equal(MAX_DROPS, 20)
@@ -120,7 +120,7 @@ test('lifetime: expires at 30 s; blinks after 25 s', () => {
   drops.dispose()
 })
 
-test('pickup within 1.2 m fires onPickup once and removes the drop', () => {
+test('pickup within 2.2 m fires onPickup once and removes the drop', () => {
   const { drops } = makeManager()
   drops._rand = () => 0
   drops.maybeSpawn(5, 5)
@@ -129,11 +129,15 @@ test('pickup within 1.2 m fires onPickup once and removes the drop', () => {
   assert.equal(pickups, 1)
   assert.equal(drops.count, 0)
   drops.maybeSpawn(5, 5)
-  drops.update(0.1, fakePlayer(7, 5), () => pickups++) // 2 m away: no pickup
-  assert.equal(pickups, 1)
+  drops.update(0.1, fakePlayer(7, 5), () => pickups++) // 2 m away: within 2.2 m now picks up
+  assert.equal(pickups, 2)
+  assert.equal(drops.count, 0)
+  drops.maybeSpawn(5, 5)
+  drops.update(0.1, fakePlayer(8, 5), () => pickups++) // 3 m away: beyond 2.2 m, no pickup
+  assert.equal(pickups, 2)
   assert.equal(drops.count, 1)
   drops.update(0.1, fakePlayer(5, 5, true), () => pickups++) // dead player never picks up
-  assert.equal(pickups, 1)
+  assert.equal(pickups, 2)
   drops.dispose()
 })
 

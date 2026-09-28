@@ -3,7 +3,7 @@ import * as THREE from 'three'
 // AmmoDrops — manages ammo drops left by killed zombies. A seeded-LCG roll
 // (~55%) spawns a drop at the corpse on each kill; the drop is either shotgun
 // SHELLS or handgun BULLETS (18/drop) (a second LCG roll picks the kind). The
-// player picks one up within 1.2 m to restock the matching weapon's reserve.
+// player picks one up within 2.2 m to restock the matching weapon's reserve.
 // Drops blink in their last 5 s, expire at 30 s, and are capped at 20
 // concurrent. All RNG is a seeded LCG (no Math.random); headless-safe (no DOM,
 // audio optional).
@@ -19,7 +19,13 @@ export const DROP_CHANCE = 0.55
 export const SHELLS_PER_DROP = 8
 export const BULLETS_PER_DROP = 18
 export const BULLET_CHANCE = 0.5 // of drops, share that are handgun bullets (else shells)
-export const PICKUP_RADIUS = 1.2
+// Pickup radius. v20: raised 1.2 -> 2.2 m. The 0.16 m drop box is tiny and hard
+// to spot on dark wet asphalt, and a drop lands where the zombie fell — often
+// just off the player's path or against a wall. At 1.2 m a player walking past
+// brushed within ~1.5 m and the drop was silently missed ("dropped ammo is not
+// picked up"). 2.2 m is a forgiving vacuum radius so walking near a drop grabs
+// it, while still requiring the player to actually route to the corpse.
+export const PICKUP_RADIUS = 2.2
 export const LIFETIME = 30
 export const BLINK_AFTER = 25
 export const MAX_DROPS = 20

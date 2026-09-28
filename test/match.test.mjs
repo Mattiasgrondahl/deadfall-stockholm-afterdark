@@ -198,7 +198,7 @@ test('ammo drops: nearest player picks up; ties go to roster order', () => {
     m.drops._drops.push(d)
   }
   place(12.5) // 0.5 m from both -> roster order (A first)
-  place(13.5) // 0.5 m from B, 1.5 m from A -> only B in range
+  place(14.5) // 2.5 m from A (out of 2.2 m range), 1.5 m from B -> only B in range
   const rA0 = a.reserve, rB0 = b.reserve
   m.step(DT)
   assert.equal(m.drops.count, 0, 'both drops consumed in one frame')
