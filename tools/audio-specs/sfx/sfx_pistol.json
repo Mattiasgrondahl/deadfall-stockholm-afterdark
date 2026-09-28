@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_pistol",
+  "duration_seconds": 2,
+  "prompt": "A single pistol gunshot: crisp sharp crack with a short dry tail, close-mic, no reverb, one shot only.",
+  "seed": 2275
+}

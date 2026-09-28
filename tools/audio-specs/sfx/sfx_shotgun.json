@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_shotgun",
+  "duration_seconds": 3,
+  "prompt": "A single heavy shotgun blast: sharp crack of a muzzle report, deep booming low-end thump, short rolling rumble tail, close-mic dry recording, no reverb, single shot only.",
+  "seed": 1496
+}

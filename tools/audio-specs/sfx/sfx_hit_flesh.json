@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_hit_flesh",
+  "duration_seconds": 1,
+  "prompt": "A bullet impact hitting flesh: a short dull wet thud slap, close-mic dry, single impact.",
+  "seed": 3506
+}

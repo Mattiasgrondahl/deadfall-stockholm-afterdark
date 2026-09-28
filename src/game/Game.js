@@ -381,6 +381,12 @@ export class Game {
     // WIRING:AUDIO
     this.audio = new AudioBank()
     this.audio.attachSettings(this.settings)
+    // v4 SFX: preload the generated Stable-Audio-3 one-shot samples (gunshots,
+    // reload, dry-fire, zombie growls/death, impacts, pickup, melee swing) so the
+    // bank plays real recordings instead of the synthesized voices. Base URL is
+    // the same ASSET_BASE the soundtrack uses; the bank no-ops headless and falls
+    // back to its procedural voices until (or if) a sample fails to load.
+    if (this.audio) this.audio.loadSfx(ASSET_BASE)
     // WIRING:MUSIC (procedural soundtrack): all track selection lives in
     // MusicDirector — Game only forwards state/wave/tension events.
     if (this.audio) this.musicDirector = new MusicDirector(this.audio, { bossEvery: 5 })

@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_pickup",
+  "duration_seconds": 1,
+  "prompt": "A video game item pickup blip: a short bright clean synthetic confirmation chime, one short blip.",
+  "seed": 3616
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_reload",
+  "duration_seconds": 2,
+  "prompt": "A firearm reload: metallic slide rack and magazine click-clack mechanical foley, dry close-mic, no reverb.",
+  "seed": 9791
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_melee_swing",
+  "duration_seconds": 1,
+  "prompt": "A melee weapon whoosh: a fast swishing air swing whoosh, single short swing, dry.",
+  "seed": 7404
+}

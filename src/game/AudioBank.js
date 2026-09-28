@@ -9,6 +9,7 @@
 // plus one-shot voices: axeSwing, pickup, drop, flashlightClick, weaponSwitch.
 
 import { MusicEngine } from './MusicEngine.js'
+import { SfxSamples } from './SfxSamples.js'
 
 // Groan scheduler constants: per-type base period (s), voice length (s),
 // base gain at 0 m. Cutoff 30 m; at most 4 concurrent groan voices.
@@ -29,6 +30,10 @@ export class AudioBank {
     this._ambientOn = false
     this._ambientNodes = null
     this._noiseBuffer = null
+    // v4 SFX: file-based one-shot samples (generated Stable-Audio-3 WAVs). Built
+    // lazily in loadSfx(); null until then and headless, so every voice falls
+    // back to its procedural synthesis.
+    this._sfx = null
     // Groan scheduler state (V8). The scheduler is pure bookkeeping, so it
     // works headless; only the voice firing is gated on ctx.
     this._groanMap = new Map() // zombie -> { nextAt }
@@ -163,6 +168,28 @@ export class AudioBank {
     return this._masterIn || this.master
   }
 
+  /** v4 SFX: build the file-based sample bank and start decoding the generated
+   *  Stable-Audio-3 one-shots. `base` is the asset URL prefix (Vite BASE_URL +
+   *  '/'), matching how the soundtrack resolves its mp3s. No-op headless (no
+   *  AudioContext). Safe to call once at wiring time; the voices fall back to
+   *  their procedural synthesis until each buffer finishes decoding. */
+  loadSfx(base = '') {
+    if (!this.ctx) return
+    if (!this._sfx) this._sfx = new SfxSamples(this.ctx, base)
+    this._sfx.load()
+  }
+
+  /** v4 SFX: play a generated one-shot through the fx bus (or a panner dest).
+   *  Returns true if a decoded sample played, false if the caller should run its
+   *  procedural fallback. `opts` mirrors _playNoise/_playTone ({ gain, when,
+   *  dest, rate }). */
+  _playSfx(name, opts = {}) {
+    if (!this._sfx) return false
+    const o = Object.assign({}, opts)
+    if (!o.dest) o.dest = this._fxDest()
+    return this._sfx.play(name, o)
+  }
+
   /** Attach a Settings instance: volumes/mutes follow it live, and the stored
    *  state is applied immediately. Headless-safe (no ctx -> gains just record). */
   attachSettings(settings) {
@@ -248,6 +275,9 @@ export class AudioBank {
   shoot() {
     if (!this.ctx) return
     this._resume()
+    // v4 SFX: play the generated shotgun blast when it has decoded; fall back to
+    // the synthesized blast otherwise (headless / not-yet-loaded / fetch failure).
+    if (this._playSfx('shotgun', { gain: 0.9 })) return
     // Shotgun blast — big-bore, explosive, LOUD, and now grittier. A fast-attack
     // noise burst is run through a WaveShaper for a hard clip (the powder crack),
     // a second lowpassed body layer gives the heavy boom, two sub-bass sines
@@ -294,6 +324,7 @@ export class AudioBank {
   hitZombie() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('hit_flesh', { gain: 0.5 })) return
     this._playTone({ type: 'triangle', freq: 90, duration: 0.10, gain: 0.4 })
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.15 })
   }
@@ -339,6 +370,7 @@ export class AudioBank {
   reload() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('reload', { gain: 0.7 })) return
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.3, when: 0 })
     this._playNoise({ duration: 0.03, filterType: 'highpass', filterFreq: 2000, gain: 0.3, when: 0.15 })
   }
@@ -348,6 +380,7 @@ export class AudioBank {
   sniperShot() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('sniper', { gain: 0.85 })) return
     this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 3200, gain: 0.5 })
     this._playTone({ type: 'sine', freq: 160, freqEnd: 55, duration: 0.22, gain: 0.4 })
     this._playNoise({ duration: 0.18, filterType: 'bandpass', filterFreq: 800, gain: 0.12, when: 0.03 })
@@ -364,6 +397,7 @@ export class AudioBank {
   playDeath() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('zombie_death', { gain: 0.6 })) return
     this._playTone({ type: 'sine', freq: 120, freqEnd: 60, duration: 0.60, gain: 0.4 })
   }
 
@@ -376,6 +410,7 @@ export class AudioBank {
   axeSwing() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('melee_swing', { gain: 0.6 })) return
     // Air displacement: broad low whoosh, then a weighty low thud on the strike.
     this._playNoise({ duration: 0.16, filterType: 'lowpass', filterFreq: 600, gain: 0.34 })
     this._playTone({ type: 'sine', freq: 120, freqEnd: 55, duration: 0.16, gain: 0.28, when: 0.06 })
@@ -387,6 +422,7 @@ export class AudioBank {
   pistolShot() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('pistol', { gain: 0.8 })) return
     this._playNoise({ duration: 0.05, filterType: 'highpass', filterFreq: 900, gain: 0.4 })
     this._playTone({ type: 'sine', freq: 900, freqEnd: 300, duration: 0.07, gain: 0.2 })
   }
@@ -396,6 +432,7 @@ export class AudioBank {
   swordSwing() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('melee_swing', { gain: 0.55, rate: 1.15 })) return
     // Fast high whoosh (bandpassed air) then a brief metallic ring partial.
     this._playNoise({ duration: 0.14, filterType: 'bandpass', filterFreq: 2600, gain: 0.32 })
     this._playTone({ type: 'triangle', freq: 1500, freqEnd: 900, duration: 0.12, gain: 0.16, when: 0.04 })
@@ -406,6 +443,7 @@ export class AudioBank {
   pickup() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('pickup', { gain: 0.6 })) return
     this._playTone({ type: 'sine', freq: 660, freqEnd: 880, duration: 0.12, gain: 0.25 })
     this._playTone({ type: 'sine', freq: 880, freqEnd: 1100, duration: 0.10, gain: 0.18, when: 0.08 })
   }
@@ -461,6 +499,7 @@ export class AudioBank {
   dryFire() {
     if (!this.ctx) return
     this._resume()
+    if (this._playSfx('dryfire', { gain: 0.6 })) return
     this._playNoise({ duration: 0.02, filterType: 'highpass', filterFreq: 2500, gain: 0.25 })
     this._playTone({ type: 'sine', freq: 900, duration: 0.03, gain: 0.15, when: 0.01 })
   }
@@ -557,6 +596,11 @@ export class AudioBank {
     const gain = spec.gain * fall
     if (gain <= 0.001) return
     this._resume()
+    // v4 SFX: walker + brute use a generated growl (distance-scaled via `gain`);
+    // screamer/shambler keep the synthesized voice. Fall back to synthesis when
+    // the sample has not decoded yet.
+    if (type === 'walker' && this._playSfx('growl_walker', { gain: Math.min(0.7, gain) })) return
+    if (type === 'brute' && this._playSfx('growl_brute', { gain: Math.min(0.7, gain) })) return
     if (type === 'screamer') {
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain })
     } else if (type === 'brute') {
@@ -1280,6 +1324,7 @@ export class AudioBank {
     this._tensionTarget = 0
     this._tensionCur = 0
     this.shaper = null
+    if (this._sfx) { this._sfx.dispose(); this._sfx = null }
     if (this.ctx) {
       try { this.ctx.close() } catch (err) {}
       this.ctx = null

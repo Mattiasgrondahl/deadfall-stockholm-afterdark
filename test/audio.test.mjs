@@ -5,6 +5,7 @@
 // sandbox has no browser.
 import assert from 'node:assert'
 import { AudioBank } from '../src/game/AudioBank.js'
+import { SfxSamples, SFX_NAMES } from '../src/game/SfxSamples.js'
 
 // Minimal zombie stand-in: the groan scheduler only reads type, position.x/z,
 // isDead — no real Zombie instance needed.
@@ -765,6 +766,62 @@ function bankWithFakeCtx() {
   bank2.dispose()
   assert.strictEqual(bank2._tensionOn, false, 'dispose stopped the tension bed')
   assert.strictEqual(bank2._tensionNodes, null)
+}
+
+// ---- v4 SFX: file-based one-shot samples ---------------------------------
+{
+  // Headless loadSfx is a no-op (no AudioContext) and never throws; _playSfx
+  // returns false so every voice falls back to its procedural synthesis.
+  const bank = new AudioBank()
+  bank.loadSfx('assets/')
+  assert.strictEqual(bank._sfx, null, 'no SfxSamples built without an AudioContext')
+  assert.strictEqual(bank._playSfx('shotgun'), false, 'no sample -> procedural fallback')
+  bank.dispose()
+}
+{
+  // With a fake context, loadSfx builds the bank; before any buffer decodes,
+  // _playSfx returns false and shoot() still runs its synthesized voice.
+  const bank = bankWithFakeCtx()
+  bank.loadSfx('assets/')
+  assert.ok(bank._sfx instanceof SfxSamples, 'loadSfx builds the sample bank')
+  assert.strictEqual(bank._playSfx('shotgun'), false, 'not-yet-decoded -> false')
+  const before = bank.ctx._created.length
+  bank.shoot()
+  assert.ok(bank.ctx._created.length - before >= 5, 'falls back to the procedural shotgun')
+  bank.dispose()
+  assert.strictEqual(bank._sfx, null, 'dispose releases the sample bank')
+}
+{
+  // SfxSamples.play: with a decoded buffer present it routes a buffer-source +
+  // gain to the destination and returns true; a missing name returns false.
+  const ctx = makeFakeAudioContext()
+  const sfx = new SfxSamples(ctx, 'assets/')
+  const buf = { duration: 0.5, getChannelData: () => new Float32Array(8) }
+  sfx.buffers.set('shotgun', buf)
+  const before = ctx._created.length
+  assert.strictEqual(sfx.play('shotgun', { gain: 0.9 }), true, 'plays a decoded buffer')
+  const src = ctx._created.slice(before).find(n => n.name === 'src')
+  assert.ok(src && src.buffer === buf, 'buffer source carries the sample')
+  assert.strictEqual(src.started, true, 'source started')
+  assert.strictEqual(sfx.play('missing'), false, 'unknown name -> false')
+  sfx.dispose()
+  assert.strictEqual(sfx.has('shotgun'), false, 'dispose clears the cache')
+}
+{
+  // AudioBank plays a decoded sample through the fx bus and skips the procedural
+  // voice; the SFX_NAMES list is non-empty and every name maps to a wav path.
+  const bank = bankWithFakeCtx()
+  bank.loadSfx('assets/')
+  bank._sfx.buffers.set('shotgun', { duration: 0.5, getChannelData: () => new Float32Array(8) })
+  const before = bank.ctx._created.length
+  assert.strictEqual(bank._playSfx('shotgun', { gain: 0.9 }), true)
+  // Only a buffer-source + gain are created (no oscillator layers) -> the
+  // synthesized blast was skipped.
+  const created = bank.ctx._created.slice(before)
+  assert.ok(created.some(n => n.name === 'src' && n.buffer), 'sample routed as a buffer source')
+  assert.ok(!created.some(n => n.name === 'osc'), 'procedural oscillators skipped')
+  assert.ok(SFX_NAMES.length >= 8, 'SFX_NAMES populated')
+  bank.dispose()
 }
 
 console.log('audio OK')

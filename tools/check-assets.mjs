@@ -65,6 +65,13 @@ if (meshBlock) for (const m of meshBlock[0].matchAll(/'([^']+)'/g)) addRef(`asse
 for (const m of zombieSrc.matchAll(/'([a-z0-9-]+)-(top|pants|skirt)'/g)) addRef(`assets/outfits/${m[1]}-${m[2]}.jpg`, 'src/game/Zombie.js (outfits)')
 // v3 T7: moon texture (loaded via ASSET_BASE + 'assets/sky/moon.jpg' in sky.js).
 addRef('assets/sky/moon.jpg', 'src/world/sky.js (moon)')
+// v4 SFX: generated one-shot samples. SfxSamples.js builds each path as
+// SFX_BASE + 'sfx_<name>.wav', so the literal has no 'assets/' prefix and the
+// ASSET_RE above misses it — pin them explicitly from the SFX_FILES map so a
+// renamed/removed sample still trips the check.
+const sfxSrc = read('src/game/SfxSamples.js') || ''
+const sfxBase = (sfxSrc.match(/const SFX_BASE = '([^']+)'/) || [])[1] || 'assets/audio/sfx/'
+for (const m of sfxSrc.matchAll(/'((?:sfx_[\w-]+)\.wav)'/g)) addRef(sfxBase + m[1], 'src/game/SfxSamples.js (SFX)')
 
 // ---- Known audio lengths from Game.js -------------------------------------
 const gameSrc = read('src/game/Game.js') || ''
