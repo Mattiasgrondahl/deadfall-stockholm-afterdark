@@ -24,6 +24,7 @@ const SFX_FILES = {
   growl_walker: SFX_BASE + 'sfx_growl_walker.wav',
   growl_brute: SFX_BASE + 'sfx_growl_brute.wav',
   growl_close: SFX_BASE + 'sfx_growl_close.wav',
+  screamer_scream: SFX_BASE + 'sfx_screamer_scream.wav',
   zombie_death: SFX_BASE + 'sfx_zombie_death.wav',
   hit_flesh: SFX_BASE + 'sfx_hit_flesh.wav',
   pickup: SFX_BASE + 'sfx_pickup.wav',

@@ -287,8 +287,8 @@ test('A2: hit-flash + death repaint the body mesh, then restore; dispose reverse
   assert.equal(z._skinMesh.body.material, HITMAT, 'hit flash repaints the body mesh')
   for (let i = 0; i < 12; i++) z.update(1 / 60, fakePlayer(0, 0), [z], { resolve() {}, aabbs: [] }, null)
   assert.equal(z._skinMesh.body.material, rest, 'flash recovers to the rest material')
-  // Death greys the body like the primitive corpse.
-  z.damage(9999)
+  // Death greys the body like the primitive corpse (boss hp is 14000 at wave 1).
+  z.damage(99999)
   assert.ok(z.isDead)
   assert.equal(z._skinMesh.body.material, DEADMAT, 'death repaints the body mesh')
   // dispose detaches the clone + disposes the owned material, leaving the shared

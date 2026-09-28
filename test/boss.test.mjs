@@ -95,11 +95,11 @@ function makeWave() {
 
 // ---- stats ---------------------------------------------------------------
 
-test('brute stats: tanky boss hp, shotgun armor, slow shamble, heavy melee, long cooldown', () => {
-  assert.deepEqual(TABLE.brute, { speed: 0.7, hp: 5200, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 })
+test('brute stats: tanky boss hp (10x), shotgun armor, walker-pace seek, heavy melee, long cooldown', () => {
+  assert.deepEqual(TABLE.brute, { speed: 1.5, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 })
   const { zombie } = makeZombie('brute', 0, 0, 1)
-  assert.equal(zombie.maxHealth, 5200)
-  assert.equal(zombie.speed, 0.7)
+  assert.equal(zombie.maxHealth, 14000)
+  assert.equal(zombie.speed, 1.5)
   assert.equal(zombie.isBoss, true)
   assert.equal(zombie.shotgunArmor, 0.4)
   const { zombie: w } = makeZombie('walker', 0, 0, 1)
@@ -107,9 +107,9 @@ test('brute stats: tanky boss hp, shotgun armor, slow shamble, heavy melee, long
   assert.equal(w.shotgunArmor, 1)
 })
 
-test('brute wave scaling uses the same 1.12^wave curve', () => {
+test('brute wave scaling uses the same 1.12^wave curve, then the 10x boss multiplier', () => {
   const { zombie } = makeZombie('brute', 0, 0, 5)
-  assert.equal(zombie.maxHealth, Math.round(5200 * Math.pow(1.12, 4)))
+  assert.equal(zombie.maxHealth, Math.round(1400 * Math.pow(1.12, 4)) * 10)
 })
 
 test('brute visuals: own skin/eye/face materials, hulking pose', () => {
@@ -128,14 +128,14 @@ test('brute visuals: own skin/eye/face materials, hulking pose', () => {
   assert.equal(zombie.group.children[1].position.y, 1.8)
 })
 
-test('brute hitboxes: same two-sphere contract, 2.8x radii', () => {
+test('brute hitboxes: same two-sphere contract, 5.6x radii', () => {
   const { zombie } = makeZombie('brute', 2, 4, 5)
   const hb = zombie.getHitboxes()
   assert.equal(hb.length, 2)
   assert.equal(hb[0].center.y, 1.2)
-  assert.ok(Math.abs(hb[0].radius - 1.26) < 1e-9)
+  assert.ok(Math.abs(hb[0].radius - 2.52) < 1e-9)
   assert.equal(hb[0].isHead, false)
-  assert.ok(Math.abs(hb[1].radius - 0.84) < 1e-9)
+  assert.ok(Math.abs(hb[1].radius - 1.68) < 1e-9)
   assert.equal(hb[1].isHead, true)
   // Regular types keep the exact 0.45 / 0.3 contract.
   const { zombie: w } = makeZombie('walker', 2, 4, 1)
@@ -148,7 +148,7 @@ test('brute hitboxes: same two-sphere contract, 2.8x radii', () => {
 test('charge: triggers inside 7 m, lunges ~3.3 m, then melee resumes', () => {
   const { collision, zombie } = makeZombie('brute', 0, 8, 5) // 8 m from player at origin
   const player = fakePlayer(0, 0)
-  // Outside charge range: plain shamble (0.7 m/s), no charge.
+  // Outside charge range: plain walker-pace seek (1.5 m/s), no charge.
   zombie.update(1 / 60, player, [zombie], collision, null)
   assert.equal(zombie._chargeT, 0)
   // Step inside CHARGE_RANGE: commit the lunge.
@@ -163,10 +163,10 @@ test('charge: triggers inside 7 m, lunges ~3.3 m, then melee resumes', () => {
   const moved = start - zombie.position.z
   const expect = CHARGE_SPEED * CHARGE_TIME
   assert.ok(Math.abs(moved - expect) < 0.15, `lunged ${moved.toFixed(2)} m (expected ~${expect})`)
-  // After the lunge the brute sits ~2.7 m out (it lunges 3.3 m from 6 m), so
-  // it must walk the last ~1.4 m into ATTACK_RANGE (1.3 m) before its 1.6 s
-  // attack cooldown can land the heavy melee — budget ~3.6 s of stepping.
-  for (let i = 0; i < Math.round(3.6 * 60); i++) zombie.update(1 / 60, player, [zombie], collision, null)
+  // After the lunge the brute sits ~3.8 m out (it lunges 2.2 m from 6 m), so
+  // it must walk the last ~2.5 m into ATTACK_RANGE (1.3 m) at 0.45 m/s before
+  // its 1.6 s attack cooldown can land the heavy melee — budget ~8 s of stepping.
+  for (let i = 0; i < Math.round(8 * 60); i++) zombie.update(1 / 60, player, [zombie], collision, null)
   assert.ok(player.health <= 1000 - TABLE.brute.melee, `player took ${1000 - player.health} (expected >= ${TABLE.brute.melee})`)
 })
 
@@ -233,7 +233,7 @@ test('wave 5 finale: incoming fires once, boss spawns after the delay, kill clea
   assert.deepEqual(bossSpawn, [5])
   const boss = game.zombies.find(z => z.type === 'brute')
   assert.ok(boss, 'brute spawned')
-  assert.equal(boss.maxHealth, Math.round(5200 * Math.pow(1.12, 4)))
+  assert.equal(boss.maxHealth, Math.round(1400 * Math.pow(1.12, 4)) * 10)
   assert.equal(boss.position.x, 0)
   assert.equal(boss.position.z, 85) // far north point
   assert.equal(alive(), 1)
@@ -408,10 +408,10 @@ test('boss appears every 5 waves: wave 10 spawns a higher-HP brute', () => {
   assert.deepEqual(bossSpawn, [10], 'boss spawns on wave 10')
   const boss = game.zombies.find(z => z.type === 'brute')
   assert.ok(boss, 'brute spawned at wave 10')
-  // HP scales with the wave: more than the wave-5 boss (>=5 pistol shots at L5,
-  // and progressively more at 10/15).
-  assert.equal(boss.maxHealth, Math.round(5200 * Math.pow(1.12, 9)))
-  assert.ok(boss.maxHealth > Math.round(5200 * Math.pow(1.12, 4)), 'wave-10 boss is tougher than wave-5')
+  // HP scales with the wave, then the 10x boss multiplier (more than the
+  // wave-5 boss; progressively more at 10/15).
+  assert.equal(boss.maxHealth, Math.round(1400 * Math.pow(1.12, 9)) * 10)
+  assert.ok(boss.maxHealth > Math.round(1400 * Math.pow(1.12, 4)) * 10, 'wave-10 boss is tougher than wave-5')
   assert.equal(alive(), 1)
 })
 
@@ -428,29 +428,39 @@ test('boss never decapitates (pool skips isBoss)', () => {
 
 // ---- frenzy interaction ------------------------------------------------------
 
-test('frenzy flattens the boss to 50 hp and doubles its shamble', () => {
+test('frenzy flattens the boss to 50 hp then the 10x boss mult, and doubles its seek', () => {
   const { zombie } = makeZombie('brute', 0, 0, 1, 'frenzy')
-  assert.equal(zombie.maxHealth, 50)
-  assert.equal(zombie.speed, 1.4)
+  assert.equal(zombie.maxHealth, 500)
+  assert.equal(zombie.speed, 3.0)
   const { zombie: f5 } = makeZombie('brute', 0, 0, 5, 'frenzy')
-  assert.equal(f5.maxHealth, Math.round(50 * Math.pow(1.12, 4)))
+  assert.equal(f5.maxHealth, Math.round(50 * Math.pow(1.12, 4)) * 10)
 })
 // ---- shot-count requirement --------------------------------------------------
 
-test('boss takes >=200 pistol body shots and >=99 shotgun blasts', () => {
-  const { zombie } = makeZombie('brute', 0, 0, 1)
-  // Pistol: 26 dmg/shot, no armor. 199 shots (5174) must NOT kill; 200 (5200) must.
+test('boss takes >=123 head / >=245 body sniper shots at wave 5 (10x hp), plus pistol + shotgun counts', () => {
+  // v14: the boss is 10× tankier. 1400 base × 1.12^4 × 10 = 22030 HP. Sniper
+  // body = 90 → 245 shots; head = 180 → 123 shots.
+  const b5 = makeZombie('brute', 0, 0, 5).zombie
+  assert.equal(b5.maxHealth, 22030)
+  for (let i = 0; i < 122; i++) b5.damage(180, null, null, true)
+  assert.equal(b5.isDead, false, '122 sniper headshots do not kill the wave-5 boss')
+  b5.damage(180, null, null, true)
+  assert.equal(b5.isDead, true, '123 sniper headshots kill the wave-5 boss')
+  const b5b = makeZombie('brute', 0, 0, 5).zombie
+  for (let i = 0; i < 244; i++) b5b.damage(90)
+  assert.equal(b5b.isDead, false, '244 sniper body shots do not kill the wave-5 boss')
+  b5b.damage(90)
+  assert.equal(b5b.isDead, true, '245 sniper body shots kill the wave-5 boss')
+  // Wave-1 base counts (14000 hp; pistol 26/shot, shotgun 6×22×0.4 = 52.8/blast).
   const p = makeZombie('brute', 0, 0, 1).zombie
-  for (let i = 0; i < 199; i++) p.damage(26)
-  assert.equal(p.isDead, false, '199 pistol shots do not kill the boss')
+  for (let i = 0; i < 538; i++) p.damage(26)
+  assert.equal(p.isDead, false, '538 pistol shots do not kill the boss')
   p.damage(26)
-  assert.equal(p.isDead, true, '200 pistol shots kill the boss')
-  // Shotgun: 6 pellets x 22 x armor(0.4) = 52.8/blast. 98 blasts (5174.4) must NOT
-  // kill; 99 blasts (5227.2) must.
+  assert.equal(p.isDead, true, '539 pistol shots kill the boss')
   const s = makeZombie('brute', 0, 0, 1).zombie
   const blast = 6 * 22 * s.shotgunArmor
-  for (let i = 0; i < 98; i++) s.damage(blast)
-  assert.equal(s.isDead, false, '98 shotgun blasts do not kill the boss')
+  for (let i = 0; i < 265; i++) s.damage(blast)
+  assert.equal(s.isDead, false, '265 shotgun blasts do not kill the boss')
   s.damage(blast)
-  assert.equal(s.isDead, true, '99 shotgun blasts kill the boss')
+  assert.equal(s.isDead, true, '266 shotgun blasts kill the boss')
 })

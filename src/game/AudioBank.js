@@ -789,6 +789,10 @@ export class AudioBank {
     if (type === 'walker' && this._playSfx('growl_walker', { gain: Math.min(0.7, gain) })) return
     if (type === 'brute' && this._playSfx('growl_brute', { gain: Math.min(0.7, gain) })) return
     if (type === 'screamer') {
+      // v14: the fast screamer's groan is now a generated "ahhhhh" zombie-man
+      // scream (a high howl over a low hissing growl). The distance falloff in
+      // `gain` makes it start quiet at range and swell as the zombie closes.
+      if (this._playSfx('screamer_scream', { gain: Math.min(0.7, gain) })) return
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain })
     } else if (type === 'brute') {
       // Boss "urgh": a sub-bass rumble under a voiced formant growl.
@@ -858,6 +862,11 @@ export class AudioBank {
     const dest = this._pannerAt(pos)
     if (entry) entry.p = dest === this.master || dest === this._masterIn ? null : dest
     if (type === 'screamer') {
+      // v14: generated "ahhhhh" zombie-man scream, routed through the panner at
+      // the zombie's position and scaled by the distance falloff in `gain`, so
+      // it starts distant and grows louder as the screamer closes. Synthesized
+      // sawtooth stand-in when the sample has not decoded.
+      if (this._playSfx('screamer_scream', { gain: Math.min(0.7, gain), dest })) return
       this._playTone({ type: 'sawtooth', freq: 400, freqEnd: 200, duration: spec.voice, gain, dest })
     } else if (type === 'brute') {
       this._playTone({ type: 'sine', freq: 45, freqEnd: 32, duration: spec.voice, gain, dest })

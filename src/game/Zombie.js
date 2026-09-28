@@ -70,13 +70,14 @@ const HAIR_MATS = [
  *  shots (the sniper is the anti-boss weapon). Base 1400 → wave-5 scaling
  *  1.12^4 ≈ 1.574 gives 2203 effective HP = 24 body / 12 head sniper shots
  *  (90 / 180 dmg) — ≥10 of each. Pistol needs ~85 body shots, shotgun ~42
- *  blasts (armor ×0.4). Speed 0.7 → 0.45: the boss now shambles slower than
- *  the shambler itself, per the user's "make it slower" ask. */
+ *  blasts (armor ×0.4). v14: the boss now SEEKS the player at walker pace
+ *  (speed 1.5, up from the v13 0.45 shamble) so it actively walks toward the
+ *  player across the arena, and its HP is 10× (see BOSS_HP_MULT). */
 const TABLE = {
   walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
   shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
   screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
-  brute: { speed: 0.45, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
+  brute: { speed: 1.5, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
 /** Boss charge window: within this horizontal range the brute lunges instead
@@ -114,6 +115,11 @@ const ORDER = ['walker', 'shambler', 'screamer', 'brute']
  *  v13: 2.8 → 5.6 — the user wants the boss 4× LARGER than the v10 giant, so
  *  the whole silhouette + hitbox doubles again (~5 m tall, 2.5 m torso sphere). */
 const BOSS_SCALE = 5.6
+
+/** v14 boss HP: the user wants the wave-5 boss 10× tankier. Applied on top of
+ *  the per-type base (and the flat-50 frenzy/nightmare HP) AFTER wave scaling,
+ *  so the boss takes ~10× the shots of any other zombie at the same wave. */
+const BOSS_HP_MULT = 10
 
 /**
  * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
@@ -831,6 +837,12 @@ export class Zombie {
     this.speed = TABLE[type].speed * diff.speedMult
     const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
     this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
+    // v14: the wave-5 boss is 10× tankier (user request). Applied after wave
+    // scaling so it holds in every difficulty (the flat-50 frenzy/nightmare HP
+    // becomes 500 for the boss). ~100 sniper body shots at wave 5.
+    if (type === 'brute') {
+      this.maxHealth = this.health = Math.round(this.maxHealth * BOSS_HP_MULT)
+    }
     // v3 T1: the dismemberment chain is hit-counted, NOT damage-counted (the
     // user decision), so HP is untouched by it — the shipped difficulty
     // contract (frenzy flat 50 HP = 2 pistol bodies / 1 headshot) stays exact.

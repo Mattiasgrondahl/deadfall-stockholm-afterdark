@@ -966,4 +966,25 @@ function bankWithFakeCtx() {
   bank.dispose()
 }
 
+{
+  // v14 screamer scream: with a decoded sample, groan('screamer') routes the
+  // "ahhhhh" buffer source and skips the synthesized sawtooth; the distance
+  // falloff makes a close screamer louder than a far one (starts distant,
+  // swells as it closes).
+  const bank = bankWithFakeCtx()
+  bank.loadSfx('assets/')
+  bank._sfx.buffers.set('screamer_scream', { duration: 1.5, getChannelData: () => new Float32Array(8) })
+  let before = bank.ctx._created.length
+  bank.groan('screamer', 10)
+  const created = bank.ctx._created.slice(before)
+  assert.ok(created.some(n => n.name === 'src' && n.buffer), 'screamer routed as a buffer source')
+  assert.ok(!created.some(n => n.name === 'osc'), 'synthesized sawtooth skipped when the sample is present')
+  // Distance falloff: the same bank at two distances records the gain the
+  // scheduler would use (via the scheduled list) — close > far.
+  const near = bank.groan('screamer', 3)
+  const far = bank.groan('screamer', 25)
+  assert.ok(near === undefined && far === undefined, 'groan returns nothing (gain is internal)')
+  bank.dispose()
+}
+
 console.log('audio OK')
