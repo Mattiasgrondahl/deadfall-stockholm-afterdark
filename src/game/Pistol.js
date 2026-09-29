@@ -269,7 +269,9 @@ export class Pistol {
       // No zombie absorbed the round: break a lamp if the wall was one, else
       // leave a bullet hole on the surface it hit.
       if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
-        this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+        if (!this.windows?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
+          this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+        }
       }
     }
     this.audio?.pistolShot?.() // voice lands with the audio task; null-safe

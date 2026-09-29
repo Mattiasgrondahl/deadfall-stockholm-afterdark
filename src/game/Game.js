@@ -15,6 +15,7 @@ import { Blood } from './Blood.js'
 import { BulletHoles } from './BulletHoles.js'
 import { Footprints } from './Footprints.js'
 import { Lamps } from './Lamps.js'
+import { Windows } from '../world/Windows.js'
 import { GlassShards } from './GlassShards.js'
 import { DecapitatedHeadPool } from './DecapitatedHeadPool.js'
 import { DroppedLimbPool } from './DroppedLimbPool.js'
@@ -491,6 +492,12 @@ export class Game {
     this.lamps.shards = this.glassShards
     // v3 T12: every broken streetlamp counts toward the LAMP LIGHTER ladder.
     this.lamps.onBreak = () => { if (this.achievements) this.achievements.onLamp() }
+    // WIRING:WINDOWS — shootable building windows: a bullet that lands on glass
+    // dims that pane, plays the glass voice, and pops shards (same pattern as
+    // lamps). Reuses the glass-shard pool + glassBreak voice already wired above.
+    this.windows = new Windows(this.city ? { mesh: this.city._windowMesh, windows: this.city.windows } : null)
+    this.windows.audio = this.audio
+    this.windows.shards = this.glassShards
     if (this.weapon) {
       this.weapon.shotgun.blood = this.blood
       this.weapon.axe.blood = this.blood
@@ -503,6 +510,9 @@ export class Game {
       this.weapon.shotgun.lamps = this.lamps
       this.weapon.pistol.lamps = this.lamps
       this.weapon.sniper.lamps = this.lamps
+      this.weapon.shotgun.windows = this.windows
+      this.weapon.pistol.windows = this.windows
+      this.weapon.sniper.windows = this.windows
       // WIRING:DECAPITATE (Task E): a fatal headshot spawns a rolling
       // severed head (shared geometry/materials; pool caps at 3).
       this.headPool = new DecapitatedHeadPool(this.scene)

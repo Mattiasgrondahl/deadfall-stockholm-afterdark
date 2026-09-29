@@ -143,7 +143,7 @@ test('hierarchy: the changes cost no meshes, lights, or points', () => {
   // material work itself still adds no lights. v23: the wanted-poster spotlight
   // is the one deliberate light the dressing group adds (so the placard reads in
   // the dark), so the city group now owns exactly 1 light.
-  assert.equal(meshes, 229, `city mesh count must stay 229 (post v4-B instancing + v17 splash + v19 luminaire/storefront), got ${meshes}`)
+  assert.equal(meshes, 230, `city mesh count must stay 230 (post v4-B instancing + v17 splash + v19 luminaire/storefront), got ${meshes}`)
   assert.equal(lights, 1, `city group adds exactly the poster spotlight, got ${lights}`)
 })
 

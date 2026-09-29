@@ -253,10 +253,11 @@ test('eye glow: two shared-material eyes nested under head; dimmed on death', ()
     const head = zombie.group.children[1]
     assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
     // Eyes + face + hair are always the first head children; a head-mounted
-    // accessory (police cap / fireman helmet) is appended after them, so the
-    // count is 4 for no-accessory outfits and 5 when the head wears one.
+    // accessory (police cap / fireman helmet) or a female long-hair prop is
+    // appended after them, so the count is 4 + (head-mounted props).
     const headAcc = zombie._acc && head.children.includes(zombie._acc) ? 1 : 0
-    assert.equal(head.children.length, 4 + headAcc, `${type}: eye + face + hair count`)
+    const headProps = (zombie._outfitProps || []).filter(p => head.children.includes(p)).length
+    assert.equal(head.children.length, 4 + headAcc + headProps, `${type}: eye + face + hair count`)
     assert.equal(head.children[0].position.x, -0.075)
     assert.equal(head.children[0].position.z, 0.14)
     assert.equal(head.children[1].position.x, 0.075)

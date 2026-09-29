@@ -2514,3 +2514,90 @@ field, stays deferred for the single-origin deployment).
   flash fires + decays). Net suites 58 green.
 - Verification: `node --test` 395/395; `npm run verify` 81/0/0; build ok;
   check-assets 60/0; secrets clean.
+
+## v25 lamps: remove roof-mounted lamps + make every lamp shootable (Sep 29 2026)
+
+- **User:** "there are some lamps that are on the roof of a building which doesn't
+  make sense, remove them. There are also some lamps that are short, the lamps
+  should have the same height and it should be able to shoot all lamps so they
+  break."
+- **Root cause.** All 40 street lamps were geometrically identical (pole cylinder
+  h=5 centred y=2.5, head y=5.05), so "short" was not a real height variance — it
+  was the *roof illusion*: 10 lamps sat within ~2 m of a building taller than the
+  lamp head (h 8–21 m), so the head + halo read as mounted on that building's
+  wall/roof. Separately, `Lamps.hitAt` required `|y-5.2|<2.0`, so a near-
+  horizontal shot crossing the lamp AABB low on the pole (y≈1.7–3) registered a
+  wall hit but did NOT break the lamp — only shots aimed up at the head broke it.
+- **Fix 1 — drop roof lamps.** `addStreetlights(group, collision, buildings)` now
+  takes the layout's building list and `place()` skips any lamp whose pole sits
+  within 3 m of a building taller than 5.5 m (the head would be dwarfed). City.js
+  passes its `buildings` array. Buildings store position on `mesh.position` (not
+  `.x/.z`), so the guard reads `b.mesh.position`. 40 → 30 lamps; 0 remaining
+  within 3 m of a tall building; all heads still at the uniform y=5.05.
+- **Fix 2 — shoot the whole column.** `Lamps.hitAt` now breaks a lamp for any hit
+  with `0 ≤ y ≤ 5.3` (pole base through head) within the 0.6 m head radius, so a
+  shot anywhere on the pole breaks it regardless of aim height.
+- Budget: removing 10 lamps drops city meshes 249→229 (≤640/800 gate), aabbs
+  127→117, sprites 87→71 (10 halos + 6 shafts gone). Lights unchanged.
+- Tests: new `test/lamps.test.mjs` cases (low pole hit breaks the lamp; below
+  base / over head miss; a tall building removes the roof lamp). Updated the
+  hardcoded 40/127/87/249 counts in `test/city.test.mjs`, `test/match.test.mjs`,
+  `test/material-hierarchy.test.mjs` to 30/117/71/229.
+- Verification: `node --test` 395/395; `npm run verify` 81/0/0; build ok;
+  check-assets 60/0; secrets clean (281 files).
+
+## v26 shootable windows + distinct zombie archetypes (Sep 29 2026)
+
+- **User:** "Add the ability to shoot and break the windows on buildings, when a
+  window is hit it should break the glass and dim the light of the windows, a
+  break glass sound should be played. The zombie body still looks like they have
+  a image of cloths. remove the cloth image and think about how to make the
+  zombies more unique so you can distinguish zombies, consider one zombie that
+  can look like a cop, another as an office worker, a female zombie with a skirt
+  or a dress etc."
+- **Windows — shootable glass panes.** The facade texture bakes windows as a
+  flat 8×4 emissive grid, so a bullet that hit a wall could never break a
+  specific window (the glass was painted on). New `src/world/Windows.js`:
+  `addWindows(group, collision, buildings)` overlays a real glass pane on every
+  *lit* facade cell (same LCG lit-pattern as `facadeGrid`) as ONE InstancedMesh
+  (+1 mesh regardless of count), each pane offset 0.04 m proud of the wall so a
+  ray meets the pane before the building box behind it (Storefront trick), and
+  registers a thin `shootable` AABB per pane (blocks bullets, not movement).
+  `Windows.hitAt(x,y,z)` dims the hit pane's instanceColor to a dead dark, fires
+  `AudioBank.glassBreak()` + `GlassShards.burst()`, and returns the broken pane
+  (mirrors `Lamps`). City.js sets `b.variant` per building (from the facade
+  variant LCG) so the overlay lines up with the baked lights, calls `addWindows`
+  after the streetlights, stores `this.windows`/`this._windowMesh`, and pushes
+  the pane AABBs into `_aabbs` (dispose already frees the InstancedMesh + AABBs).
+  Game.js WIRING:WINDOWS builds the `Windows` manager (reuses the glass-shard
+  pool + glassBreak voice already wired for lamps) and hands it to pistol/
+  shotgun/sniper. Weapons route a wall hit as `if (!lamps.hitAt) if
+  (!windows.hitAt) bulletHoles.spawn` — so glass breaks instead of leaving a
+  hole. City meshes 229→230, InstancedMeshes 23→24, AABBs 117→757 (640 panes,
+  capped by MAX_PANES).
+- **Zombies — printed-cloth image removed + distinct archetypes.** The body wore
+  a flat `assets/outfits/*.jpg` albedo mapped onto boxes ("a picture of clothes"
+  pasted on a box). `loadOutfitTextures()` is now a no-op (kept + still called so
+  the OUTFIT_CLONES bookkeeping stays intact) so garments stay flat-coloured.
+  New `src/game/ZombieOutfits.js` gives each of the 9 archetypes a distinct
+  silhouette from SHARED geometry + materials (no per-spawn alloc): office
+  worker necktie, mailman satchel strap, police gold chest badge, fireman hi-vis
+  stripe, woman-in-a-dress / stripper / schoolgirl flared CONE skirts + a long
+  back-hair panel (head-mounted), schoolgirl neck ribbon; jogger/gym read via
+  colour + bare-arm sleeves alone. Head cap/helmet stays with OUTFIT_ACC.
+  `buildOutfitProps(outfit, {tie,stripe})` returns prop meshes parented to
+  torso/head, wired into BOTH `buildPrimitiveBody` (remote co-op) and the local
+  build path; they are NOT in `_parts` so hit-flash/death never repaint them and
+  they leave with the group on death (shared geo/mat, never disposed per-instance).
+- Tests: new `test/windows.test.mjs` (pane placement over lit cells, break→dim +
+  glass + shards, shootable AABB, over-wall miss, reset) and
+  `test/zombie-outfits.test.mjs` (per-archetype props, female skirt+longhair,
+  shared geometry across spawns, tie/stripe reuse shared mats). Updated stale
+  counts in `test/city.test.mjs` (aabbs 117→757, cap 140→800, InstancedMeshes
+  23→24, meshes 229→230), `test/match.test.mjs`, `test/material-hierarchy.test.mjs`,
+  and `test/zombie.test.mjs` head-child count now counts head-mounted outfit props.
+- Verification: `node --test` 397/397 (+2); `npm run verify` 81/0/0; build ok;
+  check-assets 60/0; secrets clean (285 files). Live `:8080` serves bundle
+  `index-D7YVLH3H.js` (window InstancedMesh present with 640 panes; spawned
+  zombies carry varied archetypes 1/2/3/6/7/8). Look-capture `.research/look/
+  v26-facade.png` VLM-confirmed lit windows on the facade.

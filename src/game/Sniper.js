@@ -235,7 +235,9 @@ export class Sniper {
       this.onHit?.(head ? 'head' : 'body') // HUD hit marker (headshot variant)
     } else if (wall) {
       if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
-        this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+        if (!this.windows?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
+          this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+        }
       }
     }
     this.audio?.sniperShot?.()

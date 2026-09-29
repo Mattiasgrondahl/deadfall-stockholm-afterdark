@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { buildOutfitProps } from './ZombieOutfits.js'
 
 /**
  * Zombie — boxy humanoid pursuer with chase / attack / corpse states.
@@ -608,38 +609,14 @@ const OUTFIT_FILES = [
   'gym-top', 'gym-shorts'
 ]
 function loadOutfitTextures() {
+  // v26: the flat printed-cloth JPGs are gone — they made every body look like a
+  // box with a "picture of clothes" pasted on it. Archetypes now read through
+  // flat garment colour + distinct silhouette geometry (see ZombieOutfits.js), so
+  // we no longer load or attach an albedo map. The function is kept (and still
+  // called from both body builders) so the call sites + the OUTFIT_CLONES
+  // bookkeeping stay intact; it is intentionally a no-op.
   if (outfitTexturesLoading || typeof document === 'undefined') return
   outfitTexturesLoading = true
-  const loader = new THREE.TextureLoader()
-  for (let i = 0; i < OUTFIT_COUNT; i++) {
-    for (let j = 0; j < 2; j++) {
-      const mat = (j === 0 ? OUTFITMATS.tops : OUTFITMATS.bottoms)[i]
-      const file = OUTFIT_FILES[i * 2 + j]
-      loader.load(ASSET_BASE + 'assets/outfits/' + file + '.jpg', (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace
-        tex.anisotropy = 4
-        mat.color.set(0xffffff)
-        mat.map = tex
-        mat.needsUpdate = true
-        // The sleeve clone was built from the flat top material, so hand the
-        // albedo (and the now-white tint) to its twin as well — otherwise the
-        // arms stay a flat jacket color while the torso wears the texture.
-        const sleeve = SLEEVE_MATS[i]
-        sleeve.color.set(0xffffff)
-        sleeve.map = tex
-        sleeve.needsUpdate = true
-        // v17: live per-instance clones must receive the same albedo. A clone
-        // keeps its tinted color (so the texture reads as a colored garment) but
-        // needs the map. Tagged clones are matched by archetype index + part.
-        for (const cl of OUTFIT_CLONES) {
-          if (cl._outfitIdx === i && cl._outfitPart === (j === 0 ? 'top' : 'bottom')) {
-            cl.map = tex
-            cl.needsUpdate = true
-          }
-        }
-      }, () => console.warn(`outfit texture failed to load; keeping flat color (${file})`))
-    }
-  }
 }
 
 export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, SLEEVE_MATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
@@ -933,6 +910,17 @@ export function buildPrimitiveBody(type, phase) {
     else if (kind === 'helmet') { acc.position.set(0, 0.19, 0); head.add(acc) }
     acc.castShadow = true
   }
+  // v26: archetype-specific body props (badge/satchel/skirt/ribbon) from
+  // ZombieOutfits.js so each trade reads at a glance without a printed-cloth
+  // image. Shared geometry + materials, parented to the torso, removed with the
+  // group on death; NOT in parts, so hit-flash / death never repaint them.
+  const outfitProps = []
+  for (const p of buildOutfitProps(outfit, { tie: ACC_MAT.tie, stripe: ACC_MAT.stripe })) {
+    if (p.parent === 'torso') torso.add(p.mesh)
+    else head.add(p.mesh)
+    p.mesh.position.set(p.pos[0], p.pos[1], p.pos[2])
+    outfitProps.push(p.mesh)
+  }
   // v24: silhouette props (collar + shoulder pads + belt) so remote co-op bodies
   // match the local ones — same shared geometry, collar/shoulders reuse the
   // archetype topMat, belt uses the shared dark leather material. Parented to the
@@ -957,7 +945,7 @@ export function buildPrimitiveBody(type, phase) {
   group.add(...parts)
   for (const p of parts) p.castShadow = true
   const restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
-  return { group, parts, head, face, eyes, hair, acc, silhouette, armL, armR, legL, legR, restMats, outfit }
+  return { group, parts, head, face, eyes, hair, acc, silhouette, outfitProps, armL, armR, legL, legR, restMats, outfit }
 }
 
 const ATTACK_RANGE = 1.3
@@ -1214,6 +1202,17 @@ export class Zombie {
       else if (acc === 'helmet') { prop.position.set(0, 0.19, 0); head.add(prop) }
       prop.castShadow = true
       this._acc = prop
+    }
+    // v26: archetype-specific body props (badge/satchel/skirt/ribbon) from
+    // ZombieOutfits.js so each trade reads at a glance without a printed-cloth
+    // image. Shared geometry + materials, parented to the torso, removed with the
+    // group on death; NOT in _parts, so hit-flash / death never repaint them.
+    this._outfitProps = []
+    for (const p of buildOutfitProps(outfit, { tie: ACC_MAT.tie, stripe: ACC_MAT.stripe })) {
+      if (p.parent === 'torso') torso.add(p.mesh)
+      else head.add(p.mesh)
+      p.mesh.position.set(p.pos[0], p.pos[1], p.pos[2])
+      this._outfitProps.push(p.mesh)
     }
     // v24: silhouette props (collar + shoulder pads + belt) parented to the torso
     // so they break the flat-box outline into a shouldered, collared, belted

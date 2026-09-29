@@ -3,6 +3,7 @@ import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLa
 import { createSnow } from './snow.js'
 import { addFacadeTrim } from './FacadeTrim.js'
 import { addStorefronts } from './Storefront.js'
+import { addWindows } from './Windows.js'
 
 const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246, 0x2e3140, 0x3a3644]
 const TINTS = [1.12, 1.0, 0.9, 0.78, 1.05, 0.86]
@@ -320,6 +321,7 @@ export class City {
     for (const b of buildings) {
       const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 8)
       variants.push(v)
+      b.variant = v // v26: Windows.js re-derives the lit-window grid from this
       const facade = new THREE.MeshStandardMaterial({
         // v6 visuals (10): roughness 0.88 -> 0.62 (see the building-body note). The
         // procedural roughness map multiplies this base, so concrete stays
@@ -385,6 +387,13 @@ export class City {
     // Lamp head AABBs are collision too — track them so dispose removes them.
     for (const l of this.lamps) if (l.aabb) this._aabbs.push(l.aabb)
     addStreetlightPools(group, this.streetlightAnchors)
+    // v26: shootable glass panes over the lit facade windows. One InstancedMesh;
+    // each pane carries a shootable AABB so a bullet that lands on glass breaks
+    // it (dim + glass voice + shards) instead of leaving a hole on the wall.
+    const winData = addWindows(group, collision, buildings)
+    this.windows = winData.windows
+    this._windowMesh = winData.mesh
+    this._aabbs.push(...winData.aabbs)
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
   addLandmarks(group)

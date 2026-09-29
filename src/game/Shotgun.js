@@ -270,7 +270,9 @@ export class Shotgun {
         // No zombie absorbed this pellet: break a lamp if the wall was one,
         // otherwise leave a bullet hole on the surface it hit.
         if (!this.lamps?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
-          this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+          if (!this.windows?.hitAt(wall.point.x, wall.point.y, wall.point.z)) {
+            this.bulletHoles?.spawn(wall.point.x, wall.point.y, wall.point.z, wall.normal)
+          }
         }
       }
     }
