@@ -695,13 +695,15 @@ function fakeWave(o) {
   hud.dispose()
 }
 {
-  // No new full-screen tint layer (round-47 rule): the fx root holds exactly
-  // the three pre-existing layers, and the new readouts live in the HUD root.
+  // No stray full-screen tint layers beyond the sanctioned set: the fx root
+  // holds the three pre-existing layers plus the v28 R2 frost vignette (an
+  // intentional health-driven frost rim), and the new readouts live in the HUD
+  // root. (v28 R2 supersedes the round-47 "exactly 3" rule.)
   const { hudRoot, fxRoot } = makeHUDWorld()
   const hud = new HUD(hudRoot, fxRoot)
   const fxClasses = fxRoot.children.map((c) => c.className)
-  assert.strictEqual(fxRoot.children.length, 3, 'fx layer count unchanged')
-  assert.deepStrictEqual(fxClasses, ['fx-damage', 'fx-dmg-edge', 'fx-lowhealth'])
+  assert.strictEqual(fxRoot.children.length, 4, 'fx layers: damage + dmg-edge + lowhealth + frost')
+  assert.deepStrictEqual(fxClasses, ['fx-damage', 'fx-dmg-edge', 'fx-lowhealth', 'fx-frost'])
   assert(find(hudRoot, 'hud-wave-sub'))
   assert(find(hudRoot, 'hud-threat-sub'))
   hud.dispose()

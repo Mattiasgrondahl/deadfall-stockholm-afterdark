@@ -200,6 +200,11 @@ export class HUD {
     this._fxRoot.appendChild(de)
     this._lowHealth = d.createElement('div'); this._lowHealth.className = 'fx-lowhealth'
     this._fxRoot.appendChild(this._lowHealth)
+    // v28 R2: frost vignette — a blue-white frost rim that creeps in from the
+    // screen edges as health drops (the cold closing in), separate from the red
+    // damage/low-health layers so the two never stack into mud.
+    this._frost = d.createElement('div'); this._frost.className = 'fx-frost'
+    this._fxRoot.appendChild(this._frost)
   }
 
   update(player, weapon, waveManager) {
@@ -241,6 +246,11 @@ export class HUD {
         ? String(0.7 * (this._dmgEdgeT / 0.5)) : '0'
       if (low) { this._lowHealth.classList.add('on'); this._healthBox.classList.add('critical') }
       else { this._lowHealth.classList.remove('on'); this._healthBox.classList.remove('critical') }
+      // v28 R2: frost creeps in below 55% health, ramping to full at 20% and
+      // staying capped so it never washes out the crosshair. Written through the
+      // per-frame opacity write like the other FX layers (no extra node churn).
+      const frost = pct < 0.55 ? Math.min(1, (0.55 - pct) / 0.35) * 0.7 : 0
+      this._frost.style.opacity = frost > 0.01 ? String(frost) : '0'
       // Stamina.
       const maxS = player.maxStamina || 100
       const sPct = Math.max(0, Math.min(1, (player.stamina !== undefined ? player.stamina : maxS) / maxS))

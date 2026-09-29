@@ -7,6 +7,7 @@ import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
 import { Aurora } from '../world/Aurora.js'
+import { Breath } from '../world/Breath.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
@@ -494,6 +495,9 @@ export class Game {
     // WIRING:FOOTPRINTS (v3 T13): the player + every zombie leave fading prints
     // in the snow. One InstancedMesh; stepped from the update loop below.
     this.footprints = new Footprints(this.scene)
+    // WIRING:BREATH (v28 R2): condensation puffs off the player's face when
+    // sprinting in the cold. One Points pool; emitted from the update loop below.
+    this.breath = new Breath(this.scene)
     // WIRING:LAMPS — shootable streetlamps that break dark and relight after 60 s.
     this.glassShards = new GlassShards(this.scene)
     this.lamps = new Lamps(this.city ? this.city.lamps : [])
@@ -926,6 +930,16 @@ export class Game {
       }
       this.footprints.update(dt)
     }
+    // WIRING:BREATH (v28 R2): visible breath when the player moves fast in the
+    // freezing air. Emission scales with horizontal speed (idle -> none, sprint
+    // -> a trail); puffs rise, expand and fade on their own clock.
+    if (this.breath && this.player && !this.player.isDead) {
+      const vx = this.player.velocity.x, vz = this.player.velocity.z
+      const speed = Math.hypot(vx, vz)
+      const strength = Math.max(0, Math.min(1, (speed - 1.2) / 3.0))
+      if (strength > 0) this.breath.emit(this.player.position.x, this.player.position.z, this.player.yaw, strength * dt * 8)
+      this.breath.update(dt)
+    }
     // WIRING:LAMPS — advance relight timers + shard animation.
     if (this.lamps) this.lamps.update(dt)
     if (this.glassShards) this.glassShards.update(dt)
@@ -1166,6 +1180,8 @@ export class Game {
     if (this.footprints) this.footprints.dispose()
     // v28 R1: remove the aurora curtain + dispose its geometry/material.
     if (this.aurora) { this.aurora.dispose(); this.aurora = null }
+    // v28 R2: remove the breath puff pool + dispose its geometry/material.
+    if (this.breath) { this.breath.dispose(); this.breath = null }
   }
 
   render() {

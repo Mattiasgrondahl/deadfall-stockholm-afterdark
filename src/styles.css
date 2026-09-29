@@ -100,6 +100,17 @@ html, body {
 }
 .fx-lowhealth.on { opacity: 1; }
 
+/* v28 R2: frost vignette — a cold blue-white frost rim creeping in from the
+   edges as health drops. Opacity is driven per-frame from JS (health), so no
+   .on class; the radial keeps the center clear so the crosshair stays readable. */
+.fx-frost {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, rgba(180,220,255,0) 55%, rgba(150,200,240,0.34) 100%);
+  opacity: 0;
+  transition: opacity 0.25s;
+  mix-blend-mode: screen;
+}
+
 /* ------------------------------------------------------------ HUD */
 #hud-root {
   position: absolute; inset: 0;
