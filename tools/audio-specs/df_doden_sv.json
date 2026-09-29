@@ -1,0 +1,12 @@
+{
+  "kind": "audio",
+  "model_type": "yue2",
+  "duration_seconds": 180,
+  "name": "df_doden_sv",
+  "seed": 3013,
+  "custom_settings": {
+    "save_score": 1
+  },
+  "prompt": "Doden kommer! Doden kommer! De vandrar genom natten, kall och blind. Offra era hjartan, stal er! O doden, var uppmarksam, Stockholm ar var strid. Imorgon sjunger vi om dem som foll, i skogen dar traden ar fria. Doden kommer, doden kommer, vi star kvar! De oda vaknar under isen, staden tiger, natten viskar. Stal er, stal er, dagen ar var! O doden, lyssna, vi lever annu!",
+  "style": "epic neoclassical choral cantata inspired by Carmina Burana O Fortuna: thunderous fortissimo mixed choir singing in Swedish, pounding ritual war-drums, dramatic staccato orchestral hits, dark minor-key grandeur, ominous and monumental, dramatic baritone solo between choir blasts, epic and scary"
+}

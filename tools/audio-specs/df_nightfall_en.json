@@ -1,0 +1,12 @@
+{
+  "kind": "audio",
+  "model_type": "yue2",
+  "duration_seconds": 210,
+  "name": "df_nightfall_en",
+  "seed": 3012,
+  "custom_settings": {
+    "save_score": 1
+  },
+  "prompt": "The streetlights fade, one by one. The dead walk where we used to run. And everything I knew is gone, beneath the night. I held the line until the dawn. The snow still falls on where we'd spawned. And if we die, we die with light inside the night. Heaven is a city made of glass. The dead are watching all we pass. Nothing lasts, nothing lasts, nothing lasts but this. Oh, the night falls, and we are still standing.",
+  "style": "slow mystical alternative rock ballad inspired by Coldplay: shimmering ambient guitars, soft reverb-drenched male falsetto vocals, gentle piano, spacious atmospheric production, slow build to a soaring emotional chorus, melancholic and cinematic, mid-slow tempo, dreamy and haunting"
+}

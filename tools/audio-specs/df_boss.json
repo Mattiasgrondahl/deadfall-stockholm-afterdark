@@ -1,0 +1,9 @@
+{
+  "kind": "audio",
+  "model_type": "yue2",
+  "duration_seconds": 150,
+  "name": "df_boss",
+  "seed": 2027,
+  "prompt": "Something ancient wakes beneath the frozen city. The snow turns to ash, the streetlights die one by one. It is coming, the huge one, the hollow one, the thing that was here before us. Run, but there is nowhere left to run. We stand, we bleed, we pray the dawn finds us alive.",
+  "style": "dark gothic doom metal: slow crushing tempo, deep growling male vocals, mournful minor-key choir, tolling bell-like low guitars, dread-filled atmospheric pads, ritualistic and mystical, scary and ominous, sparse huge drums, no fast shredding"
+}
