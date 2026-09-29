@@ -237,6 +237,26 @@ function stubBank() {
   d.onStateChange('paused', 'playing'); d.reset()
   assert.strictEqual(d.available, false)
 }
+{
+  // v13: the shipped game runs the director with enabled:false — the procedural
+  // oscillator soundtrack must never reach the bank, while the director's own
+  // bookkeeping (track map + pause flag) still works. This is the regression
+  // guard for "another music track playing under the mp3 songs".
+  const bank = stubBank()
+  const d = new MusicDirector(bank, { bossEvery: 5, enabled: false })
+  assert.strictEqual(d.available, false, 'disabled director is unavailable')
+  d.onWaveStart(3)
+  d.onWaveStart(5)
+  d.onTension(0.9)
+  d.onStateChange('paused', 'playing')
+  d.onStateChange('playing', 'paused')
+  d.reset()
+  assert.strictEqual(bank.calls.length, 0, 'no track may be handed to the bank')
+  assert.strictEqual(bank.pauseCalls, 0, 'no pause call when disabled')
+  assert.strictEqual(bank.resumeCalls, 0, 'no resume call when disabled')
+  assert.strictEqual(d._current, null, 'a disabled director never hands a track over')
+  assert.strictEqual(d._paused, false, 'playing state clears the pause flag')
+}
 
 // ---- AudioBank integration ------------------------------------------------
 {

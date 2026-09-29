@@ -391,10 +391,16 @@ export class Game {
     if (this.audio) this.audio.loadSfx(ASSET_BASE)
     // WIRING:MUSIC (procedural soundtrack): all track selection lives in
     // MusicDirector — Game only forwards state/wave/tension events.
-    if (this.audio) this.musicDirector = new MusicDirector(this.audio, { bossEvery: 5 })
+    // v13: the procedural WebAudio soundtrack (ambient/combat/crisis oscillator
+    // tracks) is DISARMED — it played underneath the mp3 playlist and read as a
+    // second, alien music track. The director stays wired (it forwards pause/
+    // resume/state bookkeeping and its track map is unit-tested) but is cut off
+    // from the bank so playMusicTrack can never start the engine again. The
+    // mp3 playlist + boss track are now the only in-game music.
+    if (this.audio) this.musicDirector = new MusicDirector(this.audio, { bossEvery: 5, enabled: false })
     if (this.player) this.player.audio = this.audio
     if (this.input) this.input.on('mute', () => this.audio.toggleMuted())
-    // N toggles ONLY the soundtrack; keep the HUD button label in sync.
+    // M toggles ONLY the soundtrack (N is master mute); keep the HUD label in sync.
     if (this.input) this.input.on('musicMute', () => {
       if (!this.audio) return
       this.audio.toggleMusicMuted()
@@ -429,6 +435,8 @@ export class Game {
       onWaveCleared: (w) => {
         if (this.screens) this.screens.showBanner('WAVE ' + w + ' CLEARED')
         if (this.audio) this.audio.playWaveCleared?.(w)
+        // v13: high-tension crisis switching is handled by the director alone;
+        // the AudioBank tension drone/heartbeat bed is gone (see WIRING:TENSION).
         if (this.musicDirector) this.musicDirector.onWaveCleared(w)
         if (this.achievements) this.achievements.onWaveCleared() // v3 T12
         // v3 boss fight: the boss just fell, so leave the dedicated boss track
@@ -943,9 +951,13 @@ export class Game {
     // WIRING:TENSION (Phase 4): adaptive audio dread from how cornered the
     // player is — alive-zombie pressure vs the wave cap, blended with low
     // health, plus a bump while the boss stands. Smoothed inside AudioBank.
-    // The same level drives the procedural music director (crisis threshold).
+    // v13: the level still feeds the music director (crisis threshold for the
+    // mp3 boss track), but AudioBank.setTension is no longer called — its
+    // procedural drone + heartbeat pulse played UNDER the mp3 soundtrack and
+    // read as "another music track" from wave 3 onward (waves 1-2 have low
+    // tension, which is why the complaint named wave 3+). Only the generated
+    // mp3 songs + SFX (shots, growls, stingers) remain.
     const tension = this._computeTension()
-    if (this.audio) this.audio.setTension(tension, dt)
     if (this.musicDirector) this.musicDirector.onTension(tension)
     // WIRING:NOWPLAYING (v4 UI): show the current soundtrack title + the M/B hint
     // in the middle-right HUD. Only pushed when the name actually changes (so no
