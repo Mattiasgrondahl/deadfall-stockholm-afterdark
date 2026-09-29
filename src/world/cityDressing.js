@@ -43,7 +43,7 @@ function makeShaftMap() {
   return new THREE.CanvasTexture(c)
 }
 
-export function addStreetlights(group, collision) {
+export function addStreetlights(group, collision, buildings) {
   const poleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5)
   // v6 visuals (10): roughness 0.6 -> 0.42 so the pole sits in the same
   // painted-metal scenery band as the bus. Poles tonemap to 0.0018 (below the
@@ -88,6 +88,21 @@ export function addStreetlights(group, collision) {
   // static hood + arm InstancedMeshes can be built after all lamps are placed.
   const headPos = []   // { x, z, axis } axis = 'x' | 'z' the arm reaches along
   const place = (x, z, shaft, axis) => {
+    // v25 lamps: a lamp whose head (y 5.05) sits right up against a building
+    // taller than it reads as being mounted on that building's wall/roof, which
+    // looks wrong. Skip such lamps so every remaining one stands clear on the
+    // pavement. `buildings` is the layout's building list ({x,z,w,d,h}).
+    if (buildings && buildings.length) {
+      for (const b of buildings) {
+        if (b.h <= 5.5) continue // short buildings do not dwarf the lamp head
+        const bx = b.x !== undefined ? b.x : (b.mesh && b.mesh.position.x)
+        const bz = b.z !== undefined ? b.z : (b.mesh && b.mesh.position.z)
+        if (bx === undefined || bz === undefined) continue
+        const ex = Math.max(Math.abs(x - bx) - b.w / 2, 0)
+        const ez = Math.max(Math.abs(z - bz) - b.d / 2, 0)
+        if (Math.hypot(ex, ez) < 3) return // too close to a tall building: skip
+      }
+    }
     const pole = new THREE.Mesh(poleGeo, poleMat)
     pole.castShadow = true
     pole.position.set(x, 2.5, z)

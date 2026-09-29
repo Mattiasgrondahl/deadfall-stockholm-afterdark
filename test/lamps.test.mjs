@@ -87,4 +87,33 @@ function fakeLamp(x, z) {
   gs.dispose()
 }
 
+// ---- v25 lamps: any hit on the pole column breaks the lamp -----------------
+{
+  const a = fakeLamp(0, 10)
+  const lamps = new Lamps([a])
+  // A near-horizontal shot crosses the lamp AABB low on the pole (y ~1.2), not
+  // at the head. It must still break the lamp so every lamp is shootable.
+  assert.strictEqual(lamps.hitAt(0.1, 1.2, 10), a, 'a low pole hit breaks the lamp')
+  assert.strictEqual(a.broken, true, 'low hit broke the lamp')
+  // A hit below the pole base (y < 0) is not the lamp.
+  const b = fakeLamp(5, 10)
+  const lamps2 = new Lamps([b])
+  assert.strictEqual(lamps2.hitAt(5, -0.5, 10), null, 'a hit below the pole is not a lamp')
+  // A hit above the head (y > 5.3) passes over the lamp.
+  assert.strictEqual(lamps2.hitAt(5, 6.0, 10), null, 'a shot over the head misses the lamp')
+  lamps.dispose(); lamps2.dispose()
+}
+
+// ---- v25 lamps: lamps dwarfed by a tall building are not placed ------------
+{
+  const { addStreetlights } = await import('../src/world/cityDressing.js')
+  const mkCol = () => ({ aabbs: [], addAABB(minX, minZ, maxX, maxZ, h) { this.aabbs.push({ minX, minZ, maxX, maxZ, height: h }) } })
+  const group = new THREE.Group()
+  // A tall building right at a street-lamp spot; the lamp there must be skipped.
+  const buildings = [{ mesh: { position: { x: -52.25, z: -19.75 } }, w: 5.5, d: 5.5, h: 9 }]
+  const base = addStreetlights(new THREE.Group(), mkCol(), []).lamps.length
+  const withBldg = addStreetlights(group, mkCol(), buildings).lamps.length
+  assert.ok(withBldg < base, `a tall building removes the roof-mounted lamp (${base} -> ${withBldg})`)
+}
+
 console.log('lamps + bullet-holes + glass-shards OK')

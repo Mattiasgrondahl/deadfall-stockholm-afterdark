@@ -379,7 +379,7 @@ export class City {
     // barricades (1 InstancedMesh) so props read as resting on the pavement.
     addContactShadows(group)
 
-    const streetlights = addStreetlights(group, collision)
+    const streetlights = addStreetlights(group, collision, buildings)
     this.streetlightAnchors = streetlights.anchors
     this.lamps = streetlights.lamps
     // Lamp head AABBs are collision too — track them so dispose removes them.

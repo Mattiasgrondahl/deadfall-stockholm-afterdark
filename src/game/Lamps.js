@@ -29,7 +29,12 @@ export class Lamps {
       if (l.broken) continue
       const dx = x - l.x, dz = z - l.z
       const d = Math.hypot(dx, dz)
-      if (d < bestD && Math.abs(y - 5.2) < 2.0) { bestD = d; best = l }
+      // v25 lamps: a bullet that strikes anywhere on the lamp column (pole base
+      // up through the head, y 0..5.3) breaks it, not just a hit aimed at the
+      // head. The lamp AABB is a full-height column, so any crossing point with
+      // y in that band and within the head's horizontal radius counts. This lets
+      // every lamp be shot and broken regardless of aim height.
+      if (d < bestD && y >= 0 && y <= 5.3) { bestD = d; best = l }
     }
     if (!best) return null
     this._break(best)
