@@ -345,6 +345,52 @@ function fabricNormal() {
   }
   return FABRIC_NORMAL
 }
+// v24: shared cloth ROUGHNESS map. A fabric normal alone leaves every garment a
+// uniform matte panel; real cloth scatters light unevenly — worn, fuzzy areas
+// read rougher, damp/flattened areas read smoother. This 64px grayscale field
+// (built like buildSkinDetail: DataTexture, seeded LCG, no Math.random, headless
+// safe) is assigned as the roughnessMap of every outfit top/bottom/sleeve so the
+// same jacket shows soft sheen variation instead of one flat roughness. The
+// material's base roughness multiplies the map, so per-outfit roughness still
+// holds. Refcounted and released with FABRIC_NORMAL.
+const CLOTH_R_N = 64
+let CLOTH_ROUGH = null
+let CLOTH_REFS = 0
+function buildClothRough() {
+  const n = CLOTH_R_N
+  const data = new Uint8Array(n * n * 4)
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two seeded streams (fixed states, order-independent) + tiling value noise
+      // so the field wraps. Mid-high base roughness with soft wear variation.
+      const sx = ((x * 43 + y * 19 + 9) >>> 0) ^ 31337
+      const sy = ((y * 41 + x * 23 + 13) >>> 0) ^ 57781
+      const jx = lcg(sx) - 0.5
+      const jy = lcg(sy) - 0.5
+      const wear = latticeNoise(x / 22, y / 22, 909) * 0.6 +
+        latticeNoise(x / 9 + 0.5, y / 9 + 0.5, 211) * 0.4
+      const v = 0.82 + (wear - 0.5) * 0.22 + jx * 0.04 + jy * 0.04
+      const r = Math.round(255 * THREE.MathUtils.clamp(v, 0.5, 1))
+      const i = (y * n + x) * 4
+      data[i] = r; data[i + 1] = r; data[i + 2] = r; data[i + 3] = 255
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 2)
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.generateMipmaps = true
+  tex.needsUpdate = true
+  return tex
+}
+function clothRough() {
+  if (CLOTH_ROUGH === null) {
+    CLOTH_ROUGH = buildClothRough()
+    CLOTH_REFS = 0
+  }
+  return CLOTH_ROUGH
+}
 // v4 VISUALS (A3): shared gore/dirt detail map for the bare skin (head + any
 // un-clothed body part). A mottled field of dark rotting-flesh patches so the
 // flat per-type skin color reads as decayed tissue rather than plastic. Built
@@ -430,12 +476,17 @@ const SLEEVE_MATS = OUTFITMATS.tops.map((m) => {
   // than a flat decal. Still below the level where the weave would read as
   // canvas plating.
   s.normalScale = new THREE.Vector2(1.0, 1.0)
+  // v24: cloth roughness map so the sleeve shows soft sheen variation, not one
+  // flat matte value (see buildClothRough).
+  s.roughnessMap = clothRough()
   s.needsUpdate = true
   return s
 })
 for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) {
   m.normalMap = fabricNormal()
   m.normalScale = new THREE.Vector2(1.0, 1.0)
+  // v24: same cloth roughness map on every top/bottom for worn/damp variation.
+  m.roughnessMap = clothRough()
   m.needsUpdate = true
 }
 // Shared accessory geometry + materials (built once, reused across zombies;
@@ -455,6 +506,24 @@ const ACC_MAT = {
   helmet: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.5, metalness: 0.2 }),
   stripe: new THREE.MeshStandardMaterial({ color: 0xf2d43d, roughness: 0.6, emissive: 0x3a3200 })
 }
+
+// v24: silhouette props that break the flat-box look of the primitive body. The
+// garments were rectangular slabs with a printed texture ("a picture of cloth"),
+// so even with the v21 fold normal the outline read as stacked cubes. These three
+// cheap boxes add real garment volume: a collar band at the neck, a pair of
+// shoulder pads that widen the shoulders, and a waistband/belt at the hem. They
+// are SHARED geometry (module-level, like ACC_GEO/GEO2) so there is no per-spawn
+// allocation, and they are parented to the torso so they move with the body and
+// are removed with the group on death. The collar + shoulders wear the zombie's
+// own topMat (so they inherit its per-instance tint + albedo map for free and
+// match the jacket exactly); the belt uses one shared dark leather material.
+// NOT in _parts, so hit-flash / death material swaps never touch them.
+const SILHOUETTE_GEO = {
+  collar: new THREE.BoxGeometry(0.34, 0.12, 0.06),
+  shoulder: new THREE.BoxGeometry(0.16, 0.14, 0.36),
+  belt: new THREE.BoxGeometry(0.6, 0.11, 0.38)
+}
+const BELT_MAT = new THREE.MeshStandardMaterial({ color: 0x1a1611, roughness: 0.8, metalness: 0.1 })
 
 let faceTexturesLoading = false
 // Asset base for runtime (non-bundled) fetches. Vite substitutes BASE_URL at
@@ -864,11 +933,31 @@ export function buildPrimitiveBody(type, phase) {
     else if (kind === 'helmet') { acc.position.set(0, 0.19, 0); head.add(acc) }
     acc.castShadow = true
   }
+  // v24: silhouette props (collar + shoulder pads + belt) so remote co-op bodies
+  // match the local ones — same shared geometry, collar/shoulders reuse the
+  // archetype topMat, belt uses the shared dark leather material. Parented to the
+  // torso so they move with the body and go away with the group.
+  const silhouette = []
+  const collar = new THREE.Mesh(SILHOUETTE_GEO.collar, topMat)
+  collar.position.set(0, 0.5, 0.15)
+  torso.add(collar)
+  silhouette.push(collar)
+  for (const side of [-1, 1]) {
+    const pad = new THREE.Mesh(SILHOUETTE_GEO.shoulder, topMat)
+    pad.position.set(0.3 * side, 0.46, 0)
+    torso.add(pad)
+    silhouette.push(pad)
+  }
+  const belt = new THREE.Mesh(SILHOUETTE_GEO.belt, BELT_MAT)
+  belt.position.set(0, -0.5, 0)
+  torso.add(belt)
+  silhouette.push(belt)
+  for (const p of silhouette) p.castShadow = true
   const group = new THREE.Group()
   group.add(...parts)
   for (const p of parts) p.castShadow = true
   const restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
-  return { group, parts, head, face, eyes, hair, acc, armL, armR, legL, legR, restMats, outfit }
+  return { group, parts, head, face, eyes, hair, acc, silhouette, armL, armR, legL, legR, restMats, outfit }
 }
 
 const ATTACK_RANGE = 1.3
@@ -1126,6 +1215,29 @@ export class Zombie {
       prop.castShadow = true
       this._acc = prop
     }
+    // v24: silhouette props (collar + shoulder pads + belt) parented to the torso
+    // so they break the flat-box outline into a shouldered, collared, belted
+    // garment. The collar + shoulders reuse this zombie's topMat (already tinted
+    // + albedo-mapped), so they match the jacket exactly and cost no new
+    // materials; the belt uses the shared dark leather material. Children of the
+    // torso, so they scale/rotate with it and are removed with the group on
+    // death; NOT in _parts, so hit-flash / death never repaints them.
+    this._silhouette = []
+    const collar = new THREE.Mesh(SILHOUETTE_GEO.collar, topMat)
+    collar.position.set(0, 0.5, 0.15)
+    torso.add(collar)
+    this._silhouette.push(collar)
+    for (const side of [-1, 1]) {
+      const pad = new THREE.Mesh(SILHOUETTE_GEO.shoulder, topMat)
+      pad.position.set(0.3 * side, 0.46, 0)
+      torso.add(pad)
+      this._silhouette.push(pad)
+    }
+    const belt = new THREE.Mesh(SILHOUETTE_GEO.belt, BELT_MAT)
+    belt.position.set(0, -0.5, 0)
+    torso.add(belt)
+    this._silhouette.push(belt)
+    for (const p of this._silhouette) p.castShadow = true
     this.group.add(...parts)
     // v17: giant-boss visual scale (see _bossScale). The group origin is the
     // feet, so scaling grows the silhouette upward from the ground; position
@@ -1148,6 +1260,7 @@ export class Zombie {
     loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
     loadOutfitTextures() // same guard pattern; browser-only
     FABRIC_REFS++ // one more live zombie holding the shared weave map
+    CLOTH_REFS++ // one more live zombie holding the shared cloth roughness map
     SKIN_REFS++ // one more live zombie holding the shared gore/dirt maps
     // v5: try to swap in a rigged skinned mesh (browser-only, async). Until it
     // arrives the primitive body above is the visual; headless never swaps.
@@ -2028,6 +2141,10 @@ export class Zombie {
     if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
       FABRIC_NORMAL.dispose()
       FABRIC_NORMAL = null
+    }
+    if (CLOTH_ROUGH !== null && --CLOTH_REFS <= 0) {
+      CLOTH_ROUGH.dispose()
+      CLOTH_ROUGH = null
     }
     if (SKIN_DETAIL !== null && --SKIN_REFS <= 0) {
       SKIN_DETAIL.dispose()

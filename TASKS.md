@@ -2456,3 +2456,30 @@ field, stays deferred for the single-origin deployment).
   0→1 (the deliberate poster light).
 - Verification: `node --test` 388/388; `npm run verify` 81/0/0; build ok;
   check-assets 60/0; secrets clean.
+
+## v24 zombie clothing: silhouette props + cloth roughness (Sep 29 2026)
+
+- **Break the flat-box garment look** (`src/game/Zombie.js`). Primitive bodies
+  were rectangular slabs with a printed texture, so the outline read as stacked
+  cubes even with the v21 fold normal. Two additions, both shared-geometry /
+  shared-texture so no per-spawn allocation and headless-safe:
+  - **Silhouette props** (`SILHOUETTE_GEO` + `BELT_MAT`, new): a collar band at
+    the neck, a pair of shoulder pads that widen the shoulders, and a waistband/
+    belt at the hem, parented to the torso so they move with the body and go away
+    with the group on death. The collar + shoulders reuse the zombie's own tinted
+    topMat clone (match the jacket for free); the belt uses one shared dark-leather
+    material. NOT in `_parts`, so hit-flash / death never repaints them. Added in
+    both the local `Zombie` body and the co-op `buildPrimitiveBody` (returned as
+    `silhouette`). 4 props/zombie → 18-alive peak meshes 568→640 (verify gate ≤800).
+  - **Cloth roughness map** (`buildClothRough` / `clothRough`, new): a 64px
+    deterministic DataTexture (seeded LCG + tiling value noise, no Math.random)
+    assigned as `roughnessMap` on every outfit top/bottom/sleeve so garments show
+    worn/damp sheen variation instead of one flat matte. Refcounted (`CLOTH_REFS`)
+    and released at zero alongside `FABRIC_NORMAL` in `dispose()`.
+- Tests: `test/zombie.test.mjs` adds "v24 silhouette props + cloth roughness"
+  (4 props, collar/shoulders wear the top clone, belt shared 0x1a1611, props
+  parented to torso not `_parts`, flash leaves props alone, group still 6 children,
+  roughness map present + not sRGB). Existing outfit test's `group.children===6`
+  pin still holds (props are torso children).
+- Verification: `node --test` 389/389; `npm run verify` 81/0/0 (mesh ≤800 ok);
+  build ok; check-assets 60/0; secrets clean.

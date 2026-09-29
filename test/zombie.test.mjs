@@ -397,6 +397,36 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   assert.equal(scene.children.length, 0)
 })
 
+test('v24 silhouette props + cloth roughness: collared/shouldered/belted garments', () => {
+  const scene = new THREE.Scene()
+  const z = new Zombie(scene, 'walker', -85, 0, 1)
+  // v24: each zombie carries 4 silhouette props (collar + 2 shoulder pads + belt)
+  // parented to the torso, NOT in _parts, so hit-flash / death never repaints them.
+  assert.equal(z._silhouette.length, 4, 'collar + 2 shoulders + belt')
+  const [collar, padL, padR, belt] = z._silhouette
+  // Collar + shoulders reuse the zombie's own top clone (match the jacket).
+  assert.equal(collar.material, z._outfitMats[0])
+  assert.equal(padL.material, z._outfitMats[0])
+  assert.equal(padR.material, z._outfitMats[0])
+  // Belt is the shared dark leather material (not per-instance).
+  assert.equal(belt.material.color.getHex(), 0x1a1611)
+  // Props are children of the torso, so the group still has exactly 6 parts.
+  assert.equal(z.group.children.length, 6)
+  assert.ok(z._silhouette.every(p => p.parent === z._parts[0]), 'props parented to torso')
+  // Hit flash must NOT touch the props (they are not in _parts).
+  const before = z._silhouette.map(p => p.material)
+  z.damage(5, null)
+  assert.deepEqual(z._silhouette.map(p => p.material), before, 'flash leaves props alone')
+  // Cloth roughness map is assigned to every outfit top/bottom/sleeve (headless-safe).
+  for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) {
+    assert.ok(m.roughnessMap, 'top/bottom carry the shared cloth roughness map')
+    assert.notEqual(m.roughnessMap.colorSpace, 'srgb', 'roughness map is not sRGB-decoded')
+  }
+  // dispose removes the group (props go with it) and frees the scene.
+  z.dispose()
+  assert.equal(scene.children.length, 0)
+})
+
 test('knockback: a melee hit staggers the zombie backward, then chase resumes', () => {
   const { collision, zombie } = makeZombie('walker', 0, -2, 1) // player at origin
   const player = fakePlayer(0, 0)
