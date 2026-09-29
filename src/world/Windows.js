@@ -1,38 +1,24 @@
 // Shootable building windows (v26). The facade texture bakes windows as a flat
-// 8-row x 4-col emissive grid on each building face, so a bullet that hits a
-// wall could never break a specific window — the glass was painted on. This
-// module overlays a real glass pane on every *lit* window cell, just proud of
-// the wall, as ONE InstancedMesh (one draw call, +1 mesh regardless of count).
-// Each pane carries a shootable AABB offset outward so a ray hits the pane
-// before the building box behind it (same trick as Storefront.js). When a shot
-// lands on a pane, Windows.hitAt dims that instance's emissive color to a dead
-// dark, plays the glass-break voice, and pops a shard burst — mirroring the
-// Lamps break system. Headless-safe: scene may be null; no Math.random.
+// emissive grid on each building face, so a bullet that hits a wall could never
+// break a specific window — the glass was painted on. This module overlays a
+// small, LOGICAL cluster of real glass panes on each building: ONE front-facing
+// row with 1–2 ADJACENT panes side by side (not a scattered full grid), as ONE
+// InstancedMesh (one draw call, +1 mesh regardless of count). Each pane carries
+// a shootable AABB offset outward so a ray hits the pane before the building box
+// behind it (same trick as Storefront.js). When a shot lands on a pane,
+// Windows.hitAt dims that instance's emissive color to a dead dark, plays the
+// glass-break voice, and pops a shard burst — mirroring the Lamps break system.
+// Headless-safe: scene may be null; no Math.random.
 import * as THREE from 'three'
 
-// The facade grid is 8 rows x 4 columns per face (drawFacadeTexture). We only
-// glaze the windows that the facade marks as lit, so the overlay matches the
-// painted lights instead of adding a pane to every cell.
+// The facade grid is 8 rows x 4 columns per face (drawFacadeTexture); we reuse
+// its row height + column pitch so our 1–2 panes line up with the painted
+// window courses instead of floating arbitrarily on the wall.
 const ROWS = 8
 const COLS = 4
-// Hard cap on panes so a dense skyline can never blow the instance buffer.
-const MAX_PANES = 640
-
-// Lit-window pattern per facade variant — must match facadeGrid() in City.js
-// exactly (same LCG shape, same 0.45 threshold) so the overlay lines up with the
-// baked lights. City draws windows with variant v from a per-building LCG; we
-// recompute the same pattern here from the variant we are handed.
-function facadeGrid(variant) {
-  let fs = 101 + variant * 37
-  const lit = []
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      fs = (Math.imul(fs, 48271) >>> 0) % 65537
-      lit.push(fs / 65537 < 0.45)
-    }
-  }
-  return lit
-}
+// One cluster (<=2 panes) per building; a handful of buildings, so a small cap
+// is plenty and keeps the instance buffer tiny.
+const MAX_PANES = 64
 
 // A lit window reads as warm amber glass; a broken one goes dark and smoky.
 const LIT = new THREE.Color(0xffb066)
@@ -92,59 +78,56 @@ export function addWindows(group, collision, buildings, exclude) {
     const w = b.w
     const d = b.d
     const h = b.h
-    if (h < 4) continue // too short to carry a window grid worth shooting
+    if (h < 4) continue // too short to carry a window worth shooting
     const variant = b.variant !== undefined ? b.variant : 0
-    const lit = facadeGrid(variant)
 
-    // Four faces: front/back span w, left/right span d; each face's grid is
-    // laid out in local (across, up) then rotated onto the face.
-    const faces = [
-      { px: bx, pz: bz + d / 2 + 0.04, ry: 0, span: w },
-      { px: bx, pz: bz - d / 2 - 0.04, ry: Math.PI, span: w },
-      { px: bx + w / 2 + 0.04, pz: bz, ry: Math.PI / 2, span: d },
-      { px: bx - w / 2 - 0.04, pz: bz, ry: -Math.PI / 2, span: d }
-    ]
-    // Vertical layout: the facade tile is a nominal 21 m tall for 8 rows, so a
-    // row is ~2.6 m; panes sit from ~2 m up so the ground floor stays clear.
+    // v26b: ONE shootable window cluster per building, not a full grid. Pick the
+    // front face (+z, facing the player/street so it is the most visible and the
+    // most "logical" target), choose a single mid-height row deterministically
+    // from the variant, and place 1–2 ADJACENT panes side by side in that row.
+    // This reads as a real pair of windows on a wall instead of a scattered
+    // skyline of glowing cells, and keeps the pane count tiny.
     const rowH = Math.min(2.6, (h - 2) / ROWS)
-    const paneW = Math.max(0.5, (b._faceSpanCols !== undefined ? b._faceSpanCols : (w > d ? w : d)) / COLS * 0.6)
-    for (const f of faces) {
-      // Columns spread across this face's span; rows climb the wall.
-      const cols = COLS
-      const span = f.span
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < cols; c++) {
-          if (!lit[r * cols + c]) continue
-          if (pi >= MAX_PANES) break
-          const across = (c + 0.5) / cols * span - span / 2
-          const up = 2 + r * rowH + rowH * 0.5
-          if (up > h - 0.5) continue // keep panes inside the wall height
-          // Local across-axis maps to world x on front/back faces, world z on
-          // the side faces (the face rotation handles orientation).
-          const px = f.ry === 0 || f.ry === Math.PI ? f.px + across : f.px
-          const pz = f.ry === 0 || f.ry === Math.PI ? f.pz : f.pz + across
-          if (inExclude(px, pz, up)) continue // leave the wanted-poster wall bare
-          e.set(0, f.ry, 0)
-          quat.setFromEuler(e)
-          pos.set(px, up, pz)
-          const pw = (f.ry === 0 || f.ry === Math.PI) ? Math.max(0.5, span / cols * 0.6) : Math.max(0.5, span / cols * 0.6)
-          scl.set(pw, rowH * 0.7, 0.06)
-          m.compose(pos, quat, scl)
-          mesh.setMatrixAt(pi, m)
-          mesh.setColorAt(pi, col.copy(LIT))
-          // Shootable AABB: a thin footprint hugging the pane, offset outward so
-          // the ray meets the pane before the building box behind it.
-          const hw = 0.35
-          collision.addAABB(px - hw, pz - hw, px + hw, pz + hw, up + rowH * 0.35)
-          const aabb = collision.aabbs[collision.aabbs.length - 1]
-          if (aabb) {
-            aabb.shootable = true // blocks bullets but not player movement
-            aabbs.push(aabb)
-          }
-          windows.push({ idx: pi, x: px, z: pz, y: up, broken: false, face: f })
-          pi++
-        }
+    // A row that sits comfortably on the wall and within reach (never the top
+    // course, never the ground floor): pick from the lower-middle rows.
+    const usable = Math.max(1, Math.min(ROWS, Math.floor((h - 2) / rowH)))
+    const row = 1 + (variant % Math.max(1, usable - 1)) // 2nd row onward, varies per building
+    const up = 2 + row * rowH + rowH * 0.5
+    if (up > h - 0.5) continue // keep the cluster inside the wall height
+
+    // Front face only: panes spread across the building width.
+    const span = w
+    const pz = bz + d / 2 + 0.04
+    const ry = 0
+    // Two adjacent columns centred on the face (or one if the wall is narrow).
+    const cols = span >= 4 ? 2 : 1
+    const paneW = Math.max(0.5, span / 4 * 0.6)
+    const gap = span / COLS // column pitch matches the facade grid
+    const startAcross = cols === 2 ? -gap * 0.5 : 0
+    for (let k = 0; k < cols; k++) {
+      if (pi >= MAX_PANES) break
+      const across = startAcross + k * gap
+      const px = bx + across
+      const up2 = up
+      if (inExclude(px, pz, up2)) continue // leave the wanted-poster wall bare
+      e.set(0, ry, 0)
+      quat.setFromEuler(e)
+      pos.set(px, up2, pz)
+      scl.set(paneW, rowH * 0.7, 0.06)
+      m.compose(pos, quat, scl)
+      mesh.setMatrixAt(pi, m)
+      mesh.setColorAt(pi, col.copy(LIT))
+      // Shootable AABB: a thin footprint hugging the pane, offset outward so
+      // the ray meets the pane before the building box behind it.
+      const hw = 0.35
+      collision.addAABB(px - hw, pz - hw, px + hw, pz + hw, up2 + rowH * 0.35)
+      const aabb = collision.aabbs[collision.aabbs.length - 1]
+      if (aabb) {
+        aabb.shootable = true // blocks bullets but not player movement
+        aabbs.push(aabb)
       }
+      windows.push({ idx: pi, x: px, z: pz, y: up2, broken: false })
+      pi++
     }
   }
 

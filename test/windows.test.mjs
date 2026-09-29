@@ -12,7 +12,7 @@ function mkCol() {
   }
 }
 
-// ---- addWindows: places panes on lit cells, registers shootable AABBs ------
+// ---- addWindows: 1–2 adjacent panes per building, one row ------------------
 {
   const col = mkCol()
   const group = new THREE.Group()
@@ -21,16 +21,27 @@ function mkCol() {
     { mesh: { position: { x: 24, z: 0 } }, w: 6, d: 6, h: 12, variant: 3 }
   ]
   const data = addWindows(group, col, buildings)
-  assert.ok(data.windows.length > 0, 'lit windows produce panes')
+  assert.ok(data.windows.length > 0, 'buildings produce panes')
   assert.equal(data.mesh.count, data.windows.length, 'instanced count matches pane count')
   assert.equal(col.aabbs.length, data.windows.length, 'one AABB per pane')
   assert.ok(data.aabbs.every(a => a.shootable === true), 'every window AABB is shootable')
-  // Panes sit within the building footprint band and above the ground floor.
-  for (const w of data.windows) {
-    assert.ok(w.y >= 2, `pane above ground floor (y=${w.y})`)
-    assert.ok(w.y <= 20, `pane within wall height (y=${w.y})`)
+  // At most 2 panes per building, all on the front face (same z) and same row.
+  for (const b of buildings) {
+    const panes = data.windows.filter(w => Math.abs(w.z - (b.mesh.position.z + b.d / 2 + 0.04)) < 0.01)
+    assert.ok(panes.length >= 1 && panes.length <= 2, `<=2 panes on the front face (${panes.length})`)
+    const ys = new Set(panes.map(p => +p.y.toFixed(3)))
+    assert.equal(ys.size, 1, 'panes share one row')
+    for (const w of panes) {
+      assert.ok(w.y >= 2, `pane above ground floor (y=${w.y})`)
+      assert.ok(w.y <= b.h, `pane within wall height (y=${w.y})`)
+    }
+    if (panes.length === 2) {
+      // Adjacent: the two panes are neighbours on the same row (one column pitch apart).
+      const dx = Math.abs(panes[0].x - panes[1].x)
+      assert.ok(dx > 0.5 && dx < b.w, `two panes are adjacent, not scattered (dx=${dx})`)
+    }
   }
-  // A short building (<4 m) carries no window grid.
+  // A short building (<4 m) carries no window.
   const short = addWindows(new THREE.Group(), mkCol(), [{ mesh: { position: { x: 0, z: 0 } }, w: 4, d: 4, h: 3, variant: 0 }])
   assert.equal(short.windows.length, 0, 'a too-short building gets no panes')
 }
