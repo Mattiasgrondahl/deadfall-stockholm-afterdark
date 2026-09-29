@@ -954,7 +954,10 @@ export class Zombie {
     // boss without a loaded GLB rendered at normal size. Now the visible
     // primitive group carries the scale too, so the brute actually looks giant.
     // Wave 10 is 5×; other boss waves keep the existing 5.6× hitbox contract.
-    this._bossScale = this.isBoss ? (wave === 10 ? 5 : BOSS_SCALE) : 1
+    // v23: the wave-5 boss is scaled DOWN to 2.5× (user request: "2-3× the size
+    // of a normal zombie") instead of the old 5.6× BOSS_SCALE, so it reads as a
+    // large-but-not-giant brute. The hitbox scales with it (see getHitboxes).
+    this._bossScale = this.isBoss ? (wave === 10 ? 5 : wave === 5 ? 2.5 : BOSS_SCALE) : 1
     // Shotgun armor: the boss's hide shrugs off most buckshot (×0.4 per pellet),
     // so it needs ≥10 full blasts; every other type is unarmored (×1). The
     // pistol/axe/sword ignore this and apply full damage.
@@ -1710,15 +1713,19 @@ export class Zombie {
   }
 
   /** Weapon hitbox contract: world-space centers, so sunk corpses sink out of reach.
-   *  The two-sphere contract (body + head) holds for every type; the brute's
-   *  1.4× silhouette scales both radii (0.63 / 0.42) while the anchor heights
-   *  stay at y+1.2 / y+1.8, so pistol/shotgun aim logic is unchanged. */
+   *  The two-sphere contract (body + head) holds for every type. The boss
+   *  silhouette is scaled by _hitboxScale (the group scale), so BOTH the radii
+   *  AND the anchor heights scale with it — a scaled body's torso sits at
+   *  y + 1.2*s and its head at y + 1.8*s in world space (the primitive group is
+   *  scaled from the feet origin), so the hitbox spheres track the visible body
+   *  instead of floating at the unscaled 1.2/1.8 heights. For a normal zombie
+   *  (s=1) this is the original y+1.2 / y+1.8, radii 0.45 / 0.3. */
   getHitboxes() {
     const { x, y, z } = this.position
     const s = this._hitboxScale
     return [
-      { center: new THREE.Vector3(x, y + 1.2, z), radius: 0.45 * s, isHead: false },
-      { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3 * s, isHead: true }
+      { center: new THREE.Vector3(x, y + 1.2 * s, z), radius: 0.45 * s, isHead: false },
+      { center: new THREE.Vector3(x, y + 1.8 * s, z), radius: 0.3 * s, isHead: true }
     ]
   }
 

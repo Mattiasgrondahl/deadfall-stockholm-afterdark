@@ -130,16 +130,22 @@ test('brute visuals: own skin/eye/face materials, hulking pose', () => {
   assert.equal(zombie.group.children[1].position.y, 1.8)
 })
 
-test('brute hitboxes: same two-sphere contract, 5.6x radii', () => {
+test('brute hitboxes: same two-sphere contract, scaled to the boss body', () => {
+  // v23: the wave-5 boss is 2.5× a normal zombie (user request: "2-3× the size
+  // of a normal zombie"), and the hitbox spheres now scale with the visible
+  // body — both radii AND the anchor heights (torso y+1.2*s, head y+1.8*s) so
+  // the hitbox matches the scaled silhouette instead of floating at 1.2/1.8.
   const { zombie } = makeZombie('brute', 2, 4, 5)
   const hb = zombie.getHitboxes()
   assert.equal(hb.length, 2)
-  assert.equal(hb[0].center.y, 1.2)
-  assert.ok(Math.abs(hb[0].radius - 2.52) < 1e-9)
+  assert.equal(zombie._bossScale, 2.5)
+  assert.ok(Math.abs(hb[0].center.y - 1.2 * 2.5) < 1e-9)
+  assert.ok(Math.abs(hb[0].radius - 0.45 * 2.5) < 1e-9)
   assert.equal(hb[0].isHead, false)
-  assert.ok(Math.abs(hb[1].radius - 1.68) < 1e-9)
+  assert.ok(Math.abs(hb[1].center.y - 1.8 * 2.5) < 1e-9)
+  assert.ok(Math.abs(hb[1].radius - 0.3 * 2.5) < 1e-9)
   assert.equal(hb[1].isHead, true)
-  // Regular types keep the exact 0.45 / 0.3 contract.
+  // Regular types keep the exact 0.45 / 0.3 contract (scale 1).
   const { zombie: w } = makeZombie('walker', 2, 4, 1)
   assert.equal(w.getHitboxes()[0].radius, 0.45)
   assert.equal(w.getHitboxes()[1].radius, 0.3)

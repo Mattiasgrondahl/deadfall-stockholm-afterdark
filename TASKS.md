@@ -2415,3 +2415,23 @@ field, stays deferred for the single-origin deployment).
   81 ok / 0 fail / 0 skipped.
 - NEXT: 4 new songs via Wan2GP; boss rework (≈10 sniper shots, 4× scale, slower);
   zombie clothing detail; 5 s jump-scare intro video evaluation.
+
+## v23 wave-5 boss scale-down + hitbox match (Sep 29 2026)
+
+- **Wave-5 boss is now 2.5× a normal zombie** (`src/game/Zombie.js` `_bossScale`):
+  previously every non-wave-10 boss used `BOSS_SCALE = 5.6`, so the wave-5 brute
+  read as a giant. User asked for "2-3× the size of a normal zombie", so wave 5
+  now scales to 2.5× (wave 10 stays the 5× giant; other boss waves keep 5.6×).
+  The visible primitive group carries the scale (group.scale = _bossScale), so
+  the brute silhouette shrinks to match.
+- **Hitbox now matches the scaled body** (`getHitboxes()`): the two-sphere
+  contract's anchor heights now scale with `_hitboxScale` (body y+1.2·s, head
+  y+1.8·s) instead of staying pinned at 1.2/1.8. Previously a scaled boss had
+  scaled radii but UNSCALED centers, so the hitbox floated far below the raised
+  head/body. For wave 5 (s=2.5): body sphere center y=3.0 r=1.125, head y=4.5
+  r=0.75. Normal zombies (s=1) keep the exact 0.45 / 0.3 / y1.2 / y1.8 contract.
+- Tests: `test/boss.test.mjs` "brute hitboxes" rewritten to assert the 2.5×
+  scale + scaled anchors (was the 5.6×/unscaled-center contract).
+- Verification: `node --test` 388/388; `npm run verify` 81 ok / 0 fail / 0 skipped;
+  `npm run build` ok; `check-assets` 60/0; `secrets-scan` clean. Headless probe
+  confirms wave5 scale 2.5 / hitbox bodyY 3.0, wave10 5×, walker 1×.
