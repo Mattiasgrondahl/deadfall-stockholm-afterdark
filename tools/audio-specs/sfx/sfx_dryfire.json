@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_dryfire",
+  "duration_seconds": 1,
+  "prompt": "An empty chamber dry-fire click: a single sharp hollow metallic click, dry close-mic, no reverb.",
+  "seed": 3008
+}

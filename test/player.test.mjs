@@ -4,6 +4,7 @@ import assert from 'node:assert'
 import * as THREE from 'three'
 import { Player } from '../src/game/Player.js'
 import { CollisionWorld } from '../src/game/CollisionWorld.js'
+import { Flashlight } from '../src/game/Flashlight.js'
 
 const DT = 1 / 60
 
@@ -126,6 +127,162 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.ok(Math.abs(camera.position.y - 1.7) <= 0.05, `camera y ${camera.position.y.toFixed(4)}`)
   step(player, 120)
   assert.strictEqual(camera.position.y, 1.7) // bob settles when at rest
+}
+
+{ // pitch kick applies, decays, caps, and resets
+  const { player, st, camera } = makePlayer()
+  player.addPitchKick(0.02); player.update(0)
+  assert.ok(Math.abs(camera.rotation.x - 0.02) < 1e-6, `kick ${camera.rotation.x}`)
+  player.update(0.1)
+  assert.ok(camera.rotation.x > 0 && camera.rotation.x < 0.02, `decaying ${camera.rotation.x.toFixed(4)}`)
+  player.update(0.5)
+  assert.strictEqual(camera.rotation.x, 0, 'kick fully decayed')
+  player.addPitchKick(0.05)
+  assert.strictEqual(player._pitchKick, 0.03, 'kick caps at 0.03')
+  player.reset()
+  assert.strictEqual(player._pitchKick, 0, 'reset clears kick')
+  assert.strictEqual(camera.rotation.x, 0)
+}
+
+{ // V5P-2: _onDamaged hook fires with (amount, source) on every hit; no hook is safe
+  const { player } = makePlayer()
+  let got = null
+  player._onDamaged = (amount, source) => { got = [amount, source] }
+  const src = { x: 1, z: 2 }
+  player.damage(15, src)
+  assert.strictEqual(got[0], 15)
+  assert.strictEqual(got[1], src)
+  player._onDamaged = null
+  player.damage(10, 'zombie') // no hook -> no throw
+  assert.strictEqual(player.health, 75)
+  player.dispose()
+}
+
+{ // jump: edge fires only on the ground; gravity lands at 1.7; no re-jump airborne; re-jump after landing
+  const { player, st } = makePlayer()
+  st.jump = true
+  player.update(DT)
+  assert.ok(player.position.y > 1.7, `rose to ${player.position.y.toFixed(3)}`)
+  assert.ok(player.velocity.y > 0, 'ascending after jump')
+  st.jump = true // pressed again while airborne: must be ignored
+  player.update(DT)
+  assert.ok(player.velocity.y < 6.2, `no re-jump airborne (vy ${player.velocity.y.toFixed(3)})`)
+  let landed = -1
+  for (let i = 0; i < 300; i++) {
+    player.update(DT)
+    if (player.position.y === 1.7 && player.velocity.y === 0) { landed = i; break }
+  }
+  assert.ok(landed >= 0, 'lands back on the ground')
+  assert.strictEqual(player.velocity.y, 0)
+  st.jump = true
+  player.update(DT)
+  assert.ok(player.position.y > 1.7, 're-jump works after landing')
+  player.reset()
+  assert.strictEqual(player.position.y, 1.7)
+  assert.strictEqual(player.velocity.y, 0)
+}
+
+{ // passive health regen: 1 hp/s after a 4 s no-damage delay; none during it
+  const { player } = makePlayer()
+  player.health = 50
+  player.damage(10) // health 40, regen countdown restarts
+  step(player, 60) // 1 s elapsed, still within the 4 s delay
+  assert.ok(player.health < 41, `no regen during the delay (health ${player.health.toFixed(2)})`)
+  step(player, 60 * 4) // pass the delay window
+  const before = player.health
+  step(player, 60) // 1 s of regen
+  assert.ok(player.health >= before + 0.9 && player.health <= before + 1.1,
+    `~1 hp/s regen after the delay (${before.toFixed(2)} -> ${player.health.toFixed(2)})`)
+  // Regen never exceeds maxHealth.
+  player.health = 99.5
+  player._regenDelay = 0
+  step(player, 60 * 3)
+  assert.ok(player.health <= player.maxHealth, `regen clamps at maxHealth (${player.health})`)
+}
+
+{ // crouch: lowers the eye height and caps movement speed; standing restores it
+  const { player, st, camera } = makePlayer()
+  step(player, 1) // establish the standing eye pose
+  // Standing eye sits at the body height (1.7); crouching lerps it down to ~0.95.
+  assert.ok(Math.abs(camera.position.y - 1.7) < 0.02, `standing eye ~1.7 (${camera.position.y.toFixed(3)})`)
+  st.crouch = true
+  step(player, 60) // 1 s of crouch transition
+  assert.ok(camera.position.y < 1.2, `crouched eye lowered (${camera.position.y.toFixed(3)})`)
+  assert.ok(camera.position.y > 0.7, `crouched eye not below the ground (${camera.position.y.toFixed(3)})`)
+  // Crouch-walk is slower than a normal walk.
+  const c0 = player.position.clone()
+  st.forward = true; step(player, 60); st.forward = false
+  const cd = Math.hypot(player.position.x - c0.x, player.position.z - c0.z)
+  assert.ok(cd < 2.5, `crouch-walk slower than walk (${cd.toFixed(2)} m/s)`)
+  // Sprint is disabled while crouching.
+  st.sprint = true; st.crouch = true
+  const s0 = player.position.clone()
+  step(player, 60); st.sprint = false
+  const sd = Math.hypot(player.position.x - s0.x, player.position.z - s0.z)
+  assert.ok(sd < 2.5, `sprint disabled while crouched (${sd.toFixed(2)} m/s)`)
+  // Standing back up restores the eye height.
+  st.crouch = false
+  step(player, 60)
+  assert.ok(camera.position.y > 1.5, `standing restores the eye (${camera.position.y.toFixed(3)})`)
+}
+
+{ // gameplay (4): the light burns breath — flashlight on drains stamina at 4/s
+  const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 1000)
+  const st = {
+    forward: false, back: false, left: false, right: false, sprint: false,
+    turnX: 0, turnY: 0, fire: false, reload: false, pause: false, flashlight: false
+  }
+  const fl = new Flashlight(camera, null)
+  const player = new Player(camera, st, new CollisionWorld(180, 180), null, fl)
+  assert.strictEqual(player.maxStamina, 100, 'HUD reads player.maxStamina')
+  fl.on = true
+  const s0 = player.stamina
+  step(player, 60) // 1 s standing still with the light on
+  const drained = s0 - player.stamina
+  assert.ok(drained > 3.5 && drained < 4.5, `light drains ~4/s (${drained.toFixed(2)})`)
+  assert.ok(player.stamina < s0, 'no regen while the light is on')
+  // Sprint still works while stamina > 5 (sprint drain semantics unchanged).
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  assert.ok(player.stamina < s0 - 4, `sprint drains on top (${player.stamina.toFixed(1)})`)
+  // Sprint precedence: sprint+light drains exactly 26/s, never 30/s (the
+  // light branch is unreachable while canSprint). Pinned from a full bar.
+  player.stamina = 100
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  const sprintDrain = 100 - player.stamina
+  assert.ok(sprintDrain > 25.5 && sprintDrain < 26.5,
+    `sprint+light drains 26/s not 30/s (${sprintDrain.toFixed(2)})`)
+  // SPRINT_MIN_STAMINA boundary: at stamina <= 5 sprint is disabled, so the
+  // light drain takes over again (4/s, not 26/s).
+  player.stamina = 4
+  st.forward = true; st.sprint = true
+  step(player, 60); st.sprint = false; st.forward = false
+  const lowDrain = 4 - player.stamina
+  assert.ok(lowDrain > 3.5 && lowDrain < 4.5,
+    `stamina<=5 disables sprint, light drains 4/s (${lowDrain.toFixed(2)})`)
+  assert.strictEqual(player.stamina, 0, 'light soak from 4 clamps at 0')
+  // Light off -> normal regen at 18/s.
+  fl.on = false
+  const s1 = player.stamina
+  step(player, 60)
+  assert.ok(player.stamina > s1 + 17 && player.stamina <= 100,
+    `regen resumes when the light is off (${s1.toFixed(1)} -> ${player.stamina.toFixed(1)})`)
+  // Clamps at 0: long light-on soak never goes negative.
+  player.stamina = 2
+  fl.on = true
+  step(player, 60 * 10)
+  assert.strictEqual(player.stamina, 0, 'stamina clamps at 0')
+  fl.dispose()
+}
+
+{ // back-compat: a Player without a flashlight regenerates normally
+  const { player, st } = makePlayer()
+  assert.strictEqual(player.flashlight, null)
+  player.stamina = 50
+  step(player, 60)
+  assert.ok(player.stamina > 67 && player.stamina <= 69,
+    `regen 18/s with no flashlight (${player.stamina.toFixed(1)})`)
 }
 
 console.log('player OK')

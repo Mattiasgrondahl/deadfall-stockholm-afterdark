@@ -3,51 +3,901 @@ import * as THREE from 'three'
 /**
  * Zombie — boxy humanoid pursuer with chase / attack / corpse states.
  *
- * Shared resources: GEO and MAT are module-level and shared by every
- * zombie instance, so spawning allocates no per-zombie geometry or
- * materials. dispose() detaches only the per-zombie group; it must never
- * dispose the shared GEO/MAT entries, which back every other live zombie.
- * Zombies never use Math.random.
+ * Shared resources: GEO2/MAT2/HITMAT/DEADMAT are module-level and shared by
+ * every zombie instance, so spawning allocates no per-zombie geometry or
+ * materials. Hit flashes and deaths swap shared material references;
+ * dispose() detaches only the per-zombie group and must never dispose the
+ * shared entries, which back every other live zombie.
+ * Zombies never use Math.random; per-zombie phase comes from a fixed-seed LCG.
  */
 
-const GEO = {
-  torso: new THREE.BoxGeometry(0.5, 1.0, 0.4),
-  head: new THREE.BoxGeometry(0.3, 0.3, 0.3),
-  arm: new THREE.BoxGeometry(0.12, 0.55, 0.12)
+const GEO2 = {
+  // Improved humanoid proportions (shared by every zombie — no per-instance
+  // geometry). A broader, slightly tapered torso, a smaller head, and longer,
+  // slimmer limbs read as a body rather than stacked cubes.
+  torso: new THREE.BoxGeometry(0.56, 1.05, 0.34),
+  head: new THREE.BoxGeometry(0.26, 0.3, 0.26),
+  arm: new THREE.BoxGeometry(0.13, 0.62, 0.13),
+  leg: new THREE.BoxGeometry(0.16, 0.95, 0.16)
 }
 
-const MAT = {
-  walker: new THREE.MeshStandardMaterial({ color: 0x6b7d5c, roughness: 0.9 }),
-  shambler: new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.9 }),
-  screamer: new THREE.MeshStandardMaterial({ color: 0x9c4f5e, roughness: 0.9 })
+// v6 visuals (5): body colors lifted ~1.6x in linear luminance (hue order and
+// per-type separation preserved: walker brightest green, brute darkest). Under
+// the night rig (moon 1.45 + hemi 0.30 + ambient 0.12) the old colors only
+// reached Michelson contrast 0.81-0.93 against the fog backdrop at 30 m —
+// below the 0.90 readability gate, and the brute failed at 20 m too. These
+// values lift every type to C >= 0.91 at 30 m on every fog tier with no new
+// lights or meshes. Bodies stay far under the 0.72 bloom cut (tonemapped
+// 0.07-0.17, so zombies still never bloom).
+const MAT2 = {
+  walker: new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+  shambler: new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+  screamer: new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+  brute: new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 })
 }
 
-/** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. */
+// Shared flash/death materials: non-fatal hit = 0.15 s red swap; death =
+// dull desaturated swap. Swapped by reference only — never disposed.
+// v6 visuals (6): the old 0x8a1f2a/0x661111 pair went *darker* than every MAT2
+// body once round 45 lifted them — Michelson C −0.01…−0.43, so a hit read as a
+// dark patch rather than a flash. Lifted to 0xe84a38 + emissive 0xb02214 so the
+// flash self-lights (emissive is view-independent, so it reads at any distance
+// and on 'low' where the muzzle-flash light is dropped): tonemapped 0.327,
+// C >= 0.30 vs the brightest walker body and 0.65 vs the brute, still under the
+// 0.72 bloom cut (a hit must not bloom) and still deep red (R/G 11.8).
+const HITMAT = new THREE.MeshStandardMaterial({ color: 0xe84a38, emissive: 0xb02214, roughness: 0.8 })
+const DEADMAT = new THREE.MeshStandardMaterial({ color: 0x3a3129, roughness: 1 })
+const EYE = new THREE.BoxGeometry(0.07, 0.07, 0.04)
+const EYEMAT = {
+  walker: new THREE.MeshBasicMaterial({ color: 0x8aff5e }),
+  shambler: new THREE.MeshBasicMaterial({ color: 0xd0ff4f }),
+  screamer: new THREE.MeshBasicMaterial({ color: 0xff3b2e }),
+  brute: new THREE.MeshBasicMaterial({ color: 0xff5a1e })
+}
+const DEADEYEMAT = new THREE.MeshBasicMaterial({ color: 0x2a2a2a })
+// Hair: a flat dark cap slab sitting on top of the head so the silhouette reads
+// as a person with hair, not a bald box. Shared geometry; a few shared colors
+// picked deterministically per zombie so crowds vary.
+const HAIR_GEO = new THREE.BoxGeometry(0.28, 0.08, 0.28)
+const HAIR_MATS = [
+  new THREE.MeshStandardMaterial({ color: 0x241d16, roughness: 0.9 }),
+  new THREE.MeshStandardMaterial({ color: 0x12100e, roughness: 0.9 }),
+  new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 })
+]
+
+/** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
+ *  wave-5 boss. v13 rebalance: the user wants the boss to take ≈10 SNIPER
+ *  shots (the sniper is the anti-boss weapon). Base 1400 → wave-5 scaling
+ *  1.12^4 ≈ 1.574 gives 2203 effective HP = 24 body / 12 head sniper shots
+ *  (90 / 180 dmg) — ≥10 of each. Pistol needs ~85 body shots, shotgun ~42
+ *  blasts (armor ×0.4). v14: the boss now SEEKS the player at walker pace
+ *  (speed 1.5, up from the v13 0.45 shamble) so it actively walks toward the
+ *  player across the arena, and its HP is 10× (see BOSS_HP_MULT). */
 const TABLE = {
-  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9 },
-  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 },
-  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 }
+  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
+  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
+  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
+  brute: { speed: 1.5, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
-export { TABLE, GEO, MAT }
+/** Boss charge window: within this horizontal range the brute lunges instead
+ *  of shambling; the lunge adds CHARGE_SPEED for CHARGE_TIME seconds and its
+ *  heavy melee lands at the end of the lunge. v13: CHARGE_SPEED 6 → 4 — the
+ *  boss is slower across the board. */
+const CHARGE_RANGE = 7
+const CHARGE_SPEED = 4
+const CHARGE_TIME = 0.55
+
+// Difficulty presets. NORMAL is the shipped baseline (identity). FRENZY: every
+// zombie runs at 2× speed and has a flat 50 HP regardless of type, tuned so
+// that at wave 1 exactly 2 body shots (pistol 26+26, axe 25+25) or 1 headshot
+// (pistol 52, axe 50, sword 90) kill it. The usual 1.12×/wave HP scaling
+// still applies on top.
+// v3 difficulty (1): 'nightmare' STACKS on frenzy (user decision) — 2× × 1.5
+// = 3× zombie speed, same flat-50-HP rule, and the run starts at wave 3
+// (startWave). It requires frenzy; the title toggle enforces that pairing.
+// v3 T1: NORMAL is identity (hpBase null → per-type TABLE hp). The
+// dismemberment chain is hit-counted, so it is carried by the SHAMBLER
+// (90 HP survives rounds 1-3 at 26/round: 90−78 = 12 HP left) — the walker's
+// 50 HP dies to two rounds and simply ends the chain early, as designed.
+export const DIFFICULTY = {
+  normal: { speedMult: 1, hpBase: null, startWave: 1 },
+  frenzy: { speedMult: 2, hpBase: 50, startWave: 1 },
+  nightmare: { speedMult: 3, hpBase: 50, startWave: 3 }
+}
+
+const ORDER = ['walker', 'shambler', 'screamer', 'brute']
+
+/** v9 boss size: the brute's silhouette + hitbox scale. Doubled from the old
+ *  1.4 to 2.8 so the boss reads as a genuine giant ("2x larger"). Both the
+ *  primitive/skin body scale and the weapon hitbox radii use this single factor,
+ *  so the two-sphere hitbox contract stays consistent with the visible model.
+ *  v13: 2.8 → 5.6 — the user wants the boss 4× LARGER than the v10 giant, so
+ *  the whole silhouette + hitbox doubles again (~5 m tall, 2.5 m torso sphere). */
+const BOSS_SCALE = 5.6
+
+/** v14 boss HP: the user wants the wave-5 boss 10× tankier. Applied on top of
+ *  the per-type base (and the flat-50 frenzy/nightmare HP) AFTER wave scaling,
+ *  so the boss takes ~10× the shots of any other zombie at the same wave. */
+const BOSS_HP_MULT = 10
+
+/**
+ * Per-type body scale/pose. Anchor centers are load-bearing (hitboxes):
+ * the torso mesh center stays exactly at (0, 1.2, 0) and the head center
+ * exactly at (0, 1.8, 0) for every type; scale and rotation are applied
+ * around those centers, so the anchors never move.
+ */
+const POSE2 = {
+  walker: { torsoS: [1, 1, 1], torsoR: 0, headS: [1, 1, 1], headR: 0, armRest: -0.35, legS: [1, 1, 1] },
+  shambler: { torsoS: [1.15, 0.85, 1.1], torsoR: 0.45, headS: [0.9, 0.9, 0.9], headR: 0.35, armRest: 0.2, legS: [0.85, 0.85, 0.85] },
+  screamer: { torsoS: [0.7, 1.15, 0.65], torsoR: 0, headS: [1.15, 1.15, 1.15], headR: 0, armRest: -2.6, legS: [1, 1.15, 1] },
+  brute: { torsoS: [1.4, 1.15, 1.3], torsoR: 0.15, headS: [1.2, 1.2, 1.2], headR: 0.1, armRest: -0.6, legS: [1.2, 0.95, 1.2] }
+}
+
+// Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
+// not-yet-loaded face blends with the head color. Each type owns an array of
+// THREE shared face materials (3 portrait variants); individual zombies pick
+// one variant deterministically from their spawn-derived phase, so same-type
+// zombies no longer look cloned. The textures are attached lazily in the
+// browser only (headless Node keeps the flat materials). When a texture lands,
+// the material color switches to white, because MeshStandardMaterial multiplies
+// map by color — leaving the head color would tint the portrait dark and hide
+// it. The JPEG background already matches the head color, so white keeps the
+// portrait edges seamless. The portraits are themselves dark images and the
+// night scene is dim, so a scene-lit face would still blend into the head; the
+// same texture is also set as emissiveMap (self-lit) so the face stays visible
+// wherever the zombie is.
+// v17: the face was a square PlaneGeometry(0.26,0.26) that showed the whole
+// square portrait (background corners visible around the head). The user wants
+// only the head shown, so the face is now a CIRCLE inscribed in the same square
+// (radius 0.13 keeps the same head width). A shared circular alphaMap + alphaTest
+// clips the corners so only the centered head reads (the portraits are head-
+// centered and fill the frame, per vision inspection).
+const FACE_GEO = new THREE.CircleGeometry(0.13, 24)
+// One shared round alpha mask: white disc (opaque) on black (transparent), so
+// alphaTest discards the square corners and keeps the head.
+const FACE_ALPHA = (() => {
+  if (typeof document === 'undefined') return null
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, 64, 64)
+  g.fillStyle = '#fff'
+  g.beginPath()
+  g.arc(32, 32, 32, 0, Math.PI * 2)
+  g.fill()
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.NoColorSpace
+  return t
+})()
+// v6 visuals (5): base colors mirror MAT2 exactly (see the MAT2 comment) so the
+// flat face blends with the lifted head color.
+const FACEMAT = {
+  walker: [
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 })
+  ],
+  shambler: [
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 })
+  ],
+  screamer: [
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
+  ],
+  brute: [
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 })
+  ]
+}
+
+// Per-outfit clothing materials, shared across all zombie types. Nine distinct
+// archetypes so a crowd reads as varied people, not clones:
+//   0 lawyer/suit (charcoal jacket + white shirt + dark tie)
+//   1 mailman (navy uniform + grey trousers)
+//   2 police (dark navy jacket + black trousers + cap)
+//   3 fireman (tan turnout coat + dark trousers + helmet)
+//   4 woman in a dress (crimson dress, one-piece top+skirt)
+//   5 stripper (black top + pink skirt)
+//   6 schoolgirl (white blouse + plaid grey skirt)
+//   7 jogger (bright teal top + black shorts)
+//   8 gym guy (grey tank + black shorts)
+// The torso wears the top material and the legs the bottom; the arms stay bare
+// (per-type MAT2 skin color) and the head keeps the per-type color so the face
+// still reads. Base colors are the clothing colors so the headless /
+// not-yet-loaded state already looks clothed; when the texture lands (browser
+// only) the color flips to white, because MeshStandardMaterial multiplies map
+// by color. `acc` names an optional accessory prop (tie/cap/helmet/stripe)
+// built per archetype so the silhouette reads even without a texture.
+const OUTFITMATS = {
+  tops: [
+    new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.85 }), // lawyer jacket
+    new THREE.MeshStandardMaterial({ color: 0x27324f, roughness: 0.85 }), // mailman navy
+    new THREE.MeshStandardMaterial({ color: 0x1c2436, roughness: 0.85 }), // police navy
+    new THREE.MeshStandardMaterial({ color: 0xb5854a, roughness: 0.9 }),  // fireman tan
+    new THREE.MeshStandardMaterial({ color: 0x8e1f2e, roughness: 0.8 }),  // dress crimson
+    new THREE.MeshStandardMaterial({ color: 0x17141a, roughness: 0.7 }),  // stripper black
+    new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.85 }), // schoolgirl blouse
+    new THREE.MeshStandardMaterial({ color: 0x1fa08f, roughness: 0.7 }),  // jogger teal
+    new THREE.MeshStandardMaterial({ color: 0x55595f, roughness: 0.7 })   // gym tank
+  ],
+  bottoms: [
+    new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.9 }),  // lawyer trousers
+    new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.9 }),  // mailman grey
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.9 }),  // police black
+    new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.9 }),  // fireman dark
+    new THREE.MeshStandardMaterial({ color: 0x8e1f2e, roughness: 0.8 }),  // dress skirt (same)
+    new THREE.MeshStandardMaterial({ color: 0xd23b8f, roughness: 0.7 }),  // stripper pink
+    new THREE.MeshStandardMaterial({ color: 0x6b5140, roughness: 0.85 }), // schoolgirl plaid
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.85 }), // jogger shorts
+    new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.85 })  // gym shorts
+  ]
+}
+// Per-archetype accessory: a small prop that makes the silhouette read. No
+// archetype uses a separate accessory mesh — every outfit's identity (police
+// cap, fireman helmet, tie, hi-vis stripe, skirt) is carried by its top/bottom
+// texture, so no extra mesh is spent and the 600-mesh scene budget holds at the
+// 18-alive ceiling with the sniper as a fifth weapon. null = none.
+const OUTFIT_ACC = ['tie', 'cap', 'helmet', 'stripe', null, 'tie', 'cap', null, 'helmet']
+const OUTFIT_COUNT = OUTFITMATS.tops.length
+
+// v6 visuals (11): fabric weave normal map + clothed arms. The primitive bodies
+// were flat-colored boxes: even after the outfit albedo landed, torso/legs had
+// no normalMap at all, and the arms + head wore the bare per-type skin material
+// (MAT2), so roughly half of every visible body had no texture whatsoever.
+// Two fixes, both shared-module-level so they cost no extra meshes:
+//  (a) one lazily-built fabric NORMAL DataTexture (tangent-space, so colorSpace
+//      stays NoColorSpace — a normal map must never be sRGB decoded) assigned as
+//      normalMap of every outfit top/bottom plus the sleeve materials; v21 grew
+//      it from a 64px weave-only map to a 128px weave+folds map at normalScale
+//      1.0 so garments read as draped cloth, not a flat decal (see buildFabricNormal);
+//  (b) per-outfit SLEEVE materials that clone the outfit top (its albedo map,
+//      color and roughness are copied when the texture lands — see
+//      loadOutfitTextures) so arms read as clothed sleeves instead of bare
+//      skin. The head keeps MAT2 skin so the face decal still reads.
+// DataTexture (not CanvasTexture) keeps this headless-safe: no document/window
+// touch, and the same deterministic result under Node and in the browser.
+// v21: the old map was a plain 2x2 twill at 64px — micro-relief only, so a
+// garment box still read as a flat printed decal ("looks like a picture of a
+// cloth"). Now the map layers TWO scales of cloth relief on top of each other:
+//   (a) the fine warp/weft weave (kept, so fabric still has tooth), and
+//   (b) large low-frequency FOLDS/WRINKLES — a few octaves of seeded value
+//       noise whose gradient is what actually catches the light, so a jacket
+//       or trouser leg shows soft creases and drape instead of a flat panel.
+// 128px so the folds have room to vary across a box face without tiling into a
+// visible grid. Still a DataTexture (headless-safe, deterministic, no canvas).
+const FABRIC_N_SIZE = 128
+let FABRIC_NORMAL = null
+let FABRIC_REFS = 0 // live zombies; the shared weave map is released at zero
+/** Standard seeded LCG (see AmmoDrops._rand) — no Math.random anywhere. */
+function lcg(s) { return (s = (Math.imul(s, 48271) >>> 0) % 65537) / 65537 }
+/** Deterministic 2D value noise in [0,1] on a 4x4 lattice, bilinearly
+ *  interpolated and wrapped, so it tiles seamlessly. The lattice values come
+ *  from the same LCG shape used everywhere else (no Math.random). */
+function latticeNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y)
+  const xf = x - xi, yf = y - yi
+  // Smoothstep the fractional part so cell crossings are soft, not faceted.
+  const u = xf * xf * (3 - 2 * xf)
+  const v = yf * yf * (3 - 2 * yf)
+  // Wrap the lattice index to 4 so the field repeats every 4 units (tile edge).
+  const g = (ix, iy) => lcg((((Math.imul(ix & 3, 2654435761) ^ Math.imul(iy & 3, 40503)) >>> 0) ^ seed) >>> 0)
+  const a = g(xi, yi), b = g(xi + 1, yi), c = g(xi, yi + 1), d = g(xi + 1, yi + 1)
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+}
+/** Build the shared weave+folds normal map once per module load. */
+function buildFabricNormal() {
+  const n = FABRIC_N_SIZE
+  const data = new Uint8Array(n * n * 4)
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two independent seeded streams per texel (fixed 32-bit states derived
+      // from the fixed seed below, so the output never depends on iteration
+      // order and never touches Math.random).
+      const sx = ((x * 31 + y * 17 + 7) >>> 0) ^ 20261
+      const sy = ((y * 29 + x * 13 + 11) >>> 0) ^ 48271
+      const jx = lcg(sx) - 0.5
+      const jy = lcg(sy) - 0.5
+      // (a) Warp (vertical) threads tilt the normal along x, weft (horizontal)
+      //     threads along y; the thread centre is steepest, the crossing flat.
+      let warp = Math.sin((x / 8) * Math.PI * 2) * 0.55 + jx * 0.25
+      let weft = Math.sin((y / 8) * Math.PI * 2) * 0.55 + jy * 0.25
+      // (b) Large folds: two octaves of tiling value noise form a height field;
+      //     its finite-difference gradient is the fold slope. Low frequency
+      //     (period ~48px) reads as a drape crease, the finer octave (~16px) as
+      //     a soft wrinkle. Diagonal bias (x+y) so creases run like cloth, not
+      //     a checkerboard.
+      const h = (px, py) => latticeNoise(px / 48, py / 48, 101) * 0.7 +
+        latticeNoise(px / 16 + 0.5, py / 16 + 0.5, 733) * 0.3
+      const foldX = (h(x + 1, y) - h(x - 1, y)) * 1.4
+      const foldY = (h(x, y + 1) - h(x, y - 1)) * 1.4
+      warp += foldX
+      weft += foldY
+      const len = Math.sqrt(warp * warp + weft * weft + 1)
+      const i = (y * n + x) * 4
+      data[i] = ((warp / len) * 0.5 + 0.5) * 255
+      data[i + 1] = ((weft / len) * 0.5 + 0.5) * 255
+      data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255
+      data[i + 3] = 255
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 2) // a box face spans ~2 weave tiles, not one stretched grid
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.generateMipmaps = true
+  tex.needsUpdate = true
+  return tex
+}
+/** Shared weave normal map, built on first use and never disposed per-zombie
+ *  (it is module-level, like GEO2/MAT2). dispose() releases it once the whole
+ *  game is torn down. */
+function fabricNormal() {
+  if (FABRIC_NORMAL === null) {
+    FABRIC_NORMAL = buildFabricNormal()
+    FABRIC_REFS = 0
+  }
+  return FABRIC_NORMAL
+}
+// v4 VISUALS (A3): shared gore/dirt detail map for the bare skin (head + any
+// un-clothed body part). A mottled field of dark rotting-flesh patches so the
+// flat per-type skin color reads as decayed tissue rather than plastic. Built
+// once at module load as a DataTexture (headless-safe: no canvas/document),
+// deterministic (seeded LCG, no Math.random), shared across every zombie and
+// released at zero refs alongside FABRIC_NORMAL. The color map multiplies the
+// material color (so per-type tint survives); the roughness map adds wet/dry
+// variation.
+const SKIN_D_N = 64
+let SKIN_DETAIL = null
+let SKIN_DETAIL_R = null
+let SKIN_REFS = 0
+function buildSkinDetail(emissiveless) {
+  const n = SKIN_D_N
+  const data = new Uint8Array(n * n * 4)
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two independent seeded streams per texel (fixed states, order-independent).
+      const sx = ((x * 41 + y * 23 + 5) >>> 0) ^ 13337
+      const sy = ((y * 37 + x * 19 + 3) >>> 0) ^ 24680
+      // Low-frequency mottling: sum a few sine octaves for blobby dark patches.
+      const m = 0.5 + 0.5 * (
+        Math.sin(x * 0.55 + lcg(sx) * 1.5) * 0.5 +
+        Math.sin(y * 0.47 + lcg(sy) * 1.5) * 0.5
+      )
+      const grime = Math.max(0, m - 0.45) * 1.6 // most texels clean, some dark
+      const i = (y * n + x) * 4
+      if (emissiveless) {
+        // Color map: near-white where clean, dark bruise where grimed.
+        const v = Math.max(0.35, 1 - grime * 0.7)
+        const r = Math.round(255 * v * (1 - grime * 0.25)) // bruise toward red-brown
+        const g = Math.round(255 * v * (1 - grime * 0.45))
+        const b = Math.round(255 * v * (1 - grime * 0.35))
+        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255
+      } else {
+        // Roughness map: grime patches read wetter (darker = smoother) so the
+        // rotting flesh has wet/dry variation instead of uniform matte.
+        const rough = Math.min(255, Math.max(90, 255 - grime * 150))
+        data[i] = rough; data[i + 1] = rough; data[i + 2] = rough; data[i + 3] = 255
+      }
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 2)
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.generateMipmaps = true
+  tex.needsUpdate = true
+  return tex
+}
+function skinDetailMaps() {
+  if (SKIN_DETAIL === null) {
+    SKIN_DETAIL = buildSkinDetail(true)
+    SKIN_DETAIL.colorSpace = THREE.SRGBColorSpace
+    SKIN_DETAIL_R = buildSkinDetail(false)
+    SKIN_REFS = 0
+  }
+  return { map: SKIN_DETAIL, roughnessMap: SKIN_DETAIL_R }
+}
+// v4 VISUALS (A3): give the bare per-type skin materials (head + un-clothed
+// torso parts) the shared gore/dirt detail so bodies read as rotting flesh.
+// Assigned once at module load; the maps are shared and refcounted like the
+// fabric weave map.
+{
+  const dm = skinDetailMaps()
+  for (const k of Object.keys(MAT2)) {
+    MAT2[k].map = dm.map
+    MAT2[k].roughnessMap = dm.roughnessMap
+  }
+}
+// Per-outfit sleeve materials: one per archetype, cloned from that archetype's
+// top so sleeves always match the jacket/shirt they belong to. Swapped in by
+// reference for the arm meshes; shared across zombies, never disposed per-body.
+const SLEEVE_MATS = OUTFITMATS.tops.map((m) => {
+  const s = m.clone()
+  s.map = m.map
+  s.color.copy(m.color)
+  s.roughness = m.roughness
+  s.normalMap = fabricNormal()
+  // v21: raised 0.6 -> 1.0. The map now carries large folds, not just weave, so
+  // the full-strength relief is what makes a garment read as draped cloth rather
+  // than a flat decal. Still below the level where the weave would read as
+  // canvas plating.
+  s.normalScale = new THREE.Vector2(1.0, 1.0)
+  s.needsUpdate = true
+  return s
+})
+for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) {
+  m.normalMap = fabricNormal()
+  m.normalScale = new THREE.Vector2(1.0, 1.0)
+  m.needsUpdate = true
+}
+// Shared accessory geometry + materials (built once, reused across zombies;
+// cheap boxes so the mesh budget is unaffected). tie = thin dark strip on the
+// chest; cap = flat police cap on the head; helmet = rounded fireman helmet;
+// stripe = hi-vis band across the chest. Each is parented to the torso/head so
+// it moves with the body and is removed with the group on death.
+const ACC_GEO = {
+  tie: new THREE.BoxGeometry(0.08, 0.5, 0.02),
+  cap: new THREE.BoxGeometry(0.3, 0.06, 0.3),
+  helmet: new THREE.BoxGeometry(0.32, 0.14, 0.32),
+  stripe: new THREE.BoxGeometry(0.58, 0.12, 0.36)
+}
+const ACC_MAT = {
+  tie: new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.7 }),
+  cap: new THREE.MeshStandardMaterial({ color: 0x141a2a, roughness: 0.7 }),
+  helmet: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.5, metalness: 0.2 }),
+  stripe: new THREE.MeshStandardMaterial({ color: 0xf2d43d, roughness: 0.6, emissive: 0x3a3200 })
+}
+
+let faceTexturesLoading = false
+// Asset base for runtime (non-bundled) fetches. Vite substitutes BASE_URL at
+// build time, so the same code works on the dev server ("/") and on GitHub
+// Pages (base /deadfall-stockholm-afterdark), where an absolute "/assets/..."
+// path would 404. The substituted value is normalized to exactly one
+// trailing slash because it may or may not carry one depending on the Vite
+// version. In headless Node import.meta.env is undefined; the guard in
+// loadFaceTextures means this value is never used there.
+const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
+function loadFaceTextures() {
+  if (faceTexturesLoading || typeof document === 'undefined') return
+  faceTexturesLoading = true
+  const loader = new THREE.TextureLoader()
+  for (const type of ORDER) {
+    for (let i = 0; i < 3; i++) {
+      // Variant 0 is the original portrait ({type}-face.jpg); variants 1 and 2
+      // are the extra faces ({type}2-face.jpg, {type}3-face.jpg) — the file
+      // suffix is i + 1, so variant 1 loads the "2" file and variant 2 the "3"
+      // file.
+      loader.load(ASSET_BASE + 'assets/faces/' + type + (i === 0 ? '' : i + 1) + '-face.jpg', (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.anisotropy = 4
+        const mat = FACEMAT[type][i]
+        // map is multiplied by material.color; white lets the portrait render
+        // at true color instead of a dark head-color tint.
+        mat.color.set(0xffffff)
+        // The portrait is a dark image and the night scene is dim, so a
+        // scene-lit face would blend into the head. Self-illuminate it: the same
+        // texture as emissiveMap adds a moderate glow independent of scene light,
+        // so the face is visible in alleys as well as under streetlamps.
+        mat.map = tex
+        mat.emissiveMap = tex
+        mat.emissive.set(0xffffff)
+        mat.emissiveIntensity = 0.5
+        // v17: clip the square portrait to a round head — the circular alphaMap
+        // + alphaTest discard the corners so only the centered head shows.
+        if (FACE_ALPHA) { mat.alphaMap = FACE_ALPHA; mat.alphaTest = 0.5; mat.transparent = true }
+        mat.needsUpdate = true
+      }, () => console.warn(`face texture failed to load; keeping flat head-color face (${type} variant ${i})`))
+    }
+  }
+}
+
+// Browser-only lazy outfit texture loading (headless Node keeps the flat
+// colors). Each top/bottom pair is one file per outfit; .jpg is guaranteed by
+// tools/generate-outfit-textures.mjs. Nine archetypes, order matches OUTFITMATS.
+let outfitTexturesLoading = false
+// v17: per-instance outfit tint. All zombies of the same archetype shared one
+// material, so every lawyer looked identical. Now each zombie clones its
+// top/bottom/sleeve pair and applies a small deterministic hue+brightness shift
+// derived from its spawn LCG phase, so crowds read as varied clothing. The
+// clones are registered here so the async loadOutfitTextures() can hand them the
+// albedo map too (a clone made before the texture resolved would otherwise stay
+// flat). dispose() unregisters. Keyed by the clone itself.
+const OUTFIT_CLONES = new Set()
+// Deterministic tint: one LCG draw from the phase → a small HSL nudge around the
+// archetype's base color (±12° hue, ±12% lightness), clamped so outfits stay
+// recognizable. Reuses the standard LCG shape; no Math.random.
+function outfitTint(phase, mat) {
+  let s = Math.imul(Math.round(phase * 1000) ^ 0x9e3779b9, 48271) >>> 0
+  s = (s % 65537) / 65537
+  const hsl = {}
+  mat.color.getHSL(hsl)
+  const dh = (s - 0.5) * 0.066 // ±0.033 (~±12°)
+  const dl = (s - 0.5) * 0.24 // ±0.12 (~±12%)
+  mat.color.setHSL(
+    (hsl.h + dh + 1) % 1,
+    THREE.MathUtils.clamp(hsl.s * 0.92, 0, 1),
+    THREE.MathUtils.clamp(hsl.l + dl, 0.08, 0.92)
+  )
+}
+const OUTFIT_FILES = [
+  'lawyer-top', 'lawyer-pants',
+  'mailman-top', 'mailman-pants',
+  'police-top', 'police-pants',
+  'fireman-top', 'fireman-pants',
+  'dress-top', 'dress-skirt',
+  'stripper-top', 'stripper-skirt',
+  'schoolgirl-top', 'schoolgirl-skirt',
+  'jogger-top', 'jogger-shorts',
+  'gym-top', 'gym-shorts'
+]
+function loadOutfitTextures() {
+  if (outfitTexturesLoading || typeof document === 'undefined') return
+  outfitTexturesLoading = true
+  const loader = new THREE.TextureLoader()
+  for (let i = 0; i < OUTFIT_COUNT; i++) {
+    for (let j = 0; j < 2; j++) {
+      const mat = (j === 0 ? OUTFITMATS.tops : OUTFITMATS.bottoms)[i]
+      const file = OUTFIT_FILES[i * 2 + j]
+      loader.load(ASSET_BASE + 'assets/outfits/' + file + '.jpg', (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.anisotropy = 4
+        mat.color.set(0xffffff)
+        mat.map = tex
+        mat.needsUpdate = true
+        // The sleeve clone was built from the flat top material, so hand the
+        // albedo (and the now-white tint) to its twin as well — otherwise the
+        // arms stay a flat jacket color while the torso wears the texture.
+        const sleeve = SLEEVE_MATS[i]
+        sleeve.color.set(0xffffff)
+        sleeve.map = tex
+        sleeve.needsUpdate = true
+        // v17: live per-instance clones must receive the same albedo. A clone
+        // keeps its tinted color (so the texture reads as a colored garment) but
+        // needs the map. Tagged clones are matched by archetype index + part.
+        for (const cl of OUTFIT_CLONES) {
+          if (cl._outfitIdx === i && cl._outfitPart === (j === 0 ? 'top' : 'bottom')) {
+            cl.map = tex
+            cl.needsUpdate = true
+          }
+        }
+      }, () => console.warn(`outfit texture failed to load; keeping flat color (${file})`))
+    }
+  }
+}
+
+export { TABLE, GEO2, MAT2, HITMAT, DEADMAT, EYEMAT, DEADEYEMAT, contactNormal, FACE_GEO, FACEMAT, POSE2, OUTFITMATS, SLEEVE_MATS, ATTACK_RANGE, AIR_CLEAR, CHARGE_RANGE, CHARGE_SPEED, CHARGE_TIME }
+
+// --- Browser-only skinned-mesh layer (v5 upgrade) ---------------------------
+// When a rigged+animated GLB is available (browser only), a zombie's primitive
+// body is swapped for a SkinnedMesh driven by an AnimationMixer. Headless Node
+// (and any zombie whose asset has not loaded yet) keeps the primitive stub, so
+// the deterministic movement/hitbox tests are unaffected.
+//
+// LOD: skinned within LOD_DIST of the player (camera proxy), primitive stub
+// beyond. Both bodies always exist; only visibility toggles, so no allocation
+// churn and the primitive fallback is instant. The player stands in for the
+// camera because the game is first-person and the camera tracks the player.
+const LOD_DIST = 25
+//
+// Per-state clip mapping (clip names come from the retargeted rig, e.g. the
+// Mixamo/RobotExpressive humanoid): idle->Idle, walk->Walking, run->Running,
+// attack->Punch, hurt->No, death->Death. A missing clip falls back to Idle, so
+// a rig without every clip still animates.
+const SKIN_CLIPS = { idle: 'Idle', walk: 'Walking', run: 'Running', attack: 'Punch', hurt: 'No', death: 'Death' }
+// Per-type tint applied to the shared baked body material so the types read
+// distinctly (the bake merged torso/legs into one material, so a per-type color
+// multiply is the variant mechanism that mirrors MAT2). The brute is also
+// scaled up ~1.4x for its boss silhouette.
+const SKIN_TINT = {
+  walker: 0xb9c4ad, shambler: 0xc4b39c, screamer: 0xd89aa6, brute: 0xa8b39a
+}
+// Per-type asset path under assets/zombies/. A type without a file keeps the
+// primitive body (the loader warns and leaves the stub in place).
+const SKIN_ASSET = { walker: 'walker-fixed.glb', shambler: 'walker-fixed.glb', screamer: 'walker-fixed.glb', brute: 'walker-fixed.glb' }
+// Per-type body width multiplier on the shared rig so the crowd reads as varied
+// silhouettes (screamer lanky, brute broad) rather than one tinted model.
+const SKIN_WIDTH = { walker: 1.0, shambler: 1.08, screamer: 0.86, brute: 1.28 }
+// Shared per-type loaded rig (geometry + clips + skeleton template). One GLB
+// parse per type is shared by every zombie of that type; each zombie clones the
+// skinned mesh and gets its own mixer (cloning a SkinnedMesh shares geometry,
+// and Skeleton.clone gives an independent pose).
+const skinCache = {} // type -> { scene, animations } | 'loading' | 'missing'
+let skinLoader = null
+// v5 skinned-rig swap: the walker-final.glb rig was corrupted (bones collapsed
+// to ~cm scale, mis-assigned weights). tools/blender/repair-rig.py re-scales the
+// foot->head bone span onto the 1.8 m mesh (verified: span 1.823 vs mesh 1.8,
+// 2340 tris, 14 animations preserved) and exports walker-fixed.glb. The skinned
+// path is now enabled for that repaired rig.
+const USE_SKINNED_RIG = true
+// A2: distinct per-type BODY meshes. The skinned rig above is shared by every
+// type (walker-fixed.glb) and is kept loaded-but-hidden; these GLBs are the
+// visible bodies instead. Each is a single unrigged Mesh (0 bones, 0 clips)
+// authored at 1.8 m with the type's own proportions baked into the geometry,
+// so the body needs only a uniform height scale — no SKIN_WIDTH multiplier.
+// walker has NO entry: it has no distinct mesh and keeps the primitive body.
+const MESH_ASSET = { shambler: 'shambler-mesh.glb', screamer: 'screamer-mesh.glb', brute: 'brute-mesh.glb' }
+// Shared per-type loaded body mesh. One GLB parse per type is shared by every
+// zombie of that type; each zombie clones the mesh (clone shares geometry) and
+// owns only its own tinted material clone.
+const meshCache = {} // type -> { scene } | 'loading' | 'missing'
+let meshLoader = null
+// A2 mesh bodies are DISABLED (Sep 28): the Pixal3D bodies are solid in isolation
+// but under the dim night lighting + single-color emissive tint they read as dark,
+// thin SILHOUETTES with no solid torso — the user saw them as skeletons. The
+// primitive clothed humanoid (face + per-type tint/width) is the solid, proven
+// visual, so every type falls back to it. The mesh path (MESH_ASSET/
+// loadSkinMesh/_attachSkinMesh/_applyLOD mesh branch) is kept intact so a future
+// higher-quality mesh pass can flip this back to true.
+const USE_MESH_BODY = false
+
+function loadSkin(type, onReady) {
+  if (!USE_SKINNED_RIG) return // primitive body is the visual; skip the rig
+  if (typeof document === 'undefined') return // headless: never load
+  const entry = skinCache[type]
+  if (entry && entry !== 'loading') {
+    if (entry !== 'missing') onReady(entry)
+    return
+  }
+  if (entry === 'loading') {
+    // A load is already in flight for this type; retry on a MACROTASK timer
+    // (setTimeout) once it resolves. A microtask poll (Promise.resolve().then)
+    // re-queues synchronously and starves the render loop when many zombies
+    // call this at once — the page hangs. setTimeout yields to rAF/render.
+    const wait = () => {
+      const e = skinCache[type]
+      if (e && e !== 'loading') { if (e !== 'missing') onReady(e); return }
+      setTimeout(wait, 32)
+    }
+    setTimeout(wait, 32)
+    return
+  }
+  skinCache[type] = 'loading'
+  if (!skinLoader) {
+    // GLTFLoader lives under three's examples/jsm; import it lazily so the
+    // headless bundle never pulls it in.
+    import('three/examples/jsm/loaders/GLTFLoader.js').then((m) => {
+      skinLoader = new m.GLTFLoader()
+      start()
+    }).catch(() => { skinCache[type] = 'missing' })
+  } else {
+    start()
+  }
+  function start() {
+    const url = ASSET_BASE + 'assets/zombies/' + SKIN_ASSET[type]
+    skinLoader.load(url, (gltf) => {
+      // The walker-fixed.glb animation clips were authored against the original
+      // cm-scale rest pose; after repair-rig.py rescaled the bones they export
+      // as inconsistent, oversized translation curves (e.g. Torso Y 3.5 m) that
+      // collapse/distort the body when played. Strip them so the body renders in
+      // its correct 1.8 m rest pose; Zombie drives a small procedural bob instead.
+      const rec = { scene: gltf.scene, animations: [] }
+      skinCache[type] = rec
+      onReady(rec)
+    }, undefined, () => {
+      skinCache[type] = 'missing'
+      console.warn(`skinned mesh failed to load; keeping primitive body (${type})`)
+    })
+  }
+}
+
+/** Load the per-type distinct BODY mesh (A2). Mirrors loadSkin exactly: the
+ *  same headless guard, the same macrotask retry for an in-flight load, the same
+ *  lazy GLTFLoader import. A type with no MESH_ASSET entry (walker) resolves to
+ *  'missing' immediately so it keeps the primitive body and never loads a GLB. */
+function loadSkinMesh(type, onReady) {
+  if (!USE_MESH_BODY) return // primitive body is the visual; skip the mesh
+  if (typeof document === 'undefined') return // headless: never load
+  const file = MESH_ASSET[type]
+  if (!file) {
+    // No distinct mesh for this type: mark it missing so a later zombie of the
+    // same type does not kick off a load, and resolve without calling onReady.
+    if (meshCache[type] === undefined) meshCache[type] = 'missing'
+    return
+  }
+  const entry = meshCache[type]
+  if (entry && entry !== 'loading') {
+    if (entry !== 'missing') onReady(entry)
+    return
+  }
+  if (entry === 'loading') {
+    // Same reason as loadSkin: retry on a MACROTASK timer, never a microtask
+    // poll, or a wave of simultaneous spawns starves the render loop.
+    const wait = () => {
+      const e = meshCache[type]
+      if (e && e !== 'loading') { if (e !== 'missing') onReady(e); return }
+      setTimeout(wait, 32)
+    }
+    setTimeout(wait, 32)
+    return
+  }
+  meshCache[type] = 'loading'
+  if (!meshLoader) {
+    import('three/examples/jsm/loaders/GLTFLoader.js').then((m) => {
+      meshLoader = new m.GLTFLoader()
+      start()
+    }).catch(() => { meshCache[type] = 'missing' })
+  } else {
+    start()
+  }
+  function start() {
+    const url = ASSET_BASE + 'assets/zombies/' + file
+    meshLoader.load(url, (gltf) => {
+      // Static unrigged mesh: no clips to strip, no skeleton to rebind. Store
+      // the source scene as the shared template every instance clones from.
+      const rec = { scene: gltf.scene }
+      meshCache[type] = rec
+      onReady(rec)
+    }, undefined, () => {
+      meshCache[type] = 'missing'
+      console.warn(`body mesh failed to load; keeping primitive body (${type})`)
+    })
+  }
+}
+
+/** Clone a loaded rig scene into a per-zombie skinned mesh + mixer. Cloning the
+ *  SkinnedMesh shares geometry but gives each instance an independent Skeleton
+ *  (so one zombie's animation never poses another's). Returns the skinned mesh,
+ *  the mixer, and a name->clip map, or null if no skinned mesh was found.
+ *
+ *  three.js `Object3D.clone(true)` copies the SkinnedMesh but NOT its Skeleton:
+ *  the clone keeps a reference to the ORIGINAL armature's bones, which live in
+ *  the (unrendered) source scene. Binding to those leaves the body unposed and
+ *  unrendered (the "no zombie body" bug). We rebuild the skeleton from the
+ *  CLONED bones (matched by name) so every instance poses independently and
+ *  its bones are actually in the rendered tree. */
+function buildSkin(rec) {
+  const root = rec.scene.clone(true)
+  let skinned = null
+  root.traverse((o) => { if (o.isSkinnedMesh && !skinned) skinned = o })
+  if (!skinned) return null
+  // Map each cloned bone by name so we can rebind the cloned mesh to the
+  // cloned armature instead of the shared source skeleton.
+  const boneMap = {}
+  root.traverse((o) => { if (o.isBone && !(o.name in boneMap)) boneMap[o.name] = o })
+  const srcBones = skinned.skeleton.bones
+  const bones = srcBones.map((b) => boneMap[b.name]).filter(Boolean)
+  if (bones.length === srcBones.length && bones.length > 0) {
+    const skeleton = new THREE.Skeleton(bones)
+    skinned.skeleton = skeleton
+    skinned.bind(skeleton, root.matrixWorld)
+  }
+  // Skinned meshes are deformed past their bind-pose bounding sphere, so the
+  // default frustum culling can drop the whole body when it moves/animates.
+  skinned.frustumCulled = false
+  const mixer = new THREE.AnimationMixer(root)
+  const clips = {}
+  for (const c of rec.animations) clips[c.name] = c
+  return { root, skinned, mixer, clips }
+}
+
+// Skin helpers exported so the co-op controller can give remote (server-
+// authoritative) zombies the same skinned walker body as local zombies.
+export { loadSkin, buildSkin, SKIN_TINT }
+export { loadSkinMesh, MESH_ASSET, meshCache }
+
+/** Build a face portrait + glowing eyes for a remote co-op zombie (the same
+ *  primitives the local Zombie nests under its head). Returns owned meshes the
+ *  caller parents onto the rig's head bone; materials are shared, so don't
+ *  dispose them here. `dropY` lowers them onto the visible mesh crown (the head
+ *  bone sits above the crown). */
+export function buildFaceFor(type, dropY = 0) {
+  const variant = 0
+  const face = new THREE.Mesh(FACE_GEO, FACEMAT[type] ? FACEMAT[type][variant] : FACEMAT.walker[variant])
+  face.position.set(0, dropY + 0.02, 0.13)
+  const eyes = []
+  const eMat = EYEMAT[type] || EYEMAT.walker
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(EYE, eMat)
+    eye.position.set(0.07 * side, dropY + 0.05, 0.12)
+    eyes.push(eye)
+  }
+  return { face, eyes }
+}
+
+/** Build the full primitive humanoid body (torso, head, arms, legs, face, eyes,
+ *  hair, accessory) for a zombie of `type` with a deterministic `phase` (0..2π).
+ *  Used by both the local Zombie and the co-op RemoteZombie so remote bodies get
+ *  the same clothes + face + hair + accessories as local ones instead of a plain
+ *  box. Returns owned meshes (the group + parts); materials are shared, so the
+ *  caller must NOT dispose them — only remove the group from the scene. */
+export function buildPrimitiveBody(type, phase) {
+  // v4 co-op: remote co-op zombies build their bodies through this function but
+  // never construct a local Zombie, so the face-texture loader (normally kicked
+  // off by the Zombie constructor) never runs in a co-op-only client — remote
+  // zombies then showed a flat head-color face instead of the portrait. Trigger
+  // the same idempotent load here so remote bodies get the real faces too.
+  loadFaceTextures()
+  const t = MAT2[type] ? type : 'walker'
+  const pose = POSE2[t]
+  const mat = MAT2[t]
+  const outfit = Math.floor((((phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
+  const topMat = OUTFITMATS.tops[outfit]
+  const bottomMat = OUTFITMATS.bottoms[outfit]
+  const sleeveMat = SLEEVE_MATS[outfit]
+  const parts = []
+  const torso = new THREE.Mesh(GEO2.torso, topMat)
+  torso.position.set(0, 1.2, 0)
+  torso.scale.set(pose.torsoS[0], pose.torsoS[1], pose.torsoS[2])
+  torso.rotation.x = pose.torsoR
+  parts.push(torso)
+  const head = new THREE.Mesh(GEO2.head, mat)
+  head.position.set(0, 1.8, 0)
+  head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
+  head.rotation.x = pose.headR
+  parts.push(head)
+  const eyes = []
+  const eMat = EYEMAT[t]
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(EYE, eMat)
+    eye.position.set(0.075 * side, 0.03, 0.14)
+    head.add(eye)
+    eyes.push(eye)
+  }
+  const variant = Math.floor((phase / (2 * Math.PI)) * 3) % 3
+  const face = new THREE.Mesh(FACE_GEO, FACEMAT[t][variant])
+  face.position.set(0, 0, 0.155)
+  head.add(face)
+  // Hair cap on top of the head so the silhouette reads as a person.
+  const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
+  hair.position.set(0, 0.17, 0)
+  head.add(hair)
+  const armL = new THREE.Mesh(GEO2.arm, sleeveMat); armL.position.set(-0.34, 1.42, 0.1); armL.rotation.x = pose.armRest; parts.push(armL)
+  const armR = new THREE.Mesh(GEO2.arm, sleeveMat); armR.position.set(0.34, 1.42, 0.1); armR.rotation.x = pose.armRest; parts.push(armR)
+  const legL = new THREE.Mesh(GEO2.leg, bottomMat); legL.position.set(-0.16, 0.47, 0); legL.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legL)
+  const legR = new THREE.Mesh(GEO2.leg, bottomMat); legR.position.set(0.16, 0.47, 0); legR.scale.set(pose.legS[0], pose.legS[1], pose.legS[2]); parts.push(legR)
+  // Outfit accessory (tie/cap/helmet/stripe) so the silhouette reads a trade.
+  let acc = null
+  const kind = OUTFIT_ACC[outfit]
+  if (kind) {
+    acc = new THREE.Mesh(ACC_GEO[kind], ACC_MAT[kind])
+    if (kind === 'tie') { acc.position.set(0, 0.1, 0.18); torso.add(acc) }
+    else if (kind === 'stripe') { acc.position.set(0, 0.15, 0); torso.add(acc) }
+    else if (kind === 'cap') { acc.position.set(0, 0.19, 0.02); head.add(acc) }
+    else if (kind === 'helmet') { acc.position.set(0, 0.19, 0); head.add(acc) }
+    acc.castShadow = true
+  }
+  const group = new THREE.Group()
+  group.add(...parts)
+  for (const p of parts) p.castShadow = true
+  const restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
+  return { group, parts, head, face, eyes, hair, acc, armL, armR, legL, legR, restMats, outfit }
+}
 
 const ATTACK_RANGE = 1.3
+/** Fraction of the attack cooldown spent in the telegraphed windup before the
+ *  hit lands. Per type: screamers strike almost instantly (fast, annoying),
+ *  shamblers/brutes wind up long (readable, dodgeable heavy hits). */
+const WINDUP_FRACTION = { walker: 0.45, shambler: 0.55, screamer: 0.3, brute: 0.6 }
+const AIR_CLEAR = 0.9 // melee skips a player this far above torso height (mid-jump)
 const SEPARATION_DIST = 0.9
 const SEPARATION_STRENGTH = 0.6
 const COLLIDER_RADIUS = 0.5
 const NO_PROG_FLIP = 0.6 // s of zero progress while sliding before flipping direction
 const CLEAR_DIST = 0.75  // m to keep sliding in free space before resuming chase
+const KB_TIME = 0.35     // s of stagger after a melee hit
+const KB_STRENGTH = 3    // initial m/s; total push = STRENGTH*TIME/2 * staggerResist
+                         // (discrete 1/60 sum = 0.5 m at resist 1; per-type
+                         //  scaling via TABLE[type].staggerResist below)
 
 /**
  * True contact normal for a circle against the AABBs, choosing the contact
- * that most opposes the wanted direction (deepest penetration breaks ties).
- * Returns {x, z} or null if no box is actually in contact.
+ * that most opposes the wanted direction (first AABB wins exact ties).
+ * Writes {x, z} into the caller-owned scratch object out and returns out,
+ * or returns null if no box is actually in contact. No allocations per call.
  */
-function contactNormal(pos, aabbs, radius, wantX, wantZ) {
-  let best = null
+function contactNormal(pos, aabbs, radius, wantX, wantZ, out) {
   let bestDot = Infinity
-  let bestPen = 0
-  for (const b of aabbs) {
+  let has = false
+  for (let i = 0; i < aabbs.length; i++) {
+    const b = aabbs[i]
     const cx = pos.x < b.minX ? b.minX : (pos.x > b.maxX ? b.maxX : pos.x)
     const cz = pos.z < b.minZ ? b.minZ : (pos.z > b.maxZ ? b.maxZ : pos.z)
     const dx = pos.x - cx
@@ -67,25 +917,79 @@ function contactNormal(pos, aabbs, radius, wantX, wantZ) {
       nx = m === dL ? -1 : (m === dR ? 1 : 0)
       nz = m === dT ? -1 : (m === dB ? 1 : 0)
     }
-    const pen = d > 1e-9 ? radius - d : radius
     const dot = nx * wantX + nz * wantZ
-    if (dot < bestDot) { bestDot = dot; best = { x: nx, z: nz }; bestPen = pen }
+    if (dot < bestDot) { bestDot = dot; has = true; out.x = nx; out.z = nz }
   }
-  return best
+  return has ? out : null
 }
 
 export class Zombie {
-  constructor(scene, type, x, z, wave = 1) {
+  constructor(scene, type, x, z, wave = 1, difficulty = 'normal', opts = {}) {
     if (!TABLE[type]) throw new Error('unknown zombie type: ' + type)
+    const diff = DIFFICULTY[difficulty] || DIFFICULTY.normal
     this.type = type
     this.scene = scene
-    this.maxHealth = this.health = Math.round(TABLE[type].hp * Math.pow(1.12, wave - 1))
+    this.speed = TABLE[type].speed * diff.speedMult
+    const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
+    // v14: the wave-5 boss is 10× tankier (user request). Applied after wave
+    // scaling so it holds in every difficulty (the flat-50 frenzy/nightmare HP
+    // becomes 500 for the boss). ~100 sniper body shots at wave 5.
+    if (type === 'brute') {
+      this.maxHealth = this.health = Math.round(this.maxHealth * BOSS_HP_MULT)
+    }
+    // v3 T1: the dismemberment chain is hit-counted, NOT damage-counted (the
+    // user decision), so HP is untouched by it — the shipped difficulty
+    // contract (frenzy flat 50 HP = 2 pistol bodies / 1 headshot) stays exact.
+    // The chain only severs limbs and fires the chain kill; in FRENZY/
+    // NIGHTMARE the flat-50-HP damage simply ends the chain early (see
+    // hitLimbAt / _chainShot). `opts` is kept for spawn-site compatibility.
+    void opts
+    // The brute is the wave-5 boss: a 1.4× silhouette, so both weapon hitboxes
+    // scale by HITBOX_SCALE (the two-sphere contract and the per-type radii
+    // 0.45/0.3 stay exact for the three regular types).
+    this.isBoss = type === 'brute'
+    // v17: the wave-10 boss is a GIANT — 5× larger than any other zombie (user
+    // request). Previously BOSS_SCALE only touched the hitbox + GLB roots, so a
+    // boss without a loaded GLB rendered at normal size. Now the visible
+    // primitive group carries the scale too, so the brute actually looks giant.
+    // Wave 10 is 5×; other boss waves keep the existing 5.6× hitbox contract.
+    this._bossScale = this.isBoss ? (wave === 10 ? 5 : BOSS_SCALE) : 1
+    // Shotgun armor: the boss's hide shrugs off most buckshot (×0.4 per pellet),
+    // so it needs ≥10 full blasts; every other type is unarmored (×1). The
+    // pistol/axe/sword ignore this and apply full damage.
+    this.shotgunArmor = TABLE[type].shotgunArmor
+    // Stagger resistance: knockback velocity is multiplied by this, so a
+    // screamer (×1.35) resists being kited and staggers less, while the brute
+    // (×0.35) is barely moved — it cannot be staggered out of its charge.
+    // 1 = normal stagger (walker/shambler).
+    this.staggerResist = TABLE[type].staggerResist
+    this._hitboxScale = this._bossScale
+    // Charge (boss only): when the player is within CHARGE_RANGE the brute
+    // commits to a lunge for CHARGE_TIME seconds at CHARGE_SPEED m/s.
+    this._chargeT = 0
+    this._chargeX = 0
+    this._chargeZ = 0
+    // Limb damage: shot-off limbs. Arms lost (0/1/2) do not slow the zombie —
+    // it keeps coming with one or no arms. Legs lost (0/1) make it limp: a
+    // one-legged zombie hops on the remaining leg and moves at LIMPLESS_SPEED
+    // of its normal speed. The severed limb's mesh is hidden. The boss keeps
+    // all limbs (too tough to dismember) so its charge/melee are unaffected.
+    this.armsLost = 0
+    this.legsLost = 0
+    this._limp = false
+    this._hopPhase = 0
     this.position = new THREE.Vector3(x, 0, z) // group origin = feet (y 0)
     this.isDead = false
     this.deathTimer = 0
     this._attackT = 0
+    this._windupVoiceAt = 0 // windup-voice gate (s); reset when a swing lands
     this._time = 0
     this._killCounted = false
+    // Id of the player whose hit last dealt damage (set by weapons that know
+    // their owner via the `by` argument); the killer is the last one to hit
+    // because damage() no-ops on a dead zombie. null in solo play / debug kills.
+    this.lastDamager = null
     this._slideX = undefined
     this._slideZ = undefined
     this._slideT = 0
@@ -94,43 +998,588 @@ export class Zombie {
     this._clearDist = 0
     this._blockedT = 0
     this._flips = 0
+    // Per-frame scratch for contactNormal (avoids per-frame {x, z} allocs).
+    this._cn = { x: 0, z: 0 }
+    this._tan = { x: 0, z: 0 } // scratch for pickTangent (removes its commit-only [tx,tz] allocation)
+    this._kbT = 0 // stagger timer (s), decremented in update()
+    this._kbX = 0 // stagger velocity x (m/s)
+    this._kbZ = 0 // stagger velocity z (m/s)
+    // Deterministic per-zombie phase (fixed-seed LCG from spawn coords + type).
+    // Stored here for later tasks (walk animation, groan scheduling). Math.imul
+    // keeps the LCG exact: later iterations exceed 2^53 under plain '*'.
+    let seed = Math.floor((x + 200) * 100 + (z + 200) * 37 + ORDER.indexOf(type) * 101)
+    for (let i = 0; i < 3; i++) seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff
+    this._phase = (seed / 0x7fffffff) * 2 * Math.PI
+    // v3 gameplay (2): the same seed drives the dropped-limb tumble via the
+    // standard LCG shape (AmmoDrops.js:61). Each sever advances it once, so
+    // limb spin/direction are deterministic per zombie and per hit.
+    let limbSeed = seed
+    this._rand = () => { limbSeed = (Math.imul(limbSeed, 48271) >>> 0) % 65537; return limbSeed / 65537 }
+    // v3 T1 chain: landed BODY rounds (hit-counted, not damage-counted).
+    // Firearms call _chainShot once per round (shotgun: once per blast).
+    // Wired to Game's DroppedLimbPool as `this.drops`.
+    this._chainShots = 0
+    this.drops = null
+    // v3 chain: limbs severed so far (reverse order = regrow order). Kept so
+    // restoreLimbs() can undo a wrong client-side prediction.
+    this._severed = []
+
+    // Body: torso, head, two arms, two legs — all from the shared GEO2 pool,
+    // posed per type. Child order is fixed: torso, head, armL, armR, legL, legR.
     this.group = new THREE.Group()
-    const mat = MAT[type]
-    const torso = new THREE.Mesh(GEO.torso, mat)
+    const mat = MAT2[type]
+    const pose = POSE2[type]
+    // Clothing outfit: an independent deterministic re-mapping of the spawn LCG
+    // phase (offset so it does not track the face variant) selects one of the
+    // nine shared top/bottom material pairs. No extra LCG draw, so the face
+    // variant pick (below) is unaffected.
+    const outfit = Math.floor((((this._phase / (2 * Math.PI)) + 0.37) % 1) * OUTFIT_COUNT)
+    this._outfit = outfit
+    // v17: clone the archetype's top/bottom/sleeve pair and tint each clone by a
+    // deterministic per-spawn nudge, so two zombies in the same archetype read as
+    // different garments. The clones are registered so the async outfit-texture
+    // load can attach the albedo map to them too; dispose() unregisters + frees.
+    const topMat = OUTFITMATS.tops[outfit].clone()
+    const bottomMat = OUTFITMATS.bottoms[outfit].clone()
+    const sleeveMat = SLEEVE_MATS[outfit].clone()
+    topMat._outfitIdx = outfit; topMat._outfitPart = 'top'
+    bottomMat._outfitIdx = outfit; bottomMat._outfitPart = 'bottom'
+    sleeveMat._outfitIdx = outfit; sleeveMat._outfitPart = 'top'
+    outfitTint(this._phase, topMat)
+    outfitTint(this._phase + 1.7, bottomMat)
+    outfitTint(this._phase + 3.1, sleeveMat)
+    this._outfitMats = [topMat, bottomMat, sleeveMat]
+    OUTFIT_CLONES.add(topMat); OUTFIT_CLONES.add(bottomMat); OUTFIT_CLONES.add(sleeveMat)
+    const parts = []
+    const torso = new THREE.Mesh(GEO2.torso, topMat)
     torso.position.set(0, 1.2, 0)
-    const head = new THREE.Mesh(GEO.head, mat)
+    torso.scale.set(pose.torsoS[0], pose.torsoS[1], pose.torsoS[2])
+    torso.rotation.x = pose.torsoR
+    parts.push(torso)
+    const head = new THREE.Mesh(GEO2.head, mat)
     head.position.set(0, 1.8, 0)
-    const armL = new THREE.Mesh(GEO.arm, mat)
-    armL.position.set(-0.33, 1.25, 0.12)
-    armL.rotation.x = -1.1 // reaching forward
-    const armR = new THREE.Mesh(GEO.arm, mat)
-    armR.position.set(0.33, 1.25, 0.12)
-    armR.rotation.x = -1.1
-    this.group.add(torso, head, armL, armR)
+    head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
+    head.rotation.x = pose.headR
+    this._head = head
+    parts.push(head)
+    // Eye glow: two small unlit boxes nested under the head; local +z faces the
+    // player (group.rotation.y = atan2(dx, dz)). Shared per-type material. Eyes
+    // are NOT in _parts, so hit flash and death swaps never touch them.
+    const eMat = EYEMAT[type]
+    this._eyes = []
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(EYE, eMat)
+      eye.position.set(0.075 * side, 0.03, 0.14)
+      head.add(eye)
+      this._eyes.push(eye)
+    }
+    // Face portrait plane nested under the head, just in front of the head's
+    // front face (0.15 -> 0.155, no z-fighting); the eyes (front z 0.16) still
+    // protrude over the portrait. NOT in _parts, so hit flash never touches it;
+    // only the death branch swaps it to DEADMAT.
+    // Variant pick: the spawn-derived LCG phase (above) selects one of the
+    // 3 shared variant materials per zombie — deterministic (no Math.random)
+    // and spreads zombies of a type across the variants by position.
+    const variant = Math.floor((this._phase / (2 * Math.PI)) * 3) % 3
+    const face = new THREE.Mesh(FACE_GEO, FACEMAT[type][variant])
+    face.position.set(0, 0, 0.155)
+    head.add(face)
+    this._face = face
+    // Hair cap on top of the head so the silhouette reads as a person with hair.
+    const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
+    hair.position.set(0, 0.17, 0)
+    head.add(hair)
+    this._hair = hair
+    for (const side of [-1, 1]) {
+      // Sleeved arms: the outfit top's twin material (same albedo/color as the
+      // jacket, plus the shared weave normal map) so the arms read as clothed
+      // rather than bare flat skin. The head keeps MAT2 skin for the face decal.
+      const arm = new THREE.Mesh(GEO2.arm, sleeveMat)
+      arm.position.set(0.34 * side, 1.42, 0.1)
+      arm.rotation.x = pose.armRest
+      parts.push(arm)
+      if (side === -1) this._armL = arm
+      else this._armR = arm
+    }
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(GEO2.leg, bottomMat)
+      leg.position.set(0.16 * side, 0.47, 0)
+      leg.scale.set(pose.legS[0], pose.legS[1], pose.legS[2])
+      parts.push(leg)
+      if (side === -1) this._legL = leg
+      else this._legR = leg
+    }
+    // Outfit accessory prop (tie/cap/helmet/hi-vis stripe) so the silhouette
+    // reads as a specific profession even without a texture. Parented to the
+    // torso or head so it moves with the body; NOT in _parts, so hit-flash and
+    // death material swaps never touch it. Removed with the group on death.
+    const acc = OUTFIT_ACC[outfit]
+    if (acc) {
+      const prop = new THREE.Mesh(ACC_GEO[acc], ACC_MAT[acc])
+      if (acc === 'tie') { prop.position.set(0, 0.1, 0.18); torso.add(prop) }
+      else if (acc === 'stripe') { prop.position.set(0, 0.15, 0); torso.add(prop) }
+      else if (acc === 'cap') { prop.position.set(0, 0.19, 0.02); head.add(prop) }
+      else if (acc === 'helmet') { prop.position.set(0, 0.19, 0); head.add(prop) }
+      prop.castShadow = true
+      this._acc = prop
+    }
+    this.group.add(...parts)
+    // v17: giant-boss visual scale (see _bossScale). The group origin is the
+    // feet, so scaling grows the silhouette upward from the ground; position
+    // stays unscaled (position.copy of the feet point), so gameplay/hitboxes
+    // are unaffected. Wave-10 boss = 5×, other bosses = BOSS_SCALE, others = 1.
+    if (this._bossScale !== 1) this.group.scale.setScalar(this._bossScale)
     this.group.position.copy(this.position)
     scene.add(this.group)
+    this._parts = parts
+    for (const p of parts) p.castShadow = true
+    // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
+    // flash / recovery can restore each part to its own material.
+    this._restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
+    // v3 chain: parallel rest materials for the four limbs only (indices 2-5
+    // of _parts). A severed limb must NOT be repainted by the hit-flash
+    // recovery while a corpse repaints it to DEADMAT, so _sever* removes the
+    // limb from _parts and keeps its rest material here for revive().
+    this._limbRest = { armL: sleeveMat, armR: sleeveMat, legL: bottomMat, legR: bottomMat }
+    this._flashT = 0
+    loadFaceTextures() // guarded no-op after the first zombie (headless: no-op)
+    loadOutfitTextures() // same guard pattern; browser-only
+    FABRIC_REFS++ // one more live zombie holding the shared weave map
+    SKIN_REFS++ // one more live zombie holding the shared gore/dirt maps
+    // v5: try to swap in a rigged skinned mesh (browser-only, async). Until it
+    // arrives the primitive body above is the visual; headless never swaps.
+    this._skin = null // { root, skinned, mixer, clips, actions, current }
+    this._skinState = 'idle'
+    loadSkin(type, (rec) => this._attachSkin(rec))
+    // A2: try to swap the primitive TORSO/LIMBS for this type's distinct body
+    // mesh (browser-only, async). The head primitive always stays, so headshots
+    // and the face keep working; walker has no mesh and keeps the full primitive.
+    this._skinMesh = null // { root, body } — per-instance clone of the shared mesh
+    this._meshRestMat = null // per-instance tinted body material (owned here)
+    this._meshRestY = 0 // rest y-lift of the mesh root (feet on local y 0)
+    loadSkinMesh(type, (rec) => this._attachSkinMesh(rec))
+  }
+
+  /** Swap the primitive body for a cloned skinned mesh + mixer once the rigged
+   *  GLB loads. Hides the primitives (kept for hit-flash/death material swaps
+   *  and the face/eyes) and parents the face + eyes to the rig's head bone if
+   *  present. No-op if a skin is already attached or none was found. */
+  _attachSkin(rec) {
+    if (this._skin || this.isDead) return
+    const built = buildSkin(rec)
+    if (!built) return
+    const { root, skinned, mixer, clips } = built
+    // The rig GLB is authored upright at ~1.8 m; scale to this type's silhouette
+    // height so the skinned body matches the primitive anchors. The brute gets a
+    // 1.4x boss silhouette on top of its type height.
+    const h = this._skinHeight()
+    const dim = new THREE.Box3().setFromObject(skinned).getSize(new THREE.Vector3())
+    const bb = new THREE.Box3().setFromObject(skinned)
+    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? BOSS_SCALE : 1) : 1
+    // Non-uniform: height on Y, per-type width on X/Z so silhouettes vary.
+    const w = SKIN_WIDTH[this.type] || 1
+    root.scale.set(scale * w, scale, scale * w)
+    // The rig's origin sits at its hips/center, so its bind-pose feet are at a
+    // negative local y (≈ -0.88 m). The group origin is the FEET (y 0), so
+    // without a lift the body hangs half-buried with its head-top far below the
+    // head primitive (the "body too small / misaligned with the head" bug).
+    // Lift the root so the scaled feet land on y 0; the scaled top then reaches
+    // the target height, aligning the skinned head with the head primitive.
+    root.position.set(0, -bb.min.y * scale, 0)
+    this._skinRestY = root.position.y
+    // Per-instance material clone tinted to the type so shared-rig zombies of
+    // different types read distinctly. Cloning keeps the baked map but gives this
+    // zombie its own color (and lets hit-flash / death swap it safely).
+    const srcMat = Array.isArray(skinned.material) ? skinned.material[0] : skinned.material
+    const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
+    // The baked body texture is dark even after brightening, so under the dim
+    // flashlight it still read as a featureless shadow. Drop the map and render
+    // the body as the bright type color + emissive (proven to read as a clear
+    // humanoid silhouette), and vary the color per type so the crowd reads as
+    // distinct people rather than one tinted model.
+    bodyMat.map = null
+    bodyMat.emissiveMap = null
+    bodyMat.color.setHex(SKIN_TINT[this.type])
+    bodyMat.emissive = new THREE.Color(SKIN_TINT[this.type])
+    bodyMat.emissiveIntensity = 0.55
+    bodyMat.roughness = 0.9
+    bodyMat.needsUpdate = true
+    skinned.material = bodyMat
+    this._skinRestMat = bodyMat
+    // The rig GLB already contains its own head (the skinned mesh spans up to
+    // the head crown), so keeping the primitive head box visible produced a
+    // DOUBLE head (the rig head + the primitive box) and made the body read
+    // short because the primitive box floated above the rig head. Re-parent the
+    // face portrait + eyes onto the rig's Head bone so they ride the animated
+    // head, then hide the primitive head entirely.
+    let headBone = null
+    root.traverse((o) => { if (o.isBone && /head/i.test(o.name) && !headBone) headBone = o })
+    if (headBone) {
+      // Move the face + eyes off the primitive head onto the rig head bone.
+      // The head BONE sits above the skinned mesh crown (the bone extends past
+      // the geometry), so parenting the face to the bone floated it ~0.7 m above
+      // the visible head ("face image above the zombie"). Offset the face/eyes
+      // DOWN on the bone by the bone-vs-mesh-crown delta so they sit on the
+      // visible head crown instead.
+      root.updateMatrixWorld(true)
+      // The primitive body is the always-on visual, so the face + eyes stay on
+      // the primitive head (which carries them) — the rig's head bone is hidden.
+      // Keep both placements recorded for compatibility, but parent to the head.
+      const faceDrop = -0.7
+      this._faceOnBone = new THREE.Vector3(0, faceDrop, 0.13)
+      this._faceOnHead = new THREE.Vector3(0, 0, 0.155)
+      this._eyeOnBone = new THREE.Vector3(0.07, faceDrop + 0.05, 0.12)
+      this._eyeOnHead = new THREE.Vector3(0.075, 0.03, 0.14)
+      const headHost = this._parts[1]
+      if (this._face) {
+        if (this._face.parent) this._face.parent.remove(this._face)
+        this._face.position.copy(this._faceOnHead)
+        if (headHost) headHost.add(this._face)
+      }
+      for (const eye of this._eyes || []) {
+        if (eye.parent) eye.parent.remove(eye)
+        eye.userData.side = eye.position.x < 0 ? -1 : 1
+        eye.position.set(this._eyeOnHead.x * eye.userData.side, this._eyeOnHead.y, this._eyeOnHead.z)
+        if (headHost) headHost.add(eye)
+      }
+      this._headBone = headBone
+    }
+    // Capture the arm bones so the death collapse can splay them on the actual
+    // skinned skeleton (the primitive limbs are hidden, so rotating them does
+    // nothing visible). Rest rotations are stored so the collapse is reversible.
+    // v3 chain: `left` tags the bone's side so a severed primitive arm can
+    // hide its matching skinned bone (and revive() can bring it back).
+    this._armBones = []
+    this._legBones = []
+    root.traverse((o) => {
+      if (o.isBone && /upperarm/i.test(o.name)) {
+        this._armBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z, left: /left/i.test(o.name) })
+      }
+      // v3 chain: leg bones are captured too so a severed leg hides its twin
+      // on the skinned rig (rest rotations kept so the death splay reverses).
+      if (o.isBone && /upperleg|thigh|knee|shin/i.test(o.name)) {
+        this._legBones.push({ bone: o, restX: o.rotation.x, restZ: o.rotation.z, left: /left/i.test(o.name) })
+      }
+    })
+    // The primitive body is the always-on visual now, so keep every primitive
+    // part visible (the rig root is hidden by _applyLOD). The head keeps the
+    // face + eyes.
+    for (const p of this._parts) p.visible = true
+    this._headVisible = true
+    this._lodSkinned = false
+    // The skinned root is a CHILD of this.group, which already sits at the feet
+    // position (group.position = this.position). The root therefore stays at the
+    // group's LOCAL x/z origin (0) — copying the world position would
+    // double-offset the body away from the head (the "floating head, no body"
+    // bug). The y-lift set above is preserved (do NOT reset it here).
+    this.group.add(root)
+    // The primitive body is the visual now, so the rig root stays hidden (the
+    // pale featureless skinned body no longer overrides the clothed primitive).
+    root.visible = false
+    // Re-bind AFTER the root is scaled + positioned + parented: buildSkin bound
+    // with the pre-scale matrixWorld, but the skinning matrices must match the
+    // final root transform or the body collapses to a point (the "shadow moves,
+    // no body" bug). updateMatrixWorld ensures the bind uses the real transform.
+    root.updateMatrixWorld(true)
+    if (skinned.skeleton && skinned.skeleton.bones.length) {
+      skinned.bind(skinned.skeleton, root.matrixWorld)
+    }
+    // The skinned body is the visible silhouette now, so it must cast its own
+    // shadow (the primitive body is hidden). Without this the body renders but
+    // casts no shadow, which reads as a detached floating figure.
+    skinned.castShadow = true
+    skinned.receiveShadow = true
+    // Build one action per mapped state, falling back to Idle for missing clips.
+    const actions = {}
+    for (const state of Object.keys(SKIN_CLIPS)) {
+      const clip = clips[SKIN_CLIPS[state]] || clips.Idle
+      if (!clip) continue
+      const a = mixer.clipAction(clip)
+      a.enabled = true
+      actions[state] = a
+    }
+    this._skin = { root, skinned, mixer, clips, actions, current: null }
+    this._setSkinState('idle')
+    this._applyLOD(this.position, null)
+  }
+
+  /** A2: swap the primitive torso + limbs for this type's distinct BODY mesh
+   *  (browser-only, async). The head primitive stays visible with its face /
+   *  eyes / hair / accessory so headshots, the hit-flash and the walk-bob all
+   *  keep working. Torso + limbs are only hidden, never removed from _parts,
+   *  because dismemberment and the flash restore index into _parts. The shared
+   *  hidden rig (_skin) is untouched — it stays loaded-but-hidden and its
+   *  mixer/bob/material swaps keep running harmlessly on it. */
+  _attachSkinMesh(rec) {
+    if (this._skinMesh || this.isDead) return
+    const root = rec.scene.clone(true) // shares geometry + materials with the cache
+    let body = null
+    root.traverse((o) => { if (o.isMesh && !body) body = o })
+    if (!body) return
+    // Scale to a fixed humanoid height. The mesh already encodes each type's
+    // distinct width/depth, so the scale is UNIFORM. Do NOT use _skinHeight()
+    // here: that inflates by the POSE2 head scale (screamer/brute have oversized
+    // heads), which would stretch the whole body ~15% too tall. The head is a
+    // separate primitive scaled by POSE2, so the body stays a clean 1.8 m.
+    const h = 1.8
+    const bb = new THREE.Box3().setFromObject(body)
+    const dim = bb.getSize(new THREE.Vector3())
+    const scale = dim.y > 1e-6 ? (h / dim.y) * (this.isBoss ? BOSS_SCALE : 1) : 1
+    root.scale.set(scale, scale, scale)
+    // Same feet-on-y-0 lift as _attachSkin: the authored origin is not the feet,
+    // so lift by the scaled bbox floor or the body hangs half-buried.
+    root.position.set(0, -bb.min.y * scale, 0)
+    this._meshRestY = root.position.y
+    // Per-instance material clone so this zombie can flash/death-repaint without
+    // touching the material shared by every zombie of the type in the cache.
+    const srcMat = Array.isArray(body.material) ? body.material[0] : body.material
+    const bodyMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: SKIN_TINT[this.type] })
+    // Drop the baked maps and render the type color + emissive (same recipe as
+    // _attachSkin) so the body reads under the dim flashlight instead of as a
+    // featureless shadow, and so each type reads as a distinct silhouette.
+    bodyMat.map = null
+    bodyMat.emissiveMap = null
+    bodyMat.color.setHex(SKIN_TINT[this.type])
+    bodyMat.emissive = new THREE.Color(SKIN_TINT[this.type])
+    bodyMat.emissiveIntensity = 0.55
+    bodyMat.roughness = 0.9
+    bodyMat.needsUpdate = true
+    body.material = bodyMat
+    this._meshRestMat = bodyMat
+    body.castShadow = true
+    body.receiveShadow = true
+    // The mesh is authored in a fixed rest pose; its bind-pose culling sphere is
+    // not reliable once the group bobs/rotates, so never cull the whole body.
+    body.frustumCulled = false
+    this.group.add(root)
+    root.visible = true
+    // Hide the primitive torso + limbs (indices 0,2,3,4,5). The head (1) stays
+    // visible because it carries the face/eyes/hair/accessory and is the
+    // headshot target. _parts is NOT spliced — dismemberment/flash still index it.
+    for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+    this._headVisible = true
+    // _applyLOD must keep this policy (hide primitives, show the mesh body)
+    // instead of re-showing the primitive torso/limbs.
+    this._lodMesh = true
+    this._lodSkinned = false
+    this._skinMesh = { root, body }
+  }
+
+  /** Visual policy: the primitive body (clothed humanoid with the face image)
+   *  is the always-on visual — it reads as a zombie at any distance, keeps the
+   *  face visible, and supports headshots. The skinned rig (a pale, featureless
+   *  body with a buried face) is hidden so it never overrides the primitive up
+   *  close. Primitives + face stay visible always; the rig root stays hidden.
+   *  A2: once a distinct BODY mesh is attached (_skinMesh), the policy flips —
+   *  the mesh body is the visual, the primitive torso/limbs hide, and only the
+   *  head primitive stays for the face + headshots. No-op when neither is set. */
+  _applyLOD(playerPos) {
+    if (!this._skin) return
+    // A2: when a distinct BODY mesh is attached, the mesh-vs-primitive policy is
+    // NOT a one-shot — _attachSkin (the rig loader) re-shows every primitive part
+    // and calls _applyLOD again, so without re-enforcing here the primitive torso
+    // + limbs would reappear behind the mesh body (a double body). So the mesh
+    // branch runs on every call; only the no-mesh (rig/primitive) path is gated
+    // by the one-shot _lodSkinned flag.
+    if (this._skinMesh) {
+      this._skin.root.visible = false
+      this._skinMesh.root.visible = true
+      for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+    } else {
+      if (this._lodSkinned === false) return
+      this._lodSkinned = false
+      this._skin.root.visible = false
+      for (const p of this._parts) p.visible = true
+    }
+    // Face + eyes live on the primitive head (which carries them), so they read
+    // at every distance and there is never a buried-face or double-head state.
+    const host = this._parts[1]
+    if (host) {
+      if (this._face && this._face.parent !== host) {
+        if (this._face.parent) this._face.parent.remove(this._face)
+        this._face.position.copy(this._faceOnHead)
+        host.add(this._face)
+      }
+      for (const eye of this._eyes || []) {
+        if (eye.parent !== host) {
+          if (eye.parent) eye.parent.remove(eye)
+          eye.position.copy(this._eyeOnHead)
+          eye.position.x = Math.abs(eye.position.x) * (eye.userData.side || 1)
+          host.add(eye)
+        }
+      }
+    }
+  }
+
+  /** Target standing height for the skinned body (matches the primitive
+   *  silhouette so the head/hitbox anchors line up). */
+  _skinHeight() {
+    const pose = POSE2[this.type]
+    // Primitive head center sits at y 1.8 * head scale; approximate the visible
+    // top as 1.8 + half head, and feet at 0. Keep it simple and deterministic.
+    return 1.8 * (pose.headS ? pose.headS[1] : 1)
+  }
+
+  /** Cross-fade the mixer to the action for `state` (idle/walk/run/attack/hurt/
+   *  death). Falls back to idle when the state has no action. */
+  _setSkinState(state) {
+    if (!this._skin) return
+    const next = this._skin.actions[state] || this._skin.actions.idle
+    if (!next || this._skin.current === next) return
+    next.reset()
+    next.setEffectiveWeight(1)
+    next.play()
+    if (this._skin.current) next.crossFadeFrom(this._skin.current, 0.2, false)
+    this._skin.current = next
+    this._skinState = state
   }
 
   /** State update. No randomness. `audio` may be null (headless). */
   update(dt, player, zombies, collision, audio) {
+    // Advance the skinned-mixer (browser-only) on every frame, including dead /
+    // stagger frames, so a death animation plays out and clips stay in sync.
+    if (this._skin) this._skin.mixer.update(dt)
+    // The repaired rig's clips are broken (stripped at load), so drive a small
+    // procedural walk bob/lean on the skinned root for a living silhouette.
+    if (this._skin && this._skin.root) {
+      this._bobPhase = (this._bobPhase || 0) + dt * (this.isDead ? 0 : 6)
+      const bob = this.isDead ? 0 : Math.sin(this._bobPhase) * 0.04
+      const lean = this.isDead ? 0 : Math.sin(this._bobPhase * 0.5) * 0.06
+      this._skin.root.position.y = (this._skinRestY !== undefined ? this._skinRestY : this._skin.root.position.y) + bob
+      this._skin.root.rotation.z = lean
+    }
     if (this.isDead) {
+      this._setSkinState('death')
       this.deathTimer += dt
       this.position.y = -Math.min(this.deathTimer * 0.35, 0.8) // sink
-      this.group.rotation.x = -Math.min(this.deathTimer / 1.5, 1) * 1.2 // fall over
+      const flop = Math.min(this.deathTimer / 1.5, 1)
+      this.group.rotation.x = -flop * 1.2 // fall over
+      this.group.rotation.z = flop * 0.25 // loll to one side as it collapses
+      // Splay the limbs as it collapses so the corpse reads dead, not frozen:
+      // arms flung out, legs askew, head lolling back.
+      const armRest = POSE2[this.type].armRest
+      this._armL.rotation.x = armRest - flop * 0.7
+      this._armR.rotation.x = armRest + flop * 0.5
+      this._armL.rotation.z = -flop * 0.6
+      this._armR.rotation.z = flop * 0.6
+      this._legL.rotation.x = flop * 0.4
+      this._legR.rotation.x = -flop * 0.3
+      if (this._head) this._head.rotation.x = flop * 0.5 // head lolls back
+      // Drive the skinned skeleton's head + arms so the corpse reads dead on the
+      // visible body (the primitive limbs are hidden). Head lolls back, arms
+      // flung out, as the flop progresses.
+      if (this._headBone) this._headBone.rotation.x = flop * 0.6
+      this._deathPosed = true
+      if (this._armBones) {
+        for (let i = 0; i < this._armBones.length; i++) {
+          const ab = this._armBones[i]
+          const splay = i % 2 === 0 ? -0.7 : 0.7
+          ab.bone.rotation.x = ab.restX - flop * 0.6
+          ab.bone.rotation.z = ab.restZ + flop * splay
+        }
+      }
       this.group.position.copy(this.position)
       return
     }
+    // Hit-flash decay: runs on every live frame (including the attack branch,
+    // which returns before _time advances), so a flash fades in real time.
+    if (this._flashT > 0) {
+      this._flashT -= dt
+      if (this._flashT <= 0) {
+        for (let i = 0; i < this._parts.length; i++) this._parts[i].material = this._restMats[i]
+        if (this._skin) this._skin.skinned.material = this._skinRestMat
+        // A2: the visible mesh body flashes too, so restore its own rest mat.
+        if (this._skinMesh) this._skinMesh.body.material = this._meshRestMat
+      }
+    }
     if (!player || player.isDead) return
+    // Hit stagger: after a melee hit the zombie is pushed along the knockback
+    // vector while it decays linearly, and it neither chases nor attacks for
+    // the duration. Displacement is smooth and deterministic (total ≈
+    // KB_STRENGTH * KB_TIME / 2). Limbs drop to rest pose while staggered.
+    if (this._kbT > 0) {
+      this._setSkinState('hurt')
+      this._kbT = Math.max(0, this._kbT - dt)
+      const f = this._kbT / KB_TIME
+      this.position.x += this._kbX * f * dt
+      this.position.z += this._kbZ * f * dt
+      collision.resolve(this.position, COLLIDER_RADIUS)
+      const armRest = POSE2[this.type].armRest
+      this._armL.rotation.x = armRest
+      this._armR.rotation.x = armRest
+      this._legL.rotation.x = 0
+      this._legR.rotation.x = 0
+      this.group.rotation.x = 0
+      this.group.position.copy(this.position)
+      return
+    }
     const dx = player.position.x - this.position.x
     const dz = player.position.z - this.position.z
     const dist = Math.hypot(dx, dz)
     this.group.rotation.y = Math.atan2(dx, dz) // face player
-    if (dist <= ATTACK_RANGE) {
+    this._applyLOD(player.position) // skinned near, primitive stub beyond LOD_DIST
+    // If this zombie was revived (death bones left rotated), return the skinned
+    // head/arms to rest so a live zombie never shows a collapsed corpse pose.
+    if (this._deathPosed) {
+      if (this._headBone) this._headBone.rotation.x = 0
+      if (this._armBones) for (const ab of this._armBones) { ab.bone.rotation.x = ab.restX; ab.bone.rotation.z = ab.restZ }
+      this._deathPosed = false
+    }
+    // Boss charge: inside CHARGE_RANGE (but outside melee) the brute commits to
+    // a straight lunge at the player for CHARGE_TIME seconds. The lunge uses the
+    // committed direction (no separation, no slide logic) so it reads as a
+    // telegraphed rush; it ends on its own timer, after which normal chase /
+    // melee resumes. While lunging the zombie does not do its cooldown melee.
+    if (this.isBoss && this._chargeT <= 0 && dist > ATTACK_RANGE && dist <= CHARGE_RANGE) {
+      this._chargeT = CHARGE_TIME
+      this._chargeX = dx / dist
+      this._chargeZ = dz / dist
+    }
+    if (this._chargeT > 0) {
+      this._setSkinState('run')
+      this._chargeT = Math.max(0, this._chargeT - dt)
+      const stepLen = CHARGE_SPEED * dt
+      this.position.x += this._chargeX * stepLen
+      this.position.z += this._chargeZ * stepLen
+      collision.resolve(this.position, COLLIDER_RADIUS)
+      // Lunge pose: arms cocked back, legs mid-stride (deterministic clock).
+      const armRest = POSE2[this.type].armRest
+      const swing = Math.sin(this._time * 14 + this._phase) * 0.6
+      this._armL.rotation.x = armRest - 1.2 + swing
+      this._armR.rotation.x = armRest - 1.2 - swing
+      this._legL.rotation.x = swing * 1.6
+      this._legR.rotation.x = -swing * 1.6
+      this._time += dt
+      this.group.position.copy(this.position)
+      return
+    }
+    // Melee only lands when the player is within horizontal range AND not
+    // high above the torso (a mid-jump player is out of arm reach). The hit
+    // is telegraphed: the windup fraction of the cooldown plays first (arms
+    // cocked back + a per-type windup voice), then damage lands.
+    if (dist <= ATTACK_RANGE && Math.abs(player.position.y - 1.2) <= AIR_CLEAR) {
+      this._setSkinState('attack')
       this._attackT += dt
-      if (this._attackT >= TABLE[this.type].cooldown) {
+      const cd = TABLE[this.type].cooldown
+      const windup = cd * WINDUP_FRACTION[this.type]
+      // Windup pose: pull the arms back as the strike charges up.
+      if (this._attackT < windup) {
+        const k = this._attackT / Math.max(windup, 1e-6)
+        const armRest = POSE2[this.type].armRest
+        this._armL.rotation.x = armRest - k * 0.9
+        this._armR.rotation.x = armRest - k * 0.9
+        if (this._attackT >= this._windupVoiceAt) {
+          this._windupVoiceAt = windup + 1 // fired once per swing
+          if (audio && audio.zombieWindup) audio.zombieWindup(this.type, this.position)
+        }
+        return
+      }
+      if (this._attackT >= cd) {
         this._attackT = 0
-        player.damage(TABLE[this.type].melee, 'zombie')
-        if (audio && audio.zombieAttack) audio.zombieAttack() // null-guarded
+    this._windupVoiceAt = 0 // windup-voice gate (s); reset when a swing lands
+        this._windupVoiceAt = 0
+        player.damage(TABLE[this.type].melee, this)
+        if (audio && audio.zombieAttack) audio.zombieAttack(this.position) // null-guarded; V4P-2 positional
       }
       return
     }
@@ -162,14 +1611,14 @@ export class Zombie {
     if (this._slideX !== undefined) { dirX = this._slideX; dirZ = this._slideZ }
     const preX = this.position.x
     const preZ = this.position.z
-    const stepLen = TABLE[this.type].speed * dt
+    const stepLen = this._effSpeed() * dt
     this.position.x += dirX * stepLen
     this.position.z += dirZ * stepLen
     collision.resolve(this.position, COLLIDER_RADIUS)
     const netX = this.position.x - preX
     const netZ = this.position.z - preZ
     const netLen = Math.hypot(netX, netZ)
-    const n = contactNormal(this.position, collision.aabbs, COLLIDER_RADIUS, wantX, wantZ)
+    const n = contactNormal(this.position, collision.aabbs, COLLIDER_RADIUS, wantX, wantZ, this._cn)
     const pickTangent = () => {
       let tx, tz
       if (n === null) {
@@ -181,14 +1630,15 @@ export class Zombie {
         tx = n.z; tz = -n.x
       }
       if (tx * wantX + tz * wantZ < 0) { tx = -tx; tz = -tz }
-      return [tx, tz]
+      this._tan.x = tx; this._tan.z = tz
+      return this._tan
     }
     if (this._slideX === undefined) {
       // Chasing the player.
       if (netLen < stepLen - 1e-4) {
         // Fully blocked: commit to a slide and try to get around.
-        const [tx, tz] = pickTangent()
-        this._slideX = tx; this._slideZ = tz
+        const tan = pickTangent()
+        this._slideX = tan.x; this._slideZ = tan.z
         this._slideT = 0; this._slideDist = 0; this._noProgT = 0
         this._clearDist = 0
         this._flips++
@@ -225,33 +1675,358 @@ export class Zombie {
       }
     }
     this._time += dt
-    this.group.rotation.x = Math.sin(this._time * 6) * 0.08 // bob
+    // Skinned body: chase moves the legs, so pick walk (or run for the fast
+    // screamer / lunge). The primitive limb code below still runs but its
+    // targets are hidden once a skin is attached, so it stays harmless.
+    this._setSkinState(this.speed >= 2 ? 'run' : 'walk')
+    // Walk cycle, synchronized with the bob below (same frequency 6): arms
+    // counter-swing the legs, the hips sway, and the head counter-bobs, so the
+    // gait reads as a lurching shamble rather than a rigid slide. Deterministic:
+    // _phase is the fixed-seed LCG value; no Math.random.
+    const armRest = POSE2[this.type].armRest
+    const t = this._time * 6 + this._phase
+    const swing = Math.sin(t) * 0.42
+    let legSwing = Math.sin(t) * 0.5
+    // Limp: with a leg gone, the stride halves and the lost leg stays tucked up
+    // (a one-legged hop). The body bobs vertically on the hop cycle.
+    if (this._limp) {
+      legSwing = Math.sin(t) * 0.22
+      this._hopPhase = t
+    }
+    // Legs: bigger stride, with a small knee-lift asymmetry via a second harmonic.
+    if (this._legL && this._legL.visible) this._legL.rotation.x = legSwing + Math.sin(t * 2) * 0.06
+    if (this._legR && this._legR.visible) this._legR.rotation.x = -legSwing + Math.sin(t * 2 + Math.PI) * 0.06
+    // Arms: counter-swing the legs, with a slight outward droop so they hang.
+    if (this._armL && this._armL.visible) { this._armL.rotation.x = armRest - swing; this._armL.rotation.z = -0.12 }
+    if (this._armR && this._armR.visible) { this._armR.rotation.x = armRest + swing; this._armR.rotation.z = 0.12 }
+    // Hips sway side to side + a forward lean tied to how fast it moves.
+    this.group.rotation.z = Math.sin(t) * 0.05
+    let bob = Math.sin(this._time * 6) * 0.08 + Math.min(this.speed, 3) * 0.012
+    if (this._limp) bob = Math.abs(Math.sin(t)) * 0.12 // vertical hop on one leg
+    this.group.rotation.x = bob
+    // Head counter-bobs against the body so the head stays steadier than the torso.
+    if (this._head) this._head.rotation.z = Math.sin(t + Math.PI) * 0.04
     this.group.position.copy(this.position)
   }
 
-  /** Weapon hitbox contract: world-space centers, so sunk corpses sink out of reach. */
+  /** Weapon hitbox contract: world-space centers, so sunk corpses sink out of reach.
+   *  The two-sphere contract (body + head) holds for every type; the brute's
+   *  1.4× silhouette scales both radii (0.63 / 0.42) while the anchor heights
+   *  stay at y+1.2 / y+1.8, so pistol/shotgun aim logic is unchanged. */
   getHitboxes() {
     const { x, y, z } = this.position
+    const s = this._hitboxScale
     return [
-      { center: new THREE.Vector3(x, y + 1.2, z), radius: 0.45, isHead: false },
-      { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3, isHead: true }
+      { center: new THREE.Vector3(x, y + 1.2, z), radius: 0.45 * s, isHead: false },
+      { center: new THREE.Vector3(x, y + 1.8, z), radius: 0.3 * s, isHead: true }
     ]
   }
 
-  /** Contract signature; `dir` is accepted and ignored. */
-  damage(amount, dir = null) {
+  /** Clothing outfit index (0 suit, 1 hoodie+sweatpants, 2 tee+jeans). */
+  getOutfit() { return this._outfit }
+
+  /** Effective movement speed given limb loss: a one-legged zombie limps at
+   *  45% speed. Arms don't affect speed. Used by the chase step. */
+  _effSpeed() {
+    return this.legsLost > 0 ? this.speed * 0.45 : this.speed
+  }
+
+  /**
+   * Advance the dismemberment chain by one landed BODY round — v3 T1.
+   * Firearms call this once per round (once per blast for the shotgun) after
+   * the damage + limb-sever pass. The chain is hit-counted, not
+   * damage-counted (the user decision), so it holds in every difficulty:
+   * rounds 1-3 have already severed their limbs via hitLimbAt (left arm,
+   * right arm, a leg), and the round that lands after three limbs are gone
+   * kills whatever is left through the normal death path. In FRENZY/
+   * NIGHTMARE the flat-50-HP damage usually kills before the chain resolves,
+   * which simply ends the chain early — that is the shipped kill economy,
+   * not a chain failure. The boss is immune.
+   *
+   * `this._chainShots` counts LANDED BODY ROUNDS only — the weapons call
+   * _chainShot once per round, and a sever never double-counts because the
+   * round that severed is the round being counted. A round that severs
+   * nothing still counts, so the chain keeps moving when the player is
+   * spraying center mass.
+   */
+  _chainShot(n = 1) {
+    if (this.isDead || this.isBoss) return
+    for (let i = 0; i < n; i++) {
+      if (this.isDead) return
+      if (this._chainShots >= 3) { this._chainKill(); return }
+      this._chainShots++
+    }
+  }
+
+  /**
+   * Limb-damage hit test — v3 T1 dismemberment chain. Weapons call this with
+   * the world-space point where a bullet struck a zombie's body, BEFORE the
+   * chain step (_chainShot) for that round.
+   *
+   * The chain is hit-counted, not damage-counted (the user decision), so it
+   * holds in every difficulty: a round that lands ON a limb severs it (left
+   * arm first, then right arm, then a leg — speed drops with the limp), and
+   * the round that lands after three limbs are gone kills the zombie
+   * outright. A center-mass round severs nothing but still spends the chain,
+   * so spraying the torso walks left arm → right arm → a leg → kill through
+   * the limbs the impacts actually clip, with the 4th landed round always
+   * finishing the job. A severed limb is hidden on the body and dropped as a
+   * tumbling clone into the shared DroppedLimbPool (`this.drops`, wired by
+   * Game; absent in unit tests). Headshots bypass the chain entirely and kill
+   * whenever the head hitbox absorbs the shot. In FRENZY/NIGHTMARE the
+   * flat-50-HP damage usually kills before the chain resolves, which simply
+   * ends the chain early. The boss is immune. Returns 'arm' | 'leg' | null.
+   * Deterministic (no Math.random): the hit point + counter decide.
+   */
+  hitLimbAt(x, y, z) {
+    if (this.isDead || this.isBoss) return null
+    // v3 chain: the kill resolves BEFORE the limb test — the zombie is already
+    // dying, so no further limb may be severed by this hit. The gate is three
+    // limbs gone AND at least one prior round landed (`_chainShots >= 1`), so
+    // the very first shot of a run can never be a chain kill even if a
+    // pathological hit point clipped three limbs at once.
+    if (this._chainShots >= 1 && this.armsLost + this.legsLost >= 3) { this._chainKill(); return null }
+    return this._limbAt(x, y, z)
+  }
+
+  /**
+   * Pure limb-sever test — v3 T1 (split out so the shotgun can run it per
+   * pellet for the visual sever cue without advancing the chain). No dead /
+   * boss / chain-kill gates here: the caller owns those. Returns 'arm' |
+   * 'leg' | null.
+   */
+  _limbAt(x, y, z) {
+    const ox = this.position.x, oz = this.position.z, oy = this.position.y
+    const d2 = (lx, ly, lz) => {
+      const dx = x - (ox + lx), dz = z - (oz + lz), dy = y - (oy + ly)
+      return dx * dx + dy * dy + dz * dz
+    }
+    // v3 chain: sever radius 0.416 m. Weapons record the impact where the round
+    // meets the torso hit-sphere SHELL, not the zombie's centre. The shell at
+    // chest aim height (y 1.45) passes 0.40–0.46 m from the arm sockets across
+    // the pistol's spread, so chest rounds clip the arms; a dead-centre round
+    // (y 1.2) lands 0.417 m from a socket and severs nothing while still
+    // spending the chain. 0.416 is the largest radius that keeps the
+    // dead-centre torso point outside the sever disc.
+    const LIMB_R2 = 0.416 * 0.416
+    const onLimb = (lx, ly, lz) => d2(lx, ly, lz) <= LIMB_R2
+    // v3 chain order: rounds 1-2 take the arms (left first), round 3 takes a
+    // leg. Only when a limb is actually hit does the chain sever — a torso hit
+    // severs nothing, but _chainShot still counts the round.
+    if (this.armsLost < 2) {
+      if (this._armL && this._armL.visible && onLimb(-0.34, 1.42, 0.1)) { this._severArm(this._armL); return 'arm' }
+      if (this._armR && this._armR.visible && onLimb(0.34, 1.42, 0.1)) { this._severArm(this._armR); return 'arm' }
+    }
+    if (this.legsLost < 2) {
+      if (this._legL && this._legL.visible && onLimb(-0.16, 0.47, 0)) { this._severLeg(this._legL); return 'leg' }
+      if (this._legR && this._legR.visible && onLimb(0.16, 0.47, 0)) { this._severLeg(this._legR); return 'leg' }
+    }
+    // v3 chain: the impact missed every surviving limb (a high torso hit, or
+    // the limbs on that side are already gone) — nothing severs, but the
+    // round still counts via _chainShot.
+    return null
+  }
+
+  // v3 gameplay (2): the dismemberment chain (see hitLimbAt). Shot order is
+  // left arm → right arm → leg → kill. A severed limb hides on the body,
+  // leaves the hit-flash/death-material set (so a flash recovery or the
+  // DEADMAT corpse swap never repaints a limb that is no longer there), and
+  // drops as a tumbling clone into Game's shared DroppedLimbPool.
+  _severArm(mesh) {
+    const left = mesh === this._armL
+    mesh.visible = false
+    this.armsLost++
+    this._severed.push(mesh)
+    const i = this._parts.indexOf(mesh)
+    if (i >= 0) { this._parts.splice(i, 1); this._restMats.splice(i, 1) }
+    if (this.drops) this.drops.drop(GEO2.arm, mesh.material, this.position.x, this.position.y + 1.42, this.position.z, this._rand)
+    if (this._armBones && this._armBones.length) {
+      // Hide the matching bones on the skinned body so the visible GLB body
+      // loses the same arm the primitive fallback hides.
+      for (const ab of this._armBones) if (ab.left === left && ab.bone) ab.bone.visible = false
+    }
+  }
+
+  _severLeg(mesh) {
+    const left = mesh === this._legL
+    mesh.visible = false
+    this.legsLost++
+    this._limp = true
+    this._severed.push(mesh)
+    const i = this._parts.indexOf(mesh)
+    if (i >= 0) { this._parts.splice(i, 1); this._restMats.splice(i, 1) }
+    if (this.drops) this.drops.drop(GEO2.leg, mesh.material, this.position.x, this.position.y + 0.47, this.position.z, this._rand)
+    // The skinned GLB body has no per-leg primitive twin, but hiding the
+    // matching leg bones keeps the visible rig consistent with the limp.
+    if (this._legBones) {
+      for (const lb of this._legBones) if (lb.left === left && lb.bone) lb.bone.visible = false
+    }
+  }
+
+  /** v3 chain kill: the 4th body shot ends the run for this zombie — it
+   *  takes lethal damage through the normal death path (DEADMAT swap,
+   *  corpse flop to the ground, kill attribution). */
+  _chainKill() {
     if (this.isDead) return
+    // v3 chain: the kill round also takes the last limb the geometry missed.
+    // The chain order is armL → armR → leg → kill; when a leg was never
+    // clipped (chest-aim impacts sit ~1 m from the leg sockets), the kill
+    // severs one surviving limb so the player always sees three limbs drop
+    // before the corpse falls. Prefer a leg (the chain's 3rd slot), then an
+    // arm if both legs are already gone.
+    if (this.legsLost < 2) {
+      if (this._legL && this._legL.visible) this._severLeg(this._legL)
+      else if (this._legR && this._legR.visible) this._severLeg(this._legR)
+    } else if (this.armsLost < 2) {
+      if (this._armL && this._armL.visible) this._severArm(this._armL)
+      else if (this._armR && this._armR.visible) this._severArm(this._armR)
+    }
+    this.damage(this.health + 1, null, this.lastDamager, false)
+  }
+
+  /** v3 chain: bring a severed limb back (co-op snapshot rollback / revive).
+   *  Reverses _severArm/_severLeg exactly: the mesh re-enters _parts at its
+   *  original slot with its rest material, and the matching skinned bones
+   *  return. The chain counter is NOT touched — it counts landed rounds, not
+   *  severs, and a regrown limb only ever means the server saw fewer limbs
+   *  than the client predicted (restoreLimbs). */
+  _regrowLimb(mesh) {
+    const i = this._severed.indexOf(mesh)
+    if (i < 0) return false
+    this._severed.splice(i, 1)
+    mesh.visible = true
+    if (mesh === this._armL || mesh === this._armR) {
+      this.armsLost = Math.max(0, this.armsLost - 1)
+      const left = mesh === this._armL
+      if (this._armBones) for (const ab of this._armBones) if (ab.left === left && ab.bone) ab.bone.visible = true
+    } else {
+      this.legsLost = Math.max(0, this.legsLost - 1)
+      if (this.legsLost === 0) this._limp = false
+      const left = mesh === this._legL
+      if (this._legBones) for (const lb of this._legBones) if (lb.left === left && lb.bone) lb.bone.visible = true
+    }
+    // Re-insert at the original child slot so the fixed child order (torso,
+    // head, armL, armR, legL, legR) and the parallel _restMats stay aligned.
+    const slot = this.group.children.indexOf(mesh)
+    if (slot >= 0 && this._parts.length < this.group.children.length) {
+      this._parts.splice(slot, 0, mesh)
+      this._restMats.splice(slot, 0, mesh === this._armL || mesh === this._armR
+        ? this._limbRest.armL : this._limbRest.legL)
+    } else {
+      this._parts.push(mesh)
+      this._restMats.push(mesh === this._armL || mesh === this._armR
+        ? this._limbRest.armL : this._limbRest.legL)
+    }
+    return true
+  }
+
+  /** v3 chain: reverse the whole dismemberment chain (used when a co-op
+   *  snapshot reports fewer severed limbs than the client predicted). */
+  restoreLimbs(arms, legs) {
+    while (this.armsLost > arms && this._severed.length) {
+      const cand = this._severed.find((m) => m === this._armL || m === this._armR)
+      if (!cand) break
+      this._regrowLimb(cand)
+    }
+    while (this.legsLost > legs && this._severed.length) {
+      const cand = this._severed.find((m) => m === this._legL || m === this._legR)
+      if (!cand) break
+      this._regrowLimb(cand)
+    }
+  }
+
+  /** Contract signature; `dir` is accepted and ignored. `by` (optional) is
+   *  the id of the player dealing the damage; it is recorded as lastDamager
+   *  so multiplayer kill attribution can credit the killer (the last hit is
+   *  the killing hit, because this method no-ops on a dead zombie).
+   *  Non-fatal hits flash HITMAT for 0.15 s; a fatal hit swaps to DEADMAT. */
+  damage(amount, dir = null, by = null, head = false) {
+    if (this.isDead) return
+    if (by !== null) this.lastDamager = by
+    // Remember the last hit's kind so the kill feed can distinguish a
+    // headshot kill from a body kill (audio/marker confirmation).
+    this.lastHitHead = head
     this.health -= amount
     if (this.health <= 0) {
       this.health = 0
       this.isDead = true
       this.deathTimer = 0
+      this._flashT = 0
+      // v3 chain: a severed limb is no longer in _parts, so the corpse swap
+      // never repaints a mesh that is gone from the body.
+      for (let i = 0; i < this._parts.length; i++) this._parts[i].material = DEADMAT
+      for (const e of this._eyes) e.material = DEADEYEMAT
+      this._face.material = DEADMAT
+      if (this._skin) this._skin.skinned.material = DEADMAT
+      // A2: the visible mesh body greys out with the corpse like the primitive.
+      if (this._skinMesh) this._skinMesh.body.material = DEADMAT
+    } else {
+      this._flashT = 0.15
+      for (let i = 0; i < this._parts.length; i++) this._parts[i].material = HITMAT
+      if (this._skin) this._skin.skinned.material = HITMAT
+      // A2: the visible mesh body flashes red with the primitive parts.
+      if (this._skinMesh) this._skinMesh.body.material = HITMAT
     }
   }
 
+  /** Hit reaction: stagger backward along (dx, dz) at `strength` m/s,
+   *  decaying over KB_TIME. No-op on a dead zombie (its corpse is inert).
+   *  The velocity is scaled by this.staggerResist (per type): fast types
+   *  resist kiting, the brute resists being staggered out of its charge. */
+  knockback(dx, dz, strength = KB_STRENGTH) {
+    if (this.isDead) return
+    this._kbX = dx * strength * this.staggerResist
+    this._kbZ = dz * strength * this.staggerResist
+    this._kbT = KB_TIME
+  }
+
   /** Detach only the per-zombie group. Shared GEO/MAT are module-level and
-   *  shared across all zombies — never dispose them here. */
+   *  shared across all zombies — never dispose them here. The shared weave
+   *  normal map is module-level too, so it is released only when the last live
+   *  zombie goes away (Game.dispose disposes every zombie); the rebuild is
+   *  lazy, so dispose fully reverses. */
   dispose() {
     this.scene.remove(this.group)
+    // Release the per-instance mixer (stops its actions). The cloned skinned
+    // mesh shares geometry with the shared loaded rig, so only the mixer and
+    // this instance's cloned skeleton need cleanup — never the shared rig.
+    if (this._skin) {
+      this._skin.mixer.stopAllAction()
+      this._skin.mixer.uncacheRoot(this._skin.mixer.getRoot())
+      this._skin = null
+    }
+    // A2: detach this instance's mesh-body clone only. The clone shares
+    // geometry + materials with the shared cached scene, so neither may be
+    // disposed here (other zombies of the type still use them). The per-instance
+    // tinted material below IS owned by this zombie and is disposed.
+    if (this._skinMesh) {
+      this.group.remove(this._skinMesh.root)
+      this._skinMesh = null
+    }
+    if (this._meshRestMat) {
+      this._meshRestMat.dispose()
+      this._meshRestMat = null
+    }
+    // v17: unregister + dispose this zombie's per-instance outfit clones. The
+    // clones share the module-level weave normalMap + (once loaded) the archetype
+    // albedo texture, so dispose() frees only the clone's own program, never the
+    // shared textures — those are released by the FABRIC/SKIN refcounts below.
+    if (this._outfitMats) {
+      for (const m of this._outfitMats) {
+        OUTFIT_CLONES.delete(m)
+        m.dispose()
+      }
+      this._outfitMats = null
+    }
+    if (FABRIC_NORMAL !== null && --FABRIC_REFS <= 0) {
+      FABRIC_NORMAL.dispose()
+      FABRIC_NORMAL = null
+    }
+    if (SKIN_DETAIL !== null && --SKIN_REFS <= 0) {
+      SKIN_DETAIL.dispose()
+      SKIN_DETAIL_R.dispose()
+      SKIN_DETAIL = null
+      SKIN_DETAIL_R = null
+    }
   }
 }

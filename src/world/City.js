@@ -1,13 +1,206 @@
 import * as THREE from 'three'
-import { addStreetlights, addVehicles, addBarricades } from './cityDressing.js'
+import { addStreetlights, addStreetlightPools, addVehicles, addBarricades, addLandmarks, addPlazaHalos, addDangerStrips, addSigns, addOuterStrips, addGroundDressing, addWantedPoster, addRoofDetail, addContactShadows, makeFacadeImageTexture, makeGroundImageTexture } from './cityDressing.js'
 import { createSnow } from './snow.js'
+import { addFacadeTrim } from './FacadeTrim.js'
+import { addStorefronts } from './Storefront.js'
 
-const PALETTE = [0x2a3546, 0x33405a, 0x3d4d6b, 0x2f3a4d]
+const PALETTE = [0x232d3f, 0x2b364d, 0x33415c, 0x273246, 0x2e3140, 0x3a3644]
+const TINTS = [1.12, 1.0, 0.9, 0.78, 1.05, 0.86]
 const SPAWNS = [
   [-85, 0], [85, 0], [0, -85], [0, 85],
   [-85, -85], [85, -85], [-85, 85], [85, 85],
   [-12, -12], [12, -12], [-12, 12], [12, 12]
 ].map(([x, z]) => ({ x, z }))
+
+// Task V3P-5: procedural lit-window facade textures, 4 pattern variants.
+// Each 256x256 tile covers a nominal 6 m x 21 m facade (4 cols x 8 rows).
+// The color map is white-based so the per-building palette tint (material
+// color) still applies; the emissive map marks the lit windows only.
+// Headless-safe: `env.canvasFactory()` may be null (unit tests) or a no-op
+// proxy canvas (headless Game) — drawing uses fillStyle/fillRect only and
+// never a context method's return value, and the texture is never uploaded
+// when nothing renders.
+//
+// Realism pass: the facade now ships a NORMAL map (window recesses + vertical
+// panel grooves + a grime gradient) and a ROUGHNESS map (glass smoother than
+// concrete) alongside the color + emissive maps, so flat boxes read as real
+// concrete catching the moon and streetlights.
+function facadeGrid(variant) {
+  // Deterministic lit-window pattern per variant (LCG, no Math.random).
+  let fs = 101 + variant * 37
+  const lit = []
+  for (let r = 0; r < 8; r++) {
+    for (let col = 0; col < 4; col++) {
+      lit.push(((fs = (fs * 48271) % 65537) / 65537) < 0.45)
+    }
+  }
+  return lit
+}
+
+function drawFacadeTexture(c, variant, emissiveOnly) {
+  c.width = 256
+  c.height = 256
+  const g = c.getContext('2d')
+  g.fillStyle = emissiveOnly ? '#000000' : '#ffffff'
+  g.fillRect(0, 0, 256, 256)
+  const lit = facadeGrid(variant)
+  // Per-window interior color variance (deterministic LCG, no Math.random):
+  // the emissive map multiplies the material's amber emissive, so a cooler
+  // (bluer) map pixel reads as a cool-lit room and a warmer one as tungsten.
+  let ws = 9001 + variant * 53
+  const wrnd = () => (ws = (ws * 48271) % 65537) / 65537
+  for (let r = 0; r < 8; r++) {
+    for (let col = 0; col < 4; col++) {
+      const isLit = lit[r * 4 + col]
+      const x = col * 64 + 12
+      const y = r * 32 + 8
+      if (emissiveOnly) {
+        if (!isLit) continue
+        const t = wrnd()
+        // ~60% warm (near-white, reads amber), ~40% cool (bluish, reads cyan-white).
+        if (t < 0.6) {
+          g.fillStyle = 'rgb(255,244,224)' // warm tungsten
+        } else {
+          g.fillStyle = 'rgb(210,226,255)' // cool fluorescent
+        }
+      } else {
+        g.fillStyle = isLit ? '#d9e2ee' : '#1e2229'
+      }
+      g.fillRect(x, y, 40, 16)
+    }
+  }
+  const t = new THREE.CanvasTexture(c)
+  if (!emissiveOnly) t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+// Tangent-space normal map: windows are inset (a dark top edge + light bottom
+// edge fake the recess), and faint vertical panel grooves run between columns.
+// Neutral (128,128,255) base; perturbations are small so it stays subtle.
+function drawFacadeNormal(c, variant) {
+  c.width = 256
+  c.height = 256
+  const g = c.getContext('2d')
+  g.fillStyle = 'rgb(128,128,255)' // flat surface
+  g.fillRect(0, 0, 256, 256)
+  // Vertical panel seams: a shadow line on one side, highlight on the other.
+  for (let col = 1; col < 4; col++) {
+    const x = col * 64
+    g.fillStyle = 'rgb(96,128,255)'  // left edge tilts toward -X
+    g.fillRect(x - 1, 0, 2, 256)
+    g.fillStyle = 'rgb(160,128,255)' // right edge tilts toward +X
+    g.fillRect(x + 1, 0, 2, 256)
+  }
+  // Window recesses: top edge catches less (darker normal), bottom edge more.
+  for (let r = 0; r < 8; r++) {
+    for (let col = 0; col < 4; col++) {
+      const x = col * 64 + 12
+      const y = r * 32 + 8
+      g.fillStyle = 'rgb(128,96,255)'  // top lip tilts up
+      g.fillRect(x, y - 2, 40, 2)
+      g.fillStyle = 'rgb(128,160,255)' // bottom lip tilts down
+      g.fillRect(x, y + 16, 40, 2)
+      g.fillStyle = 'rgb(96,128,255)'  // left jamb
+      g.fillRect(x - 2, y, 2, 16)
+      g.fillStyle = 'rgb(160,128,255)' // right jamb
+      g.fillRect(x + 40, y, 2, 16)
+    }
+  }
+  const t = new THREE.CanvasTexture(c)
+  return t
+}
+
+// Roughness map: concrete ~0.9 (bright = rough), glass insets darker (smoother,
+// so lit windows and their panes catch a specular sheen), with a grime band
+// near the base raising roughness further.
+function drawFacadeRoughness(c, variant) {
+  c.width = 256
+  c.height = 256
+  const g = c.getContext('2d')
+  g.fillStyle = 'rgb(224,224,224)' // concrete: fairly rough
+  g.fillRect(0, 0, 256, 256)
+  // Grime/weathering gradient: rougher (brighter) toward the street level.
+  // Guarded so the headless no-op proxy (whose createLinearGradient returns a
+  // bare function, not a gradient) doesn't throw on addColorStop.
+  const grad = g.createLinearGradient ? g.createLinearGradient(0, 0, 0, 256) : null
+  if (grad && grad.addColorStop) {
+    grad.addColorStop(0, 'rgba(255,255,255,0)')
+    grad.addColorStop(1, 'rgba(255,255,255,0.25)')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 256, 256)
+  }
+  // Glass panes: smooth (dark = low roughness) so they glint.
+  for (let r = 0; r < 8; r++) {
+    for (let col = 0; col < 4; col++) {
+      const x = col * 64 + 12
+      const y = r * 32 + 8
+      g.fillStyle = 'rgb(60,60,60)'
+      g.fillRect(x, y, 40, 16)
+    }
+  }
+  const t = new THREE.CanvasTexture(c)
+  return t
+}
+
+function makeFacadeTextures(env) {
+  const factory = env && env.canvasFactory
+  if (typeof factory !== 'function') return null
+  if (!factory()) return null // unit tests pass a factory returning null
+  const pairs = []
+  for (let v = 0; v < 8; v++) {
+    pairs.push({
+      map: drawFacadeTexture(factory(), v, false),
+      emissiveMap: drawFacadeTexture(factory(), v, true),
+      normalMap: drawFacadeNormal(factory(), v),
+      roughnessMap: drawFacadeRoughness(factory(), v)
+    })
+  }
+  return pairs
+}
+
+// Ground detail maps: a wet-asphalt / cracked-pavement look. The normal map
+// scatters deterministic cracks + patchy puddle ripples; the roughness map
+// darkens puddle patches (smooth, reflective) against rougher dry pavement.
+// Headless-safe (canvasFactory null -> returns null).
+function makeGroundTextures(env) {
+  const factory = env && env.canvasFactory
+  if (typeof factory !== 'function') return null
+  if (!factory()) return null
+  // Normal map: neutral base + deterministic crack strokes.
+  const nc = factory()
+  nc.width = 256; nc.height = 256
+  const ng = nc.getContext('2d')
+  ng.fillStyle = 'rgb(128,128,255)'
+  ng.fillRect(0, 0, 256, 256)
+  let gs = 2024
+  const grnd = () => (gs = (gs * 48271) % 65537) / 65537
+  ng.strokeStyle = 'rgb(110,128,255)'
+  ng.lineWidth = 1
+  for (let i = 0; i < 40; i++) {
+    const x = grnd() * 256, y = grnd() * 256
+    ng.beginPath(); ng.moveTo(x, y)
+    ng.lineTo(x + (grnd() - 0.5) * 40, y + (grnd() - 0.5) * 40)
+    ng.stroke()
+  }
+  const normalMap = new THREE.CanvasTexture(nc)
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
+  // Roughness map: dry pavement ~0.85 with darker (smoother) puddle patches.
+  const rc = factory()
+  rc.width = 256; rc.height = 256
+  const rg = rc.getContext('2d')
+  rg.fillStyle = 'rgb(216,216,216)'
+  rg.fillRect(0, 0, 256, 256)
+  gs = 777
+  const grnd2 = () => (gs = (gs * 48271) % 65537) / 65537
+  rg.fillStyle = 'rgba(40,40,40,0.6)'
+  for (let i = 0; i < 14; i++) {
+    const x = grnd2() * 256, y = grnd2() * 256, r = 12 + grnd2() * 26
+    rg.beginPath(); rg.ellipse(x, y, r, r * 0.6, 0, 0, Math.PI * 2); rg.fill()
+  }
+  const roughnessMap = new THREE.CanvasTexture(rc)
+  roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping
+  return { normalMap, roughnessMap }
+}
 
 export class City {
   constructor(scene, collision, env) {
@@ -21,27 +214,71 @@ export class City {
 
     const group = new THREE.Group()
     group.name = 'city'
+    const plazas = []
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(180, 180),
-      new THREE.MeshStandardMaterial({ color: 0xdde4ee, roughness: 0.95 })
+      // v6 visuals (10): roughness 0.85 -> 0.55 -> v19 0.42. The old value sat inside
+      // the zombie-body roughness band (0.90/0.95), so under the moon rig (1.45 lx)
+      // the pavement shaded identically to a body and nothing separated
+      // gameplay surfaces from scenery. 0.42 deepens the wet-asphalt sheen the
+      // IBL sky + 82 cd streetlight pools give the snow (specular widens and
+      // sharpens as roughness drops, so each pool smears into a long wet streak
+      // across the pavement) while still pulling the pavement a full band below
+      // every body. Color untouched: ground tonemaps 0.2320, still above every
+      // body (0.070-0.174), so it reads as a lit backdrop rather than an actor.
+      new THREE.MeshStandardMaterial({ color: 0x93a9c2, roughness: 0.42 })
     )
+    // Realism pass: cracked/wet-pavement normal + roughness maps so the ground
+    // stops reading as flat card. Headless (canvasFactory null) leaves them off.
+    const groundMaps = makeGroundTextures(this.env)
+    if (groundMaps) {
+      groundMaps.normalMap.repeat.set(24, 24)
+      groundMaps.roughnessMap.repeat.set(24, 24)
+      ground.material.normalMap = groundMaps.normalMap
+      ground.material.normalScale = new THREE.Vector2(0.5, 0.5)
+      ground.material.roughnessMap = groundMaps.roughnessMap
+      ground.material.needsUpdate = true
+    }
+    // Realism pass (tier 4): a photoreal wet-asphalt image as the ground color
+    // map (browser-only); headless / missing-asset keeps the flat color.
+    const groundImage = makeGroundImageTexture(this.env)
+    if (groundImage) {
+      groundImage.repeat.set(30, 30)
+      ground.material.color.set(0xffffff)
+      // Assign the color map only once the image has decoded; assigning it up
+      // front uploads an empty texture and warns "no image data found" (r185).
+      groundImage.addEventListener('load', () => { ground.material.map = groundImage; ground.material.needsUpdate = true })
+    }
     ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
     group.add(ground)
+    // v6 visuals (2): exposed so the atmosphere layer can reuse this plane
+    // geometry and tune its fog response instead of adding new meshes.
+    this.ground = ground
 
-    const building = (x, z, w, d, h) => {
+    const buildings = []
+    const building = (x, z, w, d, h, zone) => {
+      const color = new THREE.Color(PALETTE[Math.floor(rnd() * 6)]).multiplyScalar(TINTS[zone])
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color: PALETTE[Math.floor(rnd() * 4)], roughness: 0.9 })
+        // v6 visuals (10): roughness 0.88 -> 0.62 so the untextured building
+        // body sits in the scenery band, clearly below the 0.90/0.95 zombie
+        // band. Facades keep metalness 0.05 (env map is installed, but at this
+        // metalness the IBL adds no mirror highlight that could compete with a
+        // body).
+        new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05 })
       )
       mesh.position.set(x, h / 2, z)
+      mesh.castShadow = true
       group.add(mesh)
       collision.addAABB(x - w / 2 - 0.5, z - d / 2 - 0.5, x + w / 2 + 0.5, z + d / 2 + 0.5, h)
       this._aabbs.push(collision.aabbs[collision.aabbs.length - 1])
+      buildings.push({ mesh, w, d, h, color })
     }
 
     // Center block (0,0): one 8x4x9 building; registered first -> collision.aabbs[0].
-    building(0, 0, 8, 4, 9)
+    building(0, 0, 8, 4, 9, 0)
 
     // 7x7 blocks (pitch 24, size 15): plaza or 4 quadrant buildings (2 m alleys).
     for (let i = 0; i < 7; i++) {
@@ -49,37 +286,157 @@ export class City {
         if (i === 3 && j === 3) continue
         const bx = (i - 3) * 24
         const bz = (j - 3) * 24
-        if (rnd() < 0.4) continue // plaza: no buildings
+        const zone = Math.max(Math.abs(i - 3), Math.abs(j - 3))
+        if (rnd() < 0.4) { plazas.push({ x: bx, z: bz }); continue } // plaza: no buildings
         for (let q = 0; q < 4; q++) {
           if (rnd() >= 0.6) continue
           const qx = bx + (q & 1 ? 4.25 : -4.25)
           const qz = bz + (q & 2 ? 4.25 : -4.25)
-          building(qx, qz, 5.5, 5.5, 5 + Math.floor(rnd() * 18))
+          building(qx, qz, 5.5, 5.5, 5 + Math.floor(rnd() * 18), zone)
         }
       }
     }
 
-    this.streetlightAnchors = addStreetlights(group)
+    // Task V3P-5: assign a facade variant per building with a separate LCG
+    // (seed 113) so the layout LCG above is untouched; wrap each building in a
+    // BoxGeometry material array (facade x4 + shared roof x2). The texture
+    // repeat scales the nominal 6 m x 21 m tile to the building's size.
+    const facadePairs = makeFacadeTextures(this.env)
+    // Realism pass (tier 4): a photoreal facade image for the hero buildings —
+    // the near ring the player actually walks past. Browser-only; null headless,
+    // where the procedural canvas facade stays in place.
+    const facadeImage = makeFacadeImageTexture(this.env)
+    // Hero clones share the source's .image; mark them for upload only when the
+    // source decodes (setting needsUpdate at clone time warns "no image data").
+    const facadeImageClones = []
+    if (facadeImage) facadeImage.addEventListener('load', () => { for (const c of facadeImageClones) c.needsUpdate = true })
+    // v6 visuals (10): 0.95 -> 0.70. Roofs are pure scenery and must not share
+      // the zombie band; 0.70 keeps them matte-dark (they tonemap to 0.0024,
+      // nearly the fog floor) while leaving 0.90/0.95 exclusive to bodies.
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0x1d2430, roughness: 0.70, metalness: 0.02 })
+    let fv = 113
+    const variants = []
+    this._flickerMats = []
+    for (const b of buildings) {
+      const v = Math.floor(((fv = (fv * 48271) % 65537) / 65537) * 8)
+      variants.push(v)
+      const facade = new THREE.MeshStandardMaterial({
+        // v6 visuals (10): roughness 0.88 -> 0.62 (see the building-body note). The
+        // procedural roughness map multiplies this base, so concrete stays
+        // rougher than the glass insets within the same lowered band.
+        color: b.color, roughness: 0.62, metalness: 0.05,
+        // V3P-10: emissiveIntensity 1.1 -> 1.5 so lit windows read as warm
+        // beacons against the dark facades (checked against metrics below).
+        emissive: 0xffa64d, emissiveIntensity: 1.5
+      })
+      // Hero buildings: within the inner ring (|x|,|z| <= ~13 m of the plaza
+      // centre) — the ones the player passes in the opening minutes.
+      const hero = facadeImage && Math.abs(b.mesh.position.x) <= 13 && Math.abs(b.mesh.position.z) <= 13
+      if (facadePairs) {
+        const m = facadePairs[v].map.clone()
+        m.repeat.set(b.w / 6, b.h / 21)
+        m.needsUpdate = true
+        const em = facadePairs[v].emissiveMap.clone()
+        em.repeat.set(b.w / 6, b.h / 21)
+        em.needsUpdate = true
+        const nm = facadePairs[v].normalMap.clone()
+        nm.repeat.set(b.w / 6, b.h / 21)
+        nm.needsUpdate = true
+        const rm = facadePairs[v].roughnessMap.clone()
+        rm.repeat.set(b.w / 6, b.h / 21)
+        rm.needsUpdate = true
+        facade.map = m
+        facade.emissiveMap = em
+        facade.normalMap = nm
+        facade.normalScale = new THREE.Vector2(0.6, 0.6)
+        facade.roughnessMap = rm
+      }
+      // Hero buildings use the photoreal image as the color map (tiled to the
+      // facade size); they keep the procedural normal/roughness/emissive maps.
+      if (hero) {
+        const im = facadeImage.clone()
+        im.repeat.set(b.w / 6, b.h / 21)
+        facadeImageClones.push(im)
+        facade.map = im
+      }
+      b.mesh.material = [facade, facade, roofMat, roofMat, facade, facade]
+      // Window flicker: track each facade with a deterministic phase so a few
+      // lit windows pulse slowly over time (no Math.random). Only a subset
+      // flickers; the rest stay steady.
+      this._flickerMats.push({ mat: facade, base: facade.emissiveIntensity, phase: (v * 1.7 + b.mesh.position.x * 0.13 + b.mesh.position.z * 0.29) })
+    }
+    this._facadeVariants = variants
+    // Realism pass (tier 2): rooftop clutter + cornices (2 InstancedMeshes).
+    addRoofDetail(group, buildings)
+    // v4 VISUALS (C1): instanced window trim/sills (+1 InstancedMesh) so the
+    // flat facade boxes gain real geometric relief up close.
+    addFacadeTrim(group, buildings)
+    // v19 graphics: ground-floor storefront strips + base grime/AO bands (2
+    // InstancedMeshes) so buildings meet the pavement with a lit street level
+    // and soot-darkened foot instead of a flat box edge.
+    addStorefronts(group, buildings)
+    // Realism pass (tier 3): soft contact-shadow decals under vehicles +
+    // barricades (1 InstancedMesh) so props read as resting on the pavement.
+    addContactShadows(group)
+
+    const streetlights = addStreetlights(group, collision)
+    this.streetlightAnchors = streetlights.anchors
+    this.lamps = streetlights.lamps
+    // Lamp head AABBs are collision too — track them so dispose removes them.
+    for (const l of this.lamps) if (l.aabb) this._aabbs.push(l.aabb)
+    addStreetlightPools(group, this.streetlightAnchors)
   this._aabbs.push(...addVehicles(group, collision))
   this._aabbs.push(...addBarricades(group, collision))
+  addLandmarks(group)
+  addPlazaHalos(group, plazas)
+  addDangerStrips(group)
+  addOuterStrips(group)
+  addGroundDressing(group, this.env && this.env.canvasFactory)
+  addSigns(group, plazas)
+  // Wanted poster on the center-block building's front face (buildings[0]).
+  this._poster = addWantedPoster(group, buildings[0], this.env)
+  this.plazas = plazas
   this.snow = createSnow()
-  group.add(this.snow.points)
+  for (const p of this.snow.points) group.add(p)
     this.group = group
     scene.add(group)
   }
 
   getSpawnPoints() { return SPAWNS }
+  getPlazaCenters() { return this.plazas }
+  getFacadeVariants() { return this._facadeVariants }
 
   setSnowCount(n) { this.snow.setCount(n) }
 
-  update(playerPos, dt = 0) { this.snow.update(playerPos, dt) }
+  update(playerPos, dt = 0) {
+    this.snow.update(playerPos, dt)
+    // Deterministic window flicker: a subset of facades pulse their emissive
+    // intensity slowly (a living-city feel). No Math.random; phase is derived
+    // from the building's variant + position. dt is the frame delta.
+    this._flickerT = (this._flickerT || 0) + dt
+    const ft = this._flickerT
+    for (let i = 0; i < this._flickerMats.length; i += 3) {
+      const f = this._flickerMats[i]
+      // Slow pulse + a rare deep dip (a bulb flickering) via a second harmonic.
+      const pulse = Math.sin(ft * 0.6 + f.phase) * 0.18 + Math.sin(ft * 7.3 + f.phase * 2) * 0.06
+      f.mat.emissiveIntensity = f.base + pulse
+    }
+  }
 
   dispose() {
     if (this._disposed) return
     this.scene.remove(this.group)
     for (const m of this.group.children) {
       m.geometry.dispose()
-      m.material.dispose()
+      const mats = Array.isArray(m.material) ? m.material : [m.material]
+      for (const mat of mats) {
+        if (mat.map) mat.map.dispose()
+        if (mat.emissiveMap) mat.emissiveMap.dispose()
+        if (mat.normalMap) mat.normalMap.dispose()
+        if (mat.roughnessMap) mat.roughnessMap.dispose()
+        mat.dispose()
+      }
+      if (m.isInstancedMesh && m.dispose) m.dispose()
     }
     for (const a of this._aabbs) {
       const i = this.collision.aabbs.indexOf(a)

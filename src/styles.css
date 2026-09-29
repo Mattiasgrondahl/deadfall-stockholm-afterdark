@@ -7,15 +7,15 @@
   --bg: #05070c;
   --panel: rgba(10, 14, 24, 0.82);
   --panel-edge: rgba(120, 150, 200, 0.25);
-  --ink: #d6deee;
-  --ink-dim: #8b98b0;
+  --ink: #e2e9f6;
+  --ink-dim: #a4b0c6;
   --accent: #6ea8ff;
   --danger: #ff4d4d;
   --warn: #ffb347;
   --health: #58c98a;
   --stamina: #6ea8ff;
   --ammo: #ffd97a;
-  --banner: #eef4ff;
+  --banner: #f2f6ff;
   --mono: "Courier New", ui-monospace, monospace;
   --sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
@@ -44,7 +44,7 @@ html, body {
 }
 
 /* ------------------------------------------------------------ FX */
-#fx-root { position: absolute; inset: 0; pointer-events: none; }
+#fx-root { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
 
 .fx-scanlines {
   position: absolute; inset: 0;
@@ -55,17 +55,46 @@ html, body {
   mix-blend-mode: multiply;
 }
 
+/* v6 visuals (7): strictly peripheral. Old stops (0 @50% -> 0.55 @100%) put
+   60% of the screen above 5% alpha at the 0.35 fallback peak and 67% at the
+   0.60 hook peak, and the rim reached 0.19/0.33 effective alpha — enough to
+   pull a 30 m walker from Michelson C 0.967 down to 0.67/0.54, under the 0.90
+   readability gate. The clear disc now runs to 72% of the gradient extent
+   (72% of screen height / 128% of screen width at 16:9), covering the central
+   40% band where a 10-30 m zombie appears; the ramp lives in the outer 28%
+   ring and the rim alpha is capped at 0.32 (0.11 effective at peak 0.35,
+   C 0.72 locally). HUD.js zeroes this layer's opacity whenever the
+   low-health frame is on, so the two never stack. */
 .fx-damage {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at center, rgba(180,20,20,0) 45%, rgba(180,20,20,0.55) 100%);
+  background: radial-gradient(ellipse at center, rgba(180,20,20,0) 72%, rgba(180,20,20,0.32) 100%);
   opacity: 0;
   transition: opacity 0.12s ease-out;
 }
 .fx-damage.on { opacity: 1; transition: opacity 0.05s; }
 
+/* Directional damage edge glow (V5P-2): full-screen layer, glow band at the
+   top edge, rotated about screen center to point at the attacker. */
+.fx-dmg-edge {
+  position: absolute; inset: 0;
+  transform-origin: 50% 50%;
+  background: linear-gradient(to bottom, rgba(180,20,20,0.55) 0%, rgba(180,20,20,0) 16%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* v6 visuals (7): the old form was a constant full-strength frame — 0.45 at
+   the rim from t=0 outward past 40%, 78% of the screen above 5% alpha, C
+   0.511 at t=0.5 and 0.097 at the rim, on screen continuously exactly while
+   the player is panicking. Now a breathing frame: the clear disc runs to 62%
+   of the gradient extent (62% of screen height / 110% of width at 16:9), the
+   rim alpha is capped at 0.30, and HUD.js drives opacity from the existing
+   per-frame write as a deterministic 0.55 Hz pulse in [0.25, 0.75] — so the
+   worst-case rim alpha is 0.225 (C 0.23 locally) instead of a constant 0.45,
+   and the frame lifts periodically so the peripheral silhouette re-reads. */
 .fx-lowhealth {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(140,10,10,0.45) 100%);
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 62%, rgba(140,10,10,0.30) 100%);
   opacity: 0;
   transition: opacity 0.8s;
 }
@@ -75,10 +104,25 @@ html, body {
 #hud-root {
   position: absolute; inset: 0;
   pointer-events: none;
+  z-index: 10;
   opacity: 0;
   transition: opacity 0.3s;
 }
 #hud-root.visible { opacity: 1; }
+
+/* V5P-3: panel backings for HUD clusters (contrast over the brighter night scene) */
+.hud-health, .hud-stamina, .hud-battery, .hud-weapons, .hud-score {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.hud-wave {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
 
 .hud-label {
   font-family: var(--mono);
@@ -95,6 +139,8 @@ html, body {
   color: var(--ink);
   line-height: 1.1;
 }
+
+.hud-value, .hud-label, .weapon-name, .weapon-ammo, .hud-threat { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85); }
 
 .bar {
   height: 10px;
@@ -114,10 +160,10 @@ html, body {
   left: 28px; bottom: 26px;
   width: 260px;
 }
-.hud-health .bar { width: 260px; }
+.hud-health .bar { width: 240px; }
 .hud-health .bar-fill { background: var(--health); }
 .hud-health.critical .bar-fill { background: var(--danger); animation: pulse 0.7s infinite; }
-.hud-health .hud-value { font-size: 18px; }
+.hud-health .hud-value { font-size: 24px; }
 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
@@ -127,7 +173,7 @@ html, body {
   left: 28px; bottom: 8px;
   width: 260px;
 }
-.hud-stamina .bar { width: 260px; height: 5px; }
+.hud-stamina .bar { width: 240px; height: 5px; }
 .hud-stamina .bar-fill { background: var(--stamina); }
 
 /* ammo */
@@ -143,9 +189,203 @@ html, body {
   display: none;
   margin-top: 6px;
 }
-.hud-reload .bar { width: 170px; height: 5px; }
+.hud-reload .bar { width: 150px; height: 5px; }
 .hud-reload .bar-fill { background: var(--warn); }
 .hud-ammo.reloading .hud-reload { display: block; }
+
+/* v2: weapon slots (replaces the single ammo readout), battery, score */
+.hidden { display: none; }
+
+.hud-weapons {
+  position: absolute;
+  right: 28px; bottom: 26px;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  text-align: right;
+}
+/* legacy single-weapon slot nested inside .hud-weapons: position it inline */
+.hud-weapons .hud-ammo { position: static; min-width: 110px; }
+
+.weapon-slot { min-width: 110px; }
+.weapon-slot.active { opacity: 1; }
+.weapon-slot:not(.active) { opacity: 0.8; }
+.weapon-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.weapon-slot.active .weapon-name { color: var(--ammo); }
+.weapon-ammo {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ammo);
+  line-height: 1.1;
+}
+.weapon-slot.empty .weapon-ammo { color: var(--danger); animation: pulse 0.6s infinite; }
+.weapon-reload { display: none; margin-top: 6px; }
+.weapon-slot.reloading .weapon-reload { display: block; }
+.weapon-slot .bar { width: 90px; height: 5px; }
+.weapon-slot .bar-fill { background: var(--warn); }
+
+/* battery (flashlight) */
+.hud-battery {
+  position: absolute;
+  left: 28px; bottom: 104px;
+  width: 170px;
+}
+.hud-battery .bar { width: 150px; height: 6px; }
+.hud-battery .bar-fill { background: var(--stamina); }
+.hud-battery.low .bar-fill { background: var(--danger); animation: pulse 0.7s infinite; }
+
+/* score */
+.hud-score {
+  position: absolute;
+  right: 28px; top: 18px;
+  text-align: right;
+}
+.hud-score .hud-value { font-size: 18px; }
+
+/* music-mute button (top-right, under the score): a clickable toggle that
+   silences ONLY the soundtrack. */
+.hud-music-btn {
+  position: absolute;
+  right: 28px; top: 74px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  pointer-events: auto;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  transition: color 0.15s, border-color 0.15s;
+}
+.hud-music-btn:hover { border-color: var(--ammo); color: var(--ammo); }
+.hud-music-btn.muted { color: var(--ink-dim); opacity: 0.7; }
+
+/* v7: kill + headshot counters (top-right, under the music button). */
+.hud-stats {
+  position: absolute;
+  right: 28px; top: 110px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.hud-stats.hidden { display: none; }
+.hud-stats div:last-child { color: var(--warn); }
+
+/* v4 UI: "now playing" line, bottom-center of the HUD. */
+.hud-nowplaying {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  opacity: 0.8;
+  pointer-events: none;
+  white-space: nowrap;
+  text-align: right;
+}
+.hud-nowplaying .np-track { color: var(--accent); }
+.hud-nowplaying .np-hint { color: var(--ink-dim); }
+.hud-nowplaying.hidden { display: none; }
+
+/* high score (title screen) */
+.highscore {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--warn);
+}
+
+/* v6: top-10 leaderboard. v4 UI: pinned to the TOP-RIGHT corner of the title
+   overlay (the .screen is position:absolute; inset:0, so absolute here anchors
+   to the full overlay, not the centered panel). z-index 2 keeps it above the
+   backdrop/video (0) and the panel (1). */
+.highscore-board {
+  position: absolute;
+  top: 20px;
+  right: 28px;
+  z-index: 2;
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 320px;
+  text-align: right;
+}
+.highscore-board .board-title {
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  color: var(--ink-dim);
+  margin-bottom: 4px;
+}
+.highscore-board .board-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+.highscore-board .board-rank { color: var(--ink-dim); width: 22px; text-align: right; }
+.highscore-board .board-name { color: var(--ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.highscore-board .board-score { color: var(--warn); }
+.highscore-board .board-row:first-of-type .board-name { color: var(--warn); }
+
+/* new-record line (game-over screen) */
+.record {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--danger);
+}
+
+/* v15: co-op end-game scoreboard — per-player stats table on the game-over
+   screen (winner first). Hidden until showGameOver() fills it with a scoreboard. */
+.mp-end-board {
+  display: none;
+  margin: 14px auto 0;
+  max-width: 460px;
+  font-family: var(--mono);
+}
+.mp-end-board.visible { display: block; }
+.mp-end-title {
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--warn);
+  text-align: center;
+  margin-bottom: 8px;
+}
+.mp-end-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+}
+.mp-end-row.mp-end-head { color: var(--ink-dim); border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.mp-end-cell { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-end-row .mp-end-cell:first-child { flex: 1.6; text-align: left; color: var(--ink); }
+.mp-end-row:not(.mp-end-head) .mp-end-cell:first-child { color: var(--warn); }
+.mp-end-row .mp-end-cell:last-child { color: var(--warn); }
+.mp-end-cell:not(.show) { visibility: hidden; }
 
 /* wave + threat */
 .hud-wave {
@@ -154,16 +394,66 @@ html, body {
   transform: translateX(-50%);
   text-align: center;
 }
+.hud-wave .hud-value { font-size: 20px; }
 .hud-threat {
   position: absolute;
-  top: 66px; left: 50%;
+  top: 78px; left: 50%;
   transform: translateX(-50%);
   text-align: center;
   font-family: var(--mono);
   font-size: 13px;
   letter-spacing: 0.18em;
   color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 4px 10px;
 }
+.hud-threat.danger { color: var(--danger); }
+
+/* v6 visuals (8): second line of the two existing wave readouts — the
+   intermission countdown + composition preview (inside the .hud-wave panel)
+   and the cap-pressure line under the threat readout. Both are small, dim,
+   top-of-screen text; no new full-screen layer, so the round-47 vignette
+   work is untouched. */
+.hud-wave-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+.hud-wave-sub.imminent { color: var(--banner); }
+.hud-threat-sub {
+  position: absolute;
+  top: 98px; left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+/* boss health bar (wave-5 finale): below the threat readout, wide and red */
+.hud-boss {
+  position: absolute;
+  top: 104px; left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.hud-boss .hud-label { color: var(--danger); }
+.hud-boss .bar { width: 100%; height: 8px; }
+.hud-boss .bar-fill { background: var(--danger); }
 
 /* transient message */
 .hud-message {
@@ -188,17 +478,18 @@ html, body {
   position: absolute;
   top: 50%; left: 50%;
   width: 0; height: 0;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 .crosshair .ch-dot {
   position: absolute;
-  width: 3px; height: 3px;
+  width: 4px; height: 4px;
   background: #eaf2ff;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 4px rgba(234, 242, 255, 0.9);
 }
 .crosshair .ch-bar {
   position: absolute;
-  background: rgba(234, 242, 255, 0.85);
+  background: rgba(234, 242, 255, 0.95);
   transition: transform 0.12s ease-out;
 }
 .crosshair .ch-bar.top    { width: 2px; height: 8px; transform: translate(-50%, -16px); }
@@ -209,27 +500,130 @@ html, body {
 .crosshair.spread .ch-bar.bottom { transform: translate(-50%, 16px); }
 .crosshair.spread .ch-bar.left   { transform: translate(-24px, -50%); }
 .crosshair.spread .ch-bar.right  { transform: translate(16px, -50%); }
+/* hit marker + kill confirmation (V5P-1) */
+.hit-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+}
+.hit-marker.show { opacity: 0.9; }
+.hit-marker::before,
+.hit-marker::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: #ffffff;
+}
+.hit-marker::before { transform: rotate(45deg); }
+.hit-marker::after { transform: rotate(-45deg); }
+.hit-marker.kill { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+.hit-marker.kill::before,
+.hit-marker.kill::after { background: #ff4444; width: 4px; margin-left: -2px; }
+/* headshot confirmation: amber, larger, brighter than a body hit */
+.hit-marker.headshot { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+.hit-marker.headshot.show { opacity: 1; }
+.hit-marker.headshot::before,
+.hit-marker.headshot::after { background: #ffb020; width: 4px; margin-left: -2px; }
+/* reduced motion: no scale pops on markers/damage edge */
+.reduced-motion .hit-marker,
+.reduced-motion .dmg-edge { transition: none !important; }
 
 /* ------------------------------------------------------------ Screens */
-#screens-root { position: absolute; inset: 0; pointer-events: none; }
+#screens-root { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
 
 .screen {
   position: absolute;
   inset: 0;
   display: none;
-  align-items: center;
-  justify-content: center;
+  /* v11: the panel centers itself via `margin: auto` (see .panel) rather than
+     flex centering, so a panel taller than the viewport scrolls to reveal the
+     START / JOIN buttons instead of being clipped at the top. */
+  overflow-y: auto;
   background: rgba(4, 6, 12, 0.78);
   backdrop-filter: blur(3px);
   pointer-events: auto;
 }
-.screen.visible { display: flex; }
+.screen.visible { display: flex; animation: screen-in 0.25s ease-out; }
+/* Title-screen alley backdrop (Wan2GP plate): absolute so it never joins the
+   flex layout, darkly washed by the overlay's own rgba background above. */
+.title-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* v4 VISUALS (D1): looping attract clip over the static plate, dimmed to match
+   the overlay wash. object-fit: cover fills the panel area without letterbox. */
+.title-video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+  pointer-events: none;
+}
+@keyframes screen-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* v17 INTRO MOVIE: full-screen clip shown when a solo run starts. Hidden until
+   .visible; opaque black backdrop so the game never shows through, and the
+   video plays at full opacity. pointer-events:auto so any click skips it. */
+.intro-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: #000;
+  z-index: 40;
+  pointer-events: auto;
+}
+.intro-overlay.visible { display: block; }
+.intro-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.intro-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  color: rgba(220, 220, 220, 0.7);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
 
 .panel {
+  position: relative;
+  z-index: 1;
   background: var(--panel);
   border: 1px solid var(--panel-edge);
   padding: 42px 56px;
-  max-width: 620px;
+  /* v11: auto margins center the panel in the flex overlay while still letting
+     it scroll into view when it is taller than the viewport. */
+  margin: auto;
+  /* v11: widened from 620px so the merged name/room fields and the TOP-10
+     board sit comfortably without crowding. */
+  max-width: 720px;
   width: calc(100% - 64px);
   text-align: center;
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.7), 0 0 8px rgba(110, 168, 255, 0.15);
@@ -251,6 +645,16 @@ html, body {
   font-size: 15px;
   margin: 0 0 30px;
   letter-spacing: 0.06em;
+}
+.tagline.dim { font-size: 13px; margin: 10px 0 0; opacity: 0.85; letter-spacing: 0.04em; }
+
+.version {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+  opacity: 0.6;
+  letter-spacing: 0.12em;
+  margin: 2px 0 22px;
 }
 
 .controls-grid {
@@ -292,6 +696,7 @@ html, body {
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn:hover { border-color: var(--accent); color: var(--banner); }
+.btn:active { transform: translateY(1px); }
 .btn.primary {
   background: rgba(110, 168, 255, 0.16);
   border-color: var(--accent);
@@ -302,6 +707,18 @@ html, body {
 .btn.primary:hover { background: rgba(110, 168, 255, 0.3); }
 
 .toggle-row { margin-top: 18px; }
+/* settings rows (label + value/toggles) — previously unstyled, so they
+   inherited the panel's default text; now explicit and high-contrast */
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  margin: 10px 0;
+}
+.setting-label { color: var(--ink); letter-spacing: 0.08em; }
+.setting-value { font-family: var(--mono); color: var(--banner); }
 .toggle {
   padding: 8px 18px;
   font-size: 12px;
@@ -311,6 +728,57 @@ html, body {
   border-color: var(--accent);
   color: var(--banner);
 }
+
+/* title-screen difficulty picker (NIGHT / FRENZY / NIGHTMARE) */
+.difficulty-row { margin-top: 18px; }
+.difficulty-label { font-size: 12px; letter-spacing: 0.12em; opacity: 0.85; margin-bottom: 6px; color: var(--ink); }
+/* Unselected options read as clearly "off": dim text, muted border, no fill. */
+.difficulty-row .toggle {
+  border: 1px solid var(--panel-edge);
+  color: var(--ink-dim);
+  background: transparent;
+  margin: 0 6px 6px 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.difficulty-row .toggle:hover { color: var(--ink); border-color: var(--accent); }
+/* The selected option is unmistakable: a solid accent fill with dark ink text
+   (high contrast, readable) + a bright border + a soft glow. */
+.difficulty-row .toggle.on {
+  background: var(--accent);
+  border-color: var(--banner);
+  color: #0b1220;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(110, 168, 255, 0.55);
+}
+
+/* co-op join row (title screen): room code + name inputs + JOIN button */
+.mp-row { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mp-row .difficulty-label { width: 100%; margin-bottom: 2px; }
+.mp-input {
+  background: rgba(10, 14, 22, 0.6);
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  font: inherit;
+  padding: 6px 8px;
+  /* v13: flex-grow so the name + room-code fields fill the row width instead
+     of sitting at a fixed 120px (room codes like FROST-BLOD-42 were clipped). */
+  flex: 1 1 180px;
+  min-width: 180px;
+  width: auto;
+}
+.mp-input:focus { border-color: var(--accent); outline: none; }
+
+/* v12: co-op scoreboard health bars + kill feed (built in Multiplayer._renderScoreboard). */
+.mp-hp {
+  height: 4px;
+  margin: 1px 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.mp-hp-fill { height: 100%; width: 100%; transition: width 0.15s linear; }
+.mp-killfeed { margin-top: 6px; opacity: 0.85; border-top: 1px solid rgba(120, 150, 200, 0.2); padding-top: 4px; }
+.mp-killfeed div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* game over */
 .gameover-title {
@@ -326,7 +794,7 @@ html, body {
   font-family: var(--mono);
   font-size: 16px;
   letter-spacing: 0.12em;
-  color: var(--ink-dim);
+  color: var(--banner);
   margin: 8px 0;
 }
 .stat b { color: var(--banner); font-size: 20px; }
@@ -349,6 +817,22 @@ html, body {
 .banner.show {
   animation: banner-in 2.2s ease-out forwards;
 }
+.threat-preview {
+  position: absolute;
+  top: 52%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 16px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ffb020;
+  text-shadow: 0 0 12px rgba(255, 176, 32, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 0.3s ease-out;
+}
+.threat-preview.show { opacity: 0.95; }
 @keyframes banner-in {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
   12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -372,5 +856,17 @@ html, body {
   .hud-health { left: 14px; bottom: 40px; }
   .hud-stamina { left: 14px; bottom: 26px; }
   .hud-ammo { right: 14px; bottom: 40px; }
-  .hud-health .hud-value, .hud-ammo .hud-value { font-size: 16px; }
+  .hud-health .hud-value, .hud-ammo .hud-value { font-size: 20px; }
+  .hud-weapons { right: 14px; bottom: 40px; gap: 6px; }
+  .weapon-slot { min-width: 76px; }
+  .weapon-slot .bar { width: 64px; }
+  .weapon-ammo { font-size: 20px; }
+  .hud-battery { left: 14px; bottom: 74px; width: 120px; }
+  .hud-battery .bar { width: 120px; }
+  .hud-score { right: 14px; top: 14px; }
+  .hud-music-btn { right: 14px; top: 58px; font-size: 12px; padding: 5px 9px; }
+  /* v4 UI: shrink the top-right leaderboard on narrow screens so it stays a
+     compact corner block and doesn't crowd the centered panel. */
+  .highscore-board { top: 12px; right: 14px; max-width: 180px; font-size: 11px; }
+  .highscore-board .board-row { font-size: 11px; }
 }

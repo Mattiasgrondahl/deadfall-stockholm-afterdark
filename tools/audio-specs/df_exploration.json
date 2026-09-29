@@ -1,0 +1,9 @@
+{
+ "kind": "audio",
+ "model_type": "yue2",
+ "duration_seconds": 180,
+ "name": "df_exploration",
+ "seed": 1000,
+ "prompt": "Dark night in a frozen city, lone survivor walking empty streets, fog and distant sirens, slow creeping dread",
+ "style": "dark gothic power metal, melancholic clean male vocals, slow mid-tempo, minor key, atmospheric reverb, cinematic"
+}

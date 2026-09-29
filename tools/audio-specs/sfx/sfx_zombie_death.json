@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_zombie_death",
+  "duration_seconds": 3,
+  "prompt": "A zombie death groan: a dying undead moan falling in pitch, wet gurgling death rattle, single short sound, close-mic dry.",
+  "seed": 3957
+}

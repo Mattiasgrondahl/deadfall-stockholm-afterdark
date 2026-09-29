@@ -9,6 +9,7 @@ dist/
 # logs & debug artifacts
 *.log
 .debug/
+.research/
 .npm-verbose.txt
 .verify-log.txt
 
@@ -25,7 +26,7 @@ _geom-check.mjs
 .probe-wave.mjs
 
 # internal AI-orchestration docs (not part of the game)
-AGENTS.md
+# AGENTS.md is committed on purpose: coding agents need it in every clone.
 TASKS.md
 
 # internal per-task implementation specs
@@ -39,3 +40,12 @@ docs/spec-*.md
 # zvec-grep local index + embedding model cache — regenerable, not committed
 .zvec-grep/
 .zvec-home/
+
+# local ML checkpoints + scratch artifacts (regenerable / huge, not committed)
+/ckpts/
+/outputs/
+/.baseline-head/
+
+# hosted high-score store (production host runtime state)
+server/highscore.json
+server/highscore-*.json

@@ -1,0 +1,9 @@
+{
+ "kind": "audio",
+ "model_type": "yue2",
+ "duration_seconds": 180,
+ "name": "df_combat",
+ "seed": 1001,
+ "prompt": "Run fight bite burn, the horde is coming, hold the line till dawn",
+ "style": "fast power metal, driving double kick drums, gallop riff, soaring anthemic chorus, aggressive male vocals"
+}

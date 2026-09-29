@@ -4,7 +4,8 @@ import { Input } from '../src/game/Input.js'
 
 const freshState = () => ({
   forward: false, back: false, left: false, right: false, sprint: false,
-  turnX: 0, turnY: 0, fire: false, reload: false, pause: false
+  turnX: 0, turnY: 0, fire: false, reload: false, pause: false,
+  switch1: false, switch2: false, switch3: false, switch4: false, flashlight: false
 })
 
 function makeEnv() {
@@ -64,6 +65,17 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.dispose()
 }
 
+// --- v3 controls: crouch is Left Ctrl first, KeyC stays a legacy alias ---
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  key(env, 'ControlLeft', 'keydown')
+  assert.strictEqual(st.crouch, true, 'Left Ctrl crouches'); assert.strictEqual(input.isDown('crouch'), true)
+  key(env, 'ControlLeft', 'keyup'); assert.strictEqual(st.crouch, false)
+  key(env, 'KeyC', 'keydown'); assert.strictEqual(st.crouch, true, 'KeyC alias still crouches')
+  key(env, 'KeyC', 'keyup'); assert.strictEqual(st.crouch, false)
+  input.dispose()
+}
+
 // --- pointer lock + look accumulation ---
 {
   const env = makeEnv(); const { input, st } = makeInput(env)
@@ -116,18 +128,89 @@ const mouse = (env, type, evt = {}) => env.document.emit(type, evt)
   input.dispose()
 }
 
-// --- mute edge fires once per press; on/off
+// --- master-mute edge (KeyN) fires once per press; on/off
 {
   const env = makeEnv(); const { input } = makeInput(env)
   let mutes = 0
   const cb = () => mutes++
   input.on('mute', cb)
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 1)
-  key(env, 'KeyM', 'keydown', true); assert.strictEqual(mutes, 1) // repeat ignored
-  key(env, 'KeyM', 'keyup')
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 2) // new press edge
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 1)
+  key(env, 'KeyN', 'keydown', true); assert.strictEqual(mutes, 1) // repeat ignored
+  key(env, 'KeyN', 'keyup')
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 2) // new press edge
   input.off('mute', cb)
-  key(env, 'KeyM', 'keydown'); assert.strictEqual(mutes, 2) // unsubscribed
+  key(env, 'KeyN', 'keydown'); assert.strictEqual(mutes, 2) // unsubscribed
+  input.dispose()
+}
+
+// --- music-mute edge (KeyM) fires once per press; repeat ignored ---
+{
+  const env = makeEnv(); const { input } = makeInput(env)
+  let musicMutes = 0
+  const cb = () => musicMutes++
+  input.on('musicMute', cb)
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 1)
+  key(env, 'KeyM', 'keydown', true); assert.strictEqual(musicMutes, 1) // repeat ignored
+  key(env, 'KeyM', 'keyup')
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 2) // new press edge
+  input.off('musicMute', cb)
+  key(env, 'KeyM', 'keydown'); assert.strictEqual(musicMutes, 2) // unsubscribed
+  input.dispose()
+}
+
+// --- v2 edges: flashlight toggle, weapon switch 1/2, repeat suppression, stale clear
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  key(env, 'KeyF', 'keydown'); assert.strictEqual(st.flashlight, true)
+  st.flashlight = false // consumer (Flashlight) acted
+  key(env, 'KeyF', 'keydown', true); assert.strictEqual(st.flashlight, false) // repeat suppressed
+  key(env, 'KeyF', 'keyup'); assert.strictEqual(st.flashlight, false)
+  key(env, 'Digit1', 'keydown'); assert.strictEqual(st.switch1, true)
+  st.switch1 = false // consumer (WeaponBank) acted
+  key(env, 'Digit1', 'keydown', true); assert.strictEqual(st.switch1, false) // repeat suppressed
+  key(env, 'Digit1', 'keyup'); assert.strictEqual(st.switch1, false)
+  key(env, 'Digit1', 'keydown'); assert.strictEqual(st.switch1, true) // new press edge
+  key(env, 'Digit1', 'keyup'); assert.strictEqual(st.switch1, false)
+  key(env, 'Digit2', 'keydown'); assert.strictEqual(st.switch2, true)
+  key(env, 'Digit2', 'keyup'); assert.strictEqual(st.switch2, false)
+  key(env, 'Digit3', 'keydown'); assert.strictEqual(st.switch3, true)
+  st.switch3 = false // consumer (WeaponBank) acted
+  key(env, 'Digit3', 'keydown', true); assert.strictEqual(st.switch3, false) // repeat suppressed
+  key(env, 'Digit3', 'keyup'); assert.strictEqual(st.switch3, false)
+  key(env, 'Digit3', 'keydown'); assert.strictEqual(st.switch3, true) // new press edge
+  key(env, 'Digit3', 'keyup'); assert.strictEqual(st.switch3, false)
+  key(env, 'Digit4', 'keydown'); assert.strictEqual(st.switch4, true)
+  key(env, 'Digit4', 'keyup'); assert.strictEqual(st.switch4, false)
+  input.dispose()
+  assert.strictEqual(st.switch1, false); assert.strictEqual(st.switch2, false)
+  assert.strictEqual(st.switch3, false); assert.strictEqual(st.switch4, false)
+  assert.strictEqual(st.flashlight, false)
+}
+
+// --- v3: mouse-wheel weapon scroll edges (only while pointer-locked) ---
+{
+  const env = makeEnv(); const { input, st } = makeInput(env)
+  // Unlocked: the wheel must be ignored (title-screen scroll must not switch).
+  mouse(env, 'wheel', { deltaY: -100, preventDefault() {} })
+  assert.strictEqual(st.scrollUp, false, 'wheel ignored while unlocked')
+  env.canvas.requestPointerLock()
+  mouse(env, 'wheel', { deltaY: -100, preventDefault() {} })
+  assert.strictEqual(st.scrollUp, true, 'scroll up sets the up edge while locked')
+  assert.strictEqual(st.scrollDown, false)
+  mouse(env, 'wheel', { deltaY: 120, preventDefault() {} })
+  assert.strictEqual(st.scrollDown, true, 'scroll down sets the down edge while locked')
+  input.dispose()
+  assert.strictEqual(st.scrollUp, false, 'dispose clears scroll edges')
+  assert.strictEqual(st.scrollDown, false)
+}
+
+// --- v3: B key emits a musicSkip event ---
+{
+  const env = makeEnv(); const { input } = makeInput(env)
+  let skips = 0
+  input.on('musicSkip', () => skips++)
+  key(env, 'KeyB', 'keydown')
+  assert.strictEqual(skips, 1, 'B emits one musicSkip edge')
   input.dispose()
 }
 

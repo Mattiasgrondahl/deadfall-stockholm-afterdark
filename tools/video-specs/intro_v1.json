@@ -1,0 +1,14 @@
+{
+  "kind": "video",
+  "model_type": "hunyuan_1_5_480_i2v_step_distilled",
+  "name": "intro_v1",
+  "first_frame": "/home/mgr/Workspace/Zombie/.research/intro_first.jpg",
+  "prompt": "A zombie stands with its back to the camera in a dark wet alley. It slowly turns its head, then spins around to face the camera, revealing a blood-covered face, and lunges violently toward the camera until it fills the frame. Camera shake, horror, cinematic, blood on face, aggressive lunge, photoreal, no text.",
+  "negative_prompt": "text, watermark, calm, slow, bright daylight, cartoon, blurry",
+  "resolution": "832x480",
+  "duration_seconds": 5,
+  "fps": 25,
+  "steps": 12,
+  "cfg": 3.5,
+  "seed": 11
+}

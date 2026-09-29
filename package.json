@@ -1,30 +1,37 @@
 {
   "name": "deadfall-stockholm-afterdark",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "Deadfall: Stockholm Afterdark - a first-person zombie survival shooter built with Three.js and Vite.",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "pages": "vite build --base /deadfall-stockholm-afterdark",
     "preview": "vite preview --host",
     "test": "node --test",
     "verify": "node tools/verify-game.mjs",
+    "server": "node server/server.js",
     "graft": "graft",
     "graft-map": "graft map",
     "graft-build": "graft build .",
     "graft-check": "graft check",
     "zg": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg",
-    "zg-index": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg index --embedding local/potion-code-16m-v2 ."
+    "zg-index": "ZVEC_GREP_HOME=.zvec-home ZVEC_GREP_DEVICE=cpu zg index --embedding local/potion-code-16m-v2 .",
+    "rag-index": "node tools/rag-index.mjs",
+    "rag": "node tools/rag-query.mjs",
+    "check-assets": "node tools/check-assets.mjs",
+    "secrets-scan": "node tools/secrets-scan.mjs"
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@nanonets/graft": "^0.18.0",
     "@zvec/zvec-grep": "^0.2.2",
     "playwright-core": "^1.63.0",
-    "vite": "^8.2.2"
+    "vite": "^8.3.0"
   },
   "allowScripts": {
     "@nanonets/graft@0.18.0": true,

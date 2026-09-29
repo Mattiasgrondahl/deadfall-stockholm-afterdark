@@ -1,15 +1,20 @@
 import * as THREE from 'three'
 
 // Task 8c: night lighting, three.js r185 physical units.
-// Moon = single shadow-casting DirectionalLight (0.8 lx) that follows the
-// player; streetlight pool = 12 PointLights (35 cd) assigned to the nearest
+// Moon = single shadow-casting DirectionalLight (1.45 lx) that follows the
+// player; streetlight pool = 12 PointLights (70 cd) assigned to the nearest
 // streetlight anchors each frame; hemi + ambient backstops. No per-frame
 // allocation (scratch array reused, in-place sort).
 
 const POINTS_HIGH = 12
 const POINTS_LOW = 6
-const POLE_INTENSITY = 35 // cd
+// Raised 55 -> 70 -> 82 cd so streetlight pools read clearly against the night
+// ground and the pavement under a lamp reads as warm, lit asphalt (grittier
+// night pass). The pool halo + ground pool disc are tuned to match.
+const POLE_INTENSITY = 82 // cd
 const MOON_OFFSET = { x: -18, y: 30, z: -15 } // NW-above the player
+// Raised 1.1 -> 1.45 lx: stronger moonlight so silhouettes stay readable.
+const MOON_INTENSITY = 1.45
 
 export class Lighting {
   constructor(scene, city, renderer, quality) {
@@ -18,33 +23,44 @@ export class Lighting {
     this.renderer = renderer
     this.quality = quality || 'high'
     this.anchors = city.streetlightAnchors
+    // Shootable lamps: a broken lamp must not claim a pool light. The lamps
+    // array (from city.lamps) is indexed in the same order as the anchors.
+    this.lamps = city.lamps || null
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.2
     if (renderer.shadowMap) {
       renderer.shadowMap.enabled = this.quality === 'high'
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      // three r185 deprecates PCFSoftShadowMap (it silently falls back to
+      // PCFShadowMap and warns once). Use the non-deprecated type directly so
+      // the console stays clean; visually identical to the old soft map.
+      renderer.shadowMap.type = THREE.PCFShadowMap
     }
 
     // Moon: the only shadow caster; light + target follow the player.
-    this.moon = new THREE.DirectionalLight(0x9db4ff, 0.8)
+    // Raised 1.1 -> 1.45 lx for readable silhouettes and stronger shadows.
+    this.moon = new THREE.DirectionalLight(0x9db4ff, MOON_INTENSITY)
     this.moon.castShadow = true
     this.moon.shadow.mapSize.set(2048, 2048)
+    this.moon.shadow.bias = 0.004
+    this.moon.shadow.normalBias = 0.05
     const sc = this.moon.shadow.camera
     sc.left = -22; sc.right = 22; sc.top = 22; sc.bottom = -22
     sc.near = 1; sc.far = 120
     scene.add(this.moon)
     scene.add(this.moon.target) // target must be in the scene graph
 
-    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.3)
+    // Hemi/ambient raised (0.22 -> 0.30, 0.08 -> 0.12) so night shapes and
+    // silhouettes stay readable without adding lights.
+    this.hemi = new THREE.HemisphereLight(0x1a2440, 0x0a0a10, 0.30)
     scene.add(this.hemi)
-    this.ambient = new THREE.AmbientLight(0x141a2e, 0.15)
+    this.ambient = new THREE.AmbientLight(0x141a2e, 0.12)
     scene.add(this.ambient)
 
     // Streetlight pool: fixed settings; positions assigned in update().
     this.lights = []
     for (let i = 0; i < POINTS_HIGH; i++) {
-      const l = new THREE.PointLight(0xffb878, POLE_INTENSITY, 20, 2)
+      const l = new THREE.PointLight(0xffb066, POLE_INTENSITY, 14, 2)
       scene.add(l)
       this.lights.push(l)
     }
@@ -69,21 +85,32 @@ export class Lighting {
     s.sort((p, q) => p.d2 - q.d2)
 
     const n = this.quality === 'high' ? POINTS_HIGH : POINTS_LOW
-    for (let k = 0; k < this.lights.length; k++) {
+    // Walk the nearest-first list and assign pool lights to the nearest LIT
+    // (non-broken) anchors; broken lamps are skipped so their light goes dark.
+    let k = 0
+    for (let j = 0; j < s.length && k < this.lights.length; j++) {
+      const idx = s[j].i
+      if (this.lamps && this.lamps[idx] && this.lamps[idx].broken) continue
+      const anchor = a[idx]
       if (k < n) {
-        const anchor = a[s[k].i]
         this.lights[k].position.set(anchor.x, anchor.y, anchor.z)
         this.lights[k].intensity = POLE_INTENSITY
       } else {
         this.lights[k].intensity = 0
       }
+      k++
     }
+    for (; k < this.lights.length; k++) this.lights[k].intensity = 0
   }
 
   setQuality(q) {
-    this.quality = q === 'low' ? 'low' : 'high'
+    const tier = q === 'low' ? 'low' : q === 'medium' ? 'medium' : 'high'
+    this.quality = tier === 'high' ? 'high' : 'low'
     if (this.renderer.shadowMap) this.renderer.shadowMap.enabled = this.quality === 'high'
-    if (this.city.setSnowCount) this.city.setSnowCount(this.quality === 'high' ? 1500 : 750)
+    // v6 visuals (3): snow layering follows the quality tier. 'low' keeps the
+    // pinned 750-drawn halve, 'medium' gets an intermediate 1050, 'high' the
+    // full 1500. Snow tiers are independent of the shadow/lighting collapse.
+    if (this.city.setSnowCount) this.city.setSnowCount(tier === 'high' ? 1500 : tier === 'medium' ? 1050 : 750)
     this.update(this.moon.target.position)
   }
 

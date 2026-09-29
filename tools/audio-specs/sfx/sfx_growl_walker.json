@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_growl_walker",
+  "duration_seconds": 3,
+  "prompt": "A low guttural zombie growl, raspy undead throat, menacing and wet, single short growl, close-mic dry.",
+  "seed": 1762
+}

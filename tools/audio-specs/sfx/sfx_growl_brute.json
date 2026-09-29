@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_growl_brute",
+  "duration_seconds": 4,
+  "prompt": "A deep heavy monstrous zombie roar, guttural and bassy, menacing brute growl, single short roar, close-mic dry.",
+  "seed": 9222
+}

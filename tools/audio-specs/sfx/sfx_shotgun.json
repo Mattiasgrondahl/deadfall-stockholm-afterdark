@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_shotgun",
+  "duration_seconds": 2,
+  "prompt": "An extremely loud close-up shotgun blast recorded right at the muzzle, first-person like the gun is in your hand: a huge sharp cracking report with a powerful bass-heavy boom and a short dry tail, no room reverb, aggressive and punchy, single shot only.",
+  "seed": 4117
+}

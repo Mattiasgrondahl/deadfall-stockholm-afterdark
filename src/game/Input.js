@@ -10,18 +10,34 @@
 
 const KEY_CODES = {
   w: ['KeyW'], a: ['KeyA'], s: ['KeyS'], d: ['KeyD'],
-  shift: ['ShiftLeft', 'ShiftRight'],
-  r: ['KeyR'], p: ['KeyP'], m: ['KeyM'], escape: ['Escape'], space: ['Space']
+  shift: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'],
+  r: ['KeyR'], p: ['KeyP'], m: ['KeyM'], escape: ['Escape'], space: ['Space'],
+  f: ['KeyF'], one: ['Digit1'], two: ['Digit2'], three: ['Digit3'], four: ['Digit4'], five: ['Digit5']
 }
 
 export class Input {
   constructor(game, inputState) {
     this.game = game
     this.inputState = inputState
+    // v2 edges; ensure the shared state object carries them even if it was
+    // built before this version (Game.js keeps its own literal untouched).
+    this.inputState.switch1 = false
+    this.inputState.switch2 = false
+    this.inputState.switch3 = false
+    this.inputState.switch4 = false
+    this.inputState.switch5 = false
+    this.inputState.flashlight = false
+    this.inputState.jump = false
+    this.inputState.crouch = false
+    this.inputState.zoom = false // held while right mouse (or Q) is down: sniper scope
+    // v3: mouse-wheel weapon cycling. scrollUp/scrollDown are press-edges
+    // (one per wheel notch) that WeaponBank consumes to cycle weapons.
+    this.inputState.scrollUp = false
+    this.inputState.scrollDown = false
     this.down = {}                          // e.code -> true while physically held
-    this._edgeHeld = { fire: false, reload: false, pause: false }
+    this._edgeHeld = { fire: false, reload: false, pause: false, switch1: false, switch2: false, switch3: false, switch4: false, switch5: false, flashlight: false, jump: false }
     this._listeners = null                  // [target, event, handler] triples
-    this._events = { lock: [], unlock: [], mute: [] }
+    this._events = { lock: [], unlock: [], mute: [], musicMute: [], musicSkip: [] }
     this._wasLocked = false
     this._lastX = 0
     this._lastY = 0
@@ -39,7 +55,8 @@ export class Input {
       [doc, 'mousedown', (e) => this._onMouse(e, true)],
       [doc, 'mouseup', (e) => this._onMouse(e, false)],
       [win, 'keydown', (e) => this._onKey(e, true)],
-      [win, 'keyup', (e) => this._onKey(e, false)]
+      [win, 'keyup', (e) => this._onKey(e, false)],
+      [doc, 'wheel', (e) => this._onWheel(e)]
     ]
     for (const [t, ev, fn] of this._listeners) t.addEventListener(ev, fn)
   }
@@ -50,6 +67,7 @@ export class Input {
     this._listeners = null
     for (const k in this.down) this.down[k] = false
     this._edgeHeld.fire = this._edgeHeld.reload = this._edgeHeld.pause = false
+    this._edgeHeld.switch1 = this._edgeHeld.switch2 = this._edgeHeld.switch3 = this._edgeHeld.switch4 = this._edgeHeld.switch5 = this._edgeHeld.flashlight = this._edgeHeld.jump = false
     this._wasLocked = false
     this._syncMovement()
     // Clear stale edges/look deltas left in the shared state object
@@ -58,6 +76,17 @@ export class Input {
     st.fire = false
     st.reload = false
     st.pause = false
+    st.switch1 = false
+    st.switch2 = false
+    st.switch3 = false
+    st.switch4 = false
+    st.switch5 = false
+    st.flashlight = false
+    st.jump = false
+    st.crouch = false
+    st.zoom = false
+    st.scrollUp = false
+    st.scrollDown = false
     st.turnX = 0
     st.turnY = 0
   }
@@ -119,7 +148,17 @@ export class Input {
         this._syncMovement()
         if (code === 'KeyR') { this.inputState.reload = true; this._edgeHeld.reload = true }
         else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = true; this._edgeHeld.pause = true }
-        else if (code === 'KeyM') this._emit('mute')
+        else if (code === 'KeyM') this._emit('musicMute')
+        else if (code === 'KeyN') this._emit('mute')
+        else if (code === 'KeyB') this._emit('musicSkip')
+        else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
+        else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }
+        else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true }
+        else if (code === 'Digit2') { this.inputState.switch2 = true; this._edgeHeld.switch2 = true }
+        else if (code === 'Digit3') { this.inputState.switch3 = true; this._edgeHeld.switch3 = true }
+        else if (code === 'Digit4') { this.inputState.switch4 = true; this._edgeHeld.switch4 = true }
+        else if (code === 'Digit5') { this.inputState.switch5 = true; this._edgeHeld.switch5 = true }
+        else if (code === 'KeyQ') { this.inputState.zoom = true }
       }
     } else {
       if (!this.down[code]) return
@@ -129,10 +168,25 @@ export class Input {
       // running (e.g. fire pressed, pointer unlocked, released while paused).
       if (code === 'KeyR') { this.inputState.reload = false; this._edgeHeld.reload = false }
       else if (code === 'KeyP' || code === 'Escape') { this.inputState.pause = false; this._edgeHeld.pause = false }
+      else if (code === 'KeyF') { this.inputState.flashlight = false; this._edgeHeld.flashlight = false }
+      else if (code === 'Space') { this.inputState.jump = false; this._edgeHeld.jump = false }
+      else if (code === 'Digit1') { this.inputState.switch1 = false; this._edgeHeld.switch1 = false }
+      else if (code === 'Digit2') { this.inputState.switch2 = false; this._edgeHeld.switch2 = false }
+      else if (code === 'Digit3') { this.inputState.switch3 = false; this._edgeHeld.switch3 = false }
+      else if (code === 'Digit4') { this.inputState.switch4 = false; this._edgeHeld.switch4 = false }
+      else if (code === 'Digit5') { this.inputState.switch5 = false; this._edgeHeld.switch5 = false }
+      else if (code === 'KeyQ') { this.inputState.zoom = false }
     }
   }
 
   _onMouse(e, pressed) {
+    if (e.button === 2) {
+      // Right mouse button: hold to look through the sniper scope. The held
+      // state is mirrored into inputState.zoom (cleared on release / unlock).
+      if (pressed) { if (this.locked()) this.inputState.zoom = true }
+      else this.inputState.zoom = false
+      return
+    }
     if (e.button !== 0) return
     if (pressed) {
       if (this.locked() && !this._edgeHeld.fire) {
@@ -156,6 +210,16 @@ export class Input {
     }
   }
 
+  /** Mouse wheel cycles weapons while pointer-locked (in-game). Scroll up =
+   *  previous weapon, scroll down = next weapon. One edge per event; the
+   *  wheel is suppressed (preventDefault) so it does not scroll the page. */
+  _onWheel(e) {
+    if (!this.locked()) return
+    if (e.deltaY < 0) this.inputState.scrollUp = true
+    else if (e.deltaY > 0) this.inputState.scrollDown = true
+    if (typeof e.preventDefault === 'function') e.preventDefault()
+  }
+
   _syncMovement() {
     const st = this.inputState
     st.forward = !!this.down['KeyW']
@@ -163,5 +227,7 @@ export class Input {
     st.left = !!this.down['KeyA']
     st.right = !!this.down['KeyD']
     st.sprint = !!(this.down['ShiftLeft'] || this.down['ShiftRight'])
+    // v3 controls: crouch is Left Ctrl first, KeyC kept as a legacy alias.
+st.crouch = !!(this.down['ControlLeft'] || this.down['KeyC'])
   }
 }

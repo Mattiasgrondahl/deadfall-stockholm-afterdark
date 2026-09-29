@@ -1,0 +1,14 @@
+{
+  "kind": "image",
+  "name": "poster_v3",
+  "prompt": "Restore and clean this weathered Swedish WANTED poster: boost contrast and sharpness, remove JPEG smearing and banding, keep the hand-printed typographic layout, the zombie portrait photo, the pale amber paper tone and all existing text exactly as-is. Do not change wording, layout or composition.",
+  "alt_prompt": "restored print, crisp ink, aged paper texture, high detail, no text corruption",
+  "seed": 20260926,
+  "resolution": "768x1024",
+  "steps": 40,
+  "cfg": 3.5,
+  "refs": [
+    "/home/mgr/Workspace/Zombie/public/assets/posters/poster.jpg"
+  ],
+  "model_type": "qwen_image_21_7B"
+}

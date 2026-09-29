@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_growl_close",
+  "duration_seconds": 2,
+  "prompt": "A menacing close-up zombie growl recorded right next to the listener, like a monster breathing on you: a deep guttural raspy undead snarl, low and wet and intimate, short and threatening, close-mic dry, single short growl.",
+  "seed": 6331
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "audio",
+  "model_type": "stable_audio3_small_sfx",
+  "name": "sfx_sniper",
+  "duration_seconds": 3,
+  "prompt": "A single rifle sniper shot: sharp high crack report followed by a deep body thump and a short rolling tail, close-mic, dry, one shot only.",
+  "seed": 8560
+}

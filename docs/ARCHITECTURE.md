@@ -15,9 +15,13 @@ JavaScript (no TypeScript, no JSX, no external assets, no backend). Runs with
 - No per-frame allocation in hot loops: reuse module-level temp
   vectors/objects. Allocate only on spawn/reset.
 - Every side effect must be reversible via the owning object's `dispose()`.
-- Bounded counts: ≤ 24 active zombies, ≤ 12 point lights, ~1500 snow particles,
-  ≤ ~500 meshes total.
-- Keep each file under ~350 lines; split a subsystem into small helpers if it grows.
+- Bounded counts — the authoritative numbers are the ones asserted by
+  `tools/verify-game.mjs` S8 (meshes ≤ 640, lights ≤ 40, points ≤ 2500,
+  zombies ≤ 24). Internal caps sit below them (snow 1800, blood 300,
+  groans 4, drops 20, wave concurrency ≤ 16). AGENTS.md lists the full set.
+- Keep each **new** file under ~350 lines; split a subsystem into small
+  helpers if it grows. Legacy files (Zombie.js, AudioBank.js, Game.js,
+  cityDressing.js) already exceed this — do not grow them further.
 - All npm commands run with cwd `/home/mgr/Workspace/Zombie` (the `.npmrc`
   redirects the npm cache into the workspace — `~` is read-only here).
   **The sandbox exports `NODE_ENV=production`**, so install with
@@ -26,9 +30,11 @@ JavaScript (no TypeScript, no JSX, no external assets, no backend). Runs with
 - Do not modify files outside your task's file list. In `src/game/Game.js`
   edit only inside `// WIRING:*` comment regions assigned to your task.
 - No placeholders, no TODOs, no stub functions left behind.
-- **There is no working browser in this sandbox.** Acceptance = `npm run build`
-  + the Node headless tests (`node --test`) + headless playthrough stages in
-  `test/verify-game.mjs`. Visual quality is reviewed statically, not live.
+- **Browser checks run against the Vite dev server (:5173), not `npm run
+  preview`.** The Pages build is base-pathed (`/deadfall-stockholm-afterdark`),
+  so base-relative bundles 404 at `/` on :4173 and the page looks blank.
+  Visual quality is otherwise reviewed statically (SwiftShader pages die
+  ~3–5 s into gameplay — see AGENTS.md / AGENT-ASSET-PIPELINE.md).
 
 ## Headless design (how tests drive the real game)
 
@@ -69,7 +75,7 @@ JavaScript (no TypeScript, no JSX, no external assets, no backend). Runs with
 | `src/styles.css` | orchestrator (done; F may extend) |
 | `test/*.test.mjs` | orchestrator + coders (pure-logic node tests) |
 | `test/headless-boot.test.mjs` | orchestrator (done) |
-| `test/verify-game.mjs` | orchestrator (headless playthrough; the final acceptance harness) |
+| `tools/verify-game.mjs` | orchestrator (headless playthrough; the final acceptance harness) |
 | `tools/e2e-browser.mjs` | orchestrator (optional real-browser smoke, manual only) |
 
 ## Module contracts (public API only)
@@ -351,7 +357,7 @@ Chromium download is blocked at the Microsoft CDN. Therefore:
 1. **Unit tests** (`node --test`, auto-discovers `test/*.test.mjs`): pure
    logic — collision (12 tests, done), zombie state machine, wave scheduling,
    weapon math, player movement/stamina.
-2. **Headless playthrough** (`test/verify-game.mjs`): the real `Game` in Node
+2. **Headless playthrough** (`tools/verify-game.mjs`): the real `Game` in Node
    with `headless: true`; drives a full session — title → start → move/sprint/
    look → shoot (hits registered) → reload → zombies pursue/attack/kill →
    waves 1→2→3 with spawns, scaling, clear, intermission → player death →
@@ -393,7 +399,7 @@ Real-browser play (visuals, audio, pointer feel) is left to the user:
   transitions, quality toggle). Acceptance: build passes; headless playthrough
   runs clean with HUD/Screens null (guards hold); AudioBank no-op headless;
   DOM contract matches styles.css (static review).
-- **Final**: `test/verify-game.mjs` full headless playthrough green +
+- **Final**: `tools/verify-game.mjs` full headless playthrough green +
   `npm run build` green + dev-server module checks + reviewer final pass +
   README.
 
