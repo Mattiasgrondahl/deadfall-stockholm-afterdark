@@ -56,6 +56,16 @@ export class Lighting {
     scene.add(this.hemi)
     this.ambient = new THREE.AmbientLight(0x141a2e, 0.12)
     scene.add(this.ambient)
+    // v28 R1: the aurora casts a faint green bounce onto the snow. Lighting
+    // holds a reference to the Aurora so it can read its live intensity each
+    // frame and nudge the hemi sky colour + ambient toward green as it swells.
+    // Null until Game wires it (headless-safe: update guards on it).
+    this._aurora = null
+    // Cool baseline colours captured so the green tint blends from, not snaps to.
+    this._hemiSkyBase = this.hemi.color.clone()
+    this._ambientBase = this.ambient.color.clone()
+    this._auroraGreen = new THREE.Color(0x2f6b4a)
+    this._scratchColor = new THREE.Color()
 
     // Streetlight pool: fixed settings; positions assigned in update().
     this.lights = []
@@ -70,6 +80,17 @@ export class Lighting {
   }
 
   update(playerPos) {
+    // v28 R1: tint the ambient bounce toward aurora green, scaled by the live
+    // curtain intensity. Reuses one scratch colour, no allocation; the tint is
+    // capped so a crisis aurora still reads as night, not as a green room.
+    if (this._aurora) {
+      const a = this._aurora.mat.uniforms.uIntensity.value
+      const k = Math.max(0, Math.min(1, a)) * 0.35
+      this._scratchColor.copy(this._hemiSkyBase).lerp(this._auroraGreen, k)
+      this.hemi.color.copy(this._scratchColor)
+      this._scratchColor.copy(this._ambientBase).lerp(this._auroraGreen, k * 0.7)
+      this.ambient.color.copy(this._scratchColor)
+    }
     this.moon.position.set(playerPos.x + MOON_OFFSET.x, MOON_OFFSET.y, playerPos.z + MOON_OFFSET.z)
     this.moon.target.position.copy(playerPos)
     this.moon.target.updateMatrixWorld()
@@ -101,6 +122,16 @@ export class Lighting {
       k++
     }
     for (; k < this.lights.length; k++) this.lights[k].intensity = 0
+  }
+
+  // v28 R1: wire the aurora so update() can read its live intensity for the
+  // green ambient bounce. Passing null clears it (back to the cool baseline).
+  setAurora(aurora) {
+    this._aurora = aurora || null
+    if (!this._aurora) {
+      this.hemi.color.copy(this._hemiSkyBase)
+      this.ambient.color.copy(this._ambientBase)
+    }
   }
 
   setQuality(q) {

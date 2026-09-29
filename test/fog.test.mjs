@@ -78,8 +78,9 @@ test('atmosphere: ground haze adds 2 fog-free additive meshes, no lights/points'
   assert.equal(gm.fogDensity, 0.82, 'ground is more fog-transparent than buildings')
   // dispose() must remove both haze layers (no leaked meshes) and leave no haze.
   // v3 T13: dispose also removes the footprint InstancedMesh (1 more mesh).
+  // v28 R1: dispose also removes the aurora curtain (1 more mesh) -> 4 total.
   const before = game.sceneStats().meshes
   game.dispose()
-  assert.equal(game.sceneStats().meshes, before - 3, 'dispose removes both haze meshes + the footprint pool')
+  assert.equal(game.sceneStats().meshes, before - 4, 'dispose removes both haze meshes + footprint pool + aurora')
   assert.equal(game.haze, null, 'haze reference cleared')
 })

@@ -6,6 +6,7 @@ import { Multiplayer } from '../net/Multiplayer.js'
 import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
+import { Aurora } from '../world/Aurora.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
@@ -370,6 +371,14 @@ export class Game {
     }
     // WIRING:SKY (V2P-1)
     this.sky = new Sky(this.scene)
+    // WIRING:AURORA (v28 R1): aurora borealis curtain hung on the northern
+    // horizon — the flagship "Stockholm winter" signal. Separate scene object
+    // (not a Sky child) so the sky group's child count is unchanged. Intensity
+    // is driven from the tension value below (gentle baseline, swells on crisis).
+    this.aurora = new Aurora(this.scene)
+    // v28 R1: let the lighting read the aurora's live intensity so the ambient
+    // bounce tints green as the curtains swell.
+    if (this.lighting) this.lighting.setAurora(this.aurora)
     // v6 visuals (2): cheap atmospheric layering — a fog:false additive haze
     // sheet skimming the ground, plus depth-tuned ground/road materials.
     this._createGroundHaze()
@@ -978,6 +987,10 @@ export class Game {
     // mp3 songs + SFX (shots, growls, stingers) remain.
     const tension = this._computeTension()
     if (this.musicDirector) this.musicDirector.onTension(tension)
+    // WIRING:AURORA (v28 R1): reuse the same tension signal to swell the aurora.
+    // Gentle 0.35 baseline when calm, up to ~1.0 at full crisis so the northern
+    // sky brightens and the curtains grow tall exactly when the run turns dire.
+    if (this.aurora) this.aurora.setIntensity(0.35 + 0.65 * tension)
     // WIRING:NOWPLAYING (v4 UI): show the current soundtrack title + the M/B hint
     // in the middle-right HUD. Only pushed when the name actually changes (so no
     // per-frame DOM write), and hidden whenever the soundtrack is muted/off.
@@ -1045,6 +1058,7 @@ export class Game {
     if (this.lighting) this.lighting.update(this.player ? this.player.position : this.camera.position)
     // dt drives the star twinkle clock (deterministic: accumulated game time).
     if (this.sky) this.sky.update(this.player ? this.player.position : this.camera.position, dt)
+    if (this.aurora) this.aurora.update(this.player ? this.player.position : this.camera.position, dt)
     // v6 visuals (2): the ground haze is a fixed-extent sheet, so it follows
     // the player on X/Z like the sky dome (heights stay put).
     if (this.haze) {
@@ -1150,6 +1164,8 @@ export class Game {
     if (this.achievements) this.achievements.dispose()
     // v3 T13: remove the footprint decal pool from the scene.
     if (this.footprints) this.footprints.dispose()
+    // v28 R1: remove the aurora curtain + dispose its geometry/material.
+    if (this.aurora) { this.aurora.dispose(); this.aurora = null }
   }
 
   render() {

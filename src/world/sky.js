@@ -165,7 +165,10 @@ export class Sky {
       uniforms: {
         topColor: { value: new THREE.Color(0x070b16) },
         horizonColor: { value: new THREE.Color(0x18253a) },
-        glowColor: { value: new THREE.Color(0x3a4a63) }
+        // v28 R1: cool blue-grey -> warm low-pressure-sodium amber. Swedish
+        // street lighting is famously orange, so the city light-pollution band
+        // now glows amber while the zenith stays cold — instant "Nordic city".
+        glowColor: { value: new THREE.Color(0x6a4a2a) }
       },
       vertexShader: `
         varying vec3 vPos;

@@ -48,7 +48,7 @@ test('dome: ShaderMaterial with BackSide, radius 420, spec uniform colors', () =
   assert.equal(sky.domeGeo.parameters.radius, 420)
   assert.ok(sky.domeMat.uniforms.topColor.value.equals(new THREE.Color(0x070b16)))
   assert.ok(sky.domeMat.uniforms.horizonColor.value.equals(new THREE.Color(0x18253a)))
-  assert.ok(sky.domeMat.uniforms.glowColor.value.equals(new THREE.Color(0x3a4a63)))
+  assert.ok(sky.domeMat.uniforms.glowColor.value.equals(new THREE.Color(0x6a4a2a)), 'v28 R1: amber sodium horizon glow')
   sky.dispose()
 })
 
