@@ -67,17 +67,16 @@ const HAIR_MATS = [
 ]
 
 /** Per-type stats; wave scaling is hp * 1.12^(wave-1), rounded. `brute` is the
- *  wave-5 boss. v13 rebalance: the user wants the boss to take ≈10 SNIPER
- *  shots (the sniper is the anti-boss weapon). Base 1400 → wave-5 scaling
- *  1.12^4 ≈ 1.574 gives 2203 effective HP = 24 body / 12 head sniper shots
- *  (90 / 180 dmg) — ≥10 of each. Pistol needs ~85 body shots, shotgun ~42
- *  blasts (armor ×0.4). v14: the boss now SEEKS the player at walker pace
- *  (speed 1.5, up from the v13 0.45 shamble) so it actively walks toward the
- *  player across the arena, and its HP is 10× (see BOSS_HP_MULT). */
+ *  wave-5 boss. v27 balance: normal-zombie HP is doubled from the v13 baseline
+ *  (walker 50→100, shambler 90→180, screamer 40→80) so a wave-1 walker takes
+ *  exactly 4 pistol body shots (26×4=104) or 2 shotgun blasts (6×9=54 each) to
+ *  kill, while any headshot is an instant kill (see damage()). The brute keeps
+ *  its v13/v14 tuning (1400 base, 10× boss mult) — it is exempt from the
+ *  instant-headshot rule so the boss stays a fight. */
 const TABLE = {
-  walker: { speed: 1.5, hp: 50, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
-  shambler: { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
-  screamer: { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
+  walker: { speed: 1.5, hp: 100, melee: 8, cooldown: 0.9, shotgunArmor: 1, staggerResist: 1 },
+  shambler: { speed: 0.8, hp: 180, melee: 14, cooldown: 1.2, shotgunArmor: 1, staggerResist: 1 },
+  screamer: { speed: 2.2, hp: 80, melee: 6, cooldown: 0.7, shotgunArmor: 1, staggerResist: 1.35 },
   brute: { speed: 1.5, hp: 1400, melee: 30, cooldown: 1.6, shotgunArmor: 0.4, staggerResist: 0.35 }
 }
 
@@ -2056,6 +2055,11 @@ export class Zombie {
     // Remember the last hit's kind so the kill feed can distinguish a
     // headshot kill from a body kill (audio/marker confirmation).
     this.lastHitHead = head
+    // v27: any headshot is an instant kill on a normal zombie — the head is the
+    // only soft spot, so a bullet to the head drops it regardless of remaining
+    // HP or weapon. The boss is exempt (its skull is armored): a headshot just
+    // deals the usual multiplied damage, so the boss stays a fight.
+    if (head && !this.isBoss) amount = this.health
     this.health -= amount
     if (this.health <= 0) {
       this.health = 0

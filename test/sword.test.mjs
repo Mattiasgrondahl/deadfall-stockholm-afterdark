@@ -55,7 +55,7 @@ test('headshot only up close (<= 0.7 m)', () => {
   const { sword } = makeSetup(player, [close, mid])
   sword.update(0.016, player)
   sword.swing()
-  assert.equal(close.health, 0, 'headshot: 45 * 2 exceeds a 50 hp walker (clamped)')
+  assert.equal(close.health, 0, 'v27: headshot is an instant kill (45*2 < 100 hp, forced to 0)')
   assert.equal(close.isDead, true)
   assert.equal(mid.health, mid.maxHealth - 45)     // body
   sword.dispose()
@@ -101,6 +101,29 @@ test('cooldown blocks rapid swings', () => {
   assert.equal(sword.swing(), false) // still in cooldown
   for (let i = 0; i < 70; i++) sword.update(1 / 60, player) // ~1.167 s
   assert.equal(sword.swing(), true)
+  sword.dispose()
+})
+
+test('v27: swings drain stamina and are refused below the cost', () => {
+  const player = fakePlayer(0, 0, 0)
+  player.stamina = 100
+  const { sword } = makeSetup(player, [])
+  sword.player = player
+  assert.equal(sword.staminaCost, 12)
+  // Each accepted swing drains exactly the cost; cooldown must be cleared between
+  // swings so the stamina drain (not the cooldown) is what we measure.
+  let swings = 0
+  for (let i = 0; i < 600 && player.stamina >= sword.staminaCost; i++) {
+    sword._coolT = 0 // bypass cooldown to isolate the stamina budget
+    if (sword.swing()) swings++
+  }
+  assert.equal(player.stamina, 100 - swings * 12, 'stamina drained exactly per swing')
+  assert.ok(swings >= 8 && swings <= 15, `~12 swings on a full bar (got ${swings})`)
+  // Below the cost, a swing is refused and stamina is untouched.
+  player.stamina = 5
+  sword._coolT = 0
+  assert.equal(sword.swing(), false, 'refused below the stamina cost')
+  assert.equal(player.stamina, 5, 'refused swing drains nothing')
   sword.dispose()
 })
 

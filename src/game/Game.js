@@ -420,7 +420,7 @@ export class Game {
       : this.zombies)
     this.weapon.inputState = this.inputState
     // WIRING:DROPS (V6)
-    this.drops = new AmmoDrops(this.scene, this.audio)
+    this.drops = new AmmoDrops(this.scene, this.audio, ASSET_BASE)
     // WIRING:FLASH (V7)
     this.flashlight = new Flashlight(this.camera, this.audio)
     // The flashlight burns breath: the player drains stamina while it is on.
@@ -955,6 +955,15 @@ export class Game {
       if (p) {
         const vy = p.velocity.y
         if (vy > 3 && (this._prevVy === undefined || this._prevVy <= 0)) this.audio.jump()
+        // v27 landing SFX: fire once on the landing edge — the frame the player
+        // returns to the ground (position clamped back to SPAWN_Y) after having
+        // been airborne with downward velocity. Edge-detected off the previous
+        // frame's height so a resting player does not retrigger every frame.
+        const grounded = p.position.y <= 1.7 + 1e-4 && vy === 0
+        if (grounded && this._prevY !== undefined && this._prevY > 1.7 + 1e-4 && (this._prevVy === undefined || this._prevVy < 0)) {
+          this.audio.land()
+        }
+        this._prevY = p.position.y
         this._prevVy = vy
       }
     }

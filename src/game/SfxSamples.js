@@ -35,6 +35,8 @@ const SFX_FILES = {
   attack_hiss: SFX_BASE + 'sfx_attack_hiss.wav',
   footstep: SFX_BASE + 'sfx_footstep.wav',
   jump: SFX_BASE + 'sfx_jump.wav',
+  // v27: landing thud — two heavy boats slapping onto wet ground at once.
+  land: SFX_BASE + 'sfx_land.wav',
   snowstorm: SFX_BASE + 'sfx_snowstorm.wav'
 }
 

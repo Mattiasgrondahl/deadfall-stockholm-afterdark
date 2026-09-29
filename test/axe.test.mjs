@@ -51,7 +51,8 @@ test('headshot only up close (<= 0.6 m)', () => {
   const { axe } = makeSetup(player, [close, mid])
   axe.update(0.016, player)
   axe.swing()
-  assert.equal(close.health, close.maxHealth - 50) // headshot
+  assert.equal(close.isDead, true, 'v27: a headshot is an instant kill')
+  assert.equal(close.health, 0)
   assert.equal(mid.health, mid.maxHealth - 25)     // body
   axe.dispose()
 })

@@ -85,16 +85,16 @@ test('frenzy kill economy: 2 body shots or 1 headshot at wave 1', () => {
   zombie.damage(50, null) // axe headshot
   assert.ok(zombie.isDead, 'axe headshot kills in one shot')
 
-  // Sword headshot (90) also one-shots; contrast with normal shambler (90 HP
-  // takes 4 pistol body hits, frenzy takes 2).
+  // Sword headshot (90) also one-shots; contrast with normal shambler (v27:
+  // HP doubled to 180, so it takes 7 pistol bodies; frenzy flattens to 50 = 2).
   ;({ zombie } = makeZombie('screamer', 0, 0, 1, 'frenzy'))
   zombie.damage(90, null)
   assert.ok(zombie.isDead, 'sword headshot kills in one shot')
   const { zombie: n } = makeZombie('shambler', 0, 0, 1, 'normal')
-  for (let i = 0; i < 3; i++) n.damage(26, null)
-  assert.ok(!n.isDead, 'normal shambler survives 3 pistol bodies')
+  for (let i = 0; i < 6; i++) n.damage(26, null)
+  assert.ok(!n.isDead, 'normal shambler survives 6 pistol bodies (156 < 180)')
   n.damage(26, null)
-  assert.ok(n.isDead, 'normal shambler dies on the 4th')
+  assert.ok(n.isDead, 'normal shambler dies on the 7th (182 >= 180)')
 })
 
 test('frenzy zombies actually run 2x fast: 1 s of pursuit covers 2x distance', () => {

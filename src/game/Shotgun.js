@@ -6,7 +6,10 @@ import { raySphere } from './ray.js'
 // Mirrors Weapon: view model, LCG spread, flash, recoil, reload, input edges.
 // Headless-safe; no Math.random.
 
-const MAG = 5, RESERVE = 30, DMG = 22, PELLETS = 6
+// v27 balance: per-pellet damage 22→9 so a full 6-pellet body blast (54) does
+// NOT drop a wave-1 walker (100 hp) in one shot — it takes 2 blasts, matching
+// the "2 shotgun / 4 pistol body shots" rule. Headshots are instant kills.
+const MAG = 5, RESERVE = 30, DMG = 9, PELLETS = 6
 const HEAD_MULT = 2, RANGE = 18, SPREAD = 0.16
 /** Base stagger speed (m/s) per pellet landed, capped at 4 pellets' worth. */
 const STAGGER_BASE = 0.9

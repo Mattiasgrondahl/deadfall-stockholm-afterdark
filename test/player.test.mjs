@@ -182,6 +182,27 @@ const step = (p, n) => { for (let i = 0; i < n; i++) p.update(DT) }
   assert.strictEqual(player.velocity.y, 0)
 }
 
+{ // v27 landing edge (mirrors Game.js WIRING:AUDIO land detection): a jump then
+  // fall fires the land cue exactly once, on the frame the player returns to the
+  // ground — not while resting, and not on the takeoff.
+  const { player, st } = makePlayer()
+  let prevY, prevVy, landFires = 0
+  const detect = () => {
+    const vy = player.velocity.y
+    const grounded = player.position.y <= 1.7 + 1e-4 && vy === 0
+    if (grounded && prevY !== undefined && prevY > 1.7 + 1e-4 && (prevVy === undefined || prevVy < 0)) landFires++
+    prevY = player.position.y
+    prevVy = vy
+  }
+  st.jump = true
+  player.update(DT); detect()
+  for (let i = 0; i < 300; i++) { player.update(DT); detect() }
+  assert.strictEqual(landFires, 1, `land cue fired exactly once (got ${landFires})`)
+  // Resting on the ground must not re-fire it.
+  for (let i = 0; i < 30; i++) { player.update(DT); detect() }
+  assert.strictEqual(landFires, 1, 'no re-fire while resting on the ground')
+}
+
 { // passive health regen: 1 hp/s after a 4 s no-damage delay; none during it
   const { player } = makePlayer()
   player.health = 50

@@ -46,6 +46,9 @@ const FOOTSTEP_WALK_GAIN = 0.16
 const FOOTSTEP_RUN_GAIN = 0.26
 // v4 jump: a soft cloth-rustle + effort grunt fired once on the jump edge.
 const JUMP_GAIN = 0.22
+// v27: landing thud — a heavy double body-impact on the ground, a bit louder
+// than the jump cue (a landing is a harder event than the takeoff grunt).
+const LAND_GAIN = 0.3
 // v4 weather: a periodic snowstorm swell layered over the wind bed. Separate
 // from the short gusts above — a longer, louder blizzard sweep that rises and
 // falls every STORM_MIN..STORM_MAX seconds to sell the winter setting.
@@ -726,18 +729,34 @@ export class AudioBank {
   }
 
   /**
-   * v4 jump: a soft body-movement cue fired once when the player leaves the
-   * ground (a cloth rustle + a low effort grunt). At the listener (no panner —
-   * it is the player's own jump). Synthesized fallback when the sample has not
-   * decoded: a short bandpassed noise rustle + a low falling grunt tone.
+   * v4 jump: a short effort grunt ("hu!") fired once when the player leaves the
+   * ground. At the listener (no panner — it is the player's own jump). v27: the
+   * sample is now a punchy exertion shout; the synthesized fallback is a formant
+   * "hu" vowel burst (low F0 sweeping down, back vowel formants) so the stand-in
+   * still reads as a grunt of effort rather than a tone.
    */
   jump() {
     if (!this.ctx) return
     this._resume()
     if (this._playSfx('jump', { gain: JUMP_GAIN })) return
-    // Synthesized stand-in: a brief cloth rustle + a soft low grunt.
-    this._playNoise({ duration: 0.12, filterType: 'bandpass', filterFreq: 700, gain: JUMP_GAIN * 0.6 })
-    this._playTone({ type: 'sine', freq: 180, freqEnd: 120, duration: 0.14, gain: JUMP_GAIN * 0.5 })
+    // Synthesized stand-in: a breathy consonant transient + a formant "hu" grunt.
+    this._playNoise({ duration: 0.06, filterType: 'bandpass', filterFreq: 900, gain: JUMP_GAIN * 0.4 })
+    this._playFormant({ freq: 150, freqEnd: 110, f1: 700, f2: 1150, duration: 0.16, gain: JUMP_GAIN })
+  }
+
+  /**
+   * v27 landing: a heavy double thud fired once when the player hits the ground
+   * after a jump — like two boats slapping onto wet ground at once. At the
+   * listener (the player's own landing). Synthesized fallback: a low body thump
+   * plus a short broadband slap, so it still reads as a two-impact impact.
+   */
+  land() {
+    if (!this.ctx) return
+    this._resume()
+    if (this._playSfx('land', { gain: LAND_GAIN })) return
+    // Synthesized stand-in: a low thump + a short slap transient.
+    this._playTone({ type: 'sine', freq: 90, freqEnd: 55, duration: 0.14, gain: LAND_GAIN })
+    this._playNoise({ duration: 0.08, filterType: 'lowpass', filterFreq: 500, gain: LAND_GAIN * 0.7 })
   }
 
   /**

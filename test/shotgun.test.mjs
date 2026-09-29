@@ -43,7 +43,7 @@ test('shotgun stats match the contract', () => {
   assert.equal(s.magSize, 5)
   assert.equal(s.ammo, 5)
   assert.equal(s.reserve, 30)
-  assert.equal(s.damage, 22)
+  assert.equal(s.damage, 9)
   assert.equal(s.pellets, 6)
   assert.equal(s.headMultiplier, 2)
   assert.equal(s.range, 18)
@@ -52,7 +52,7 @@ test('shotgun stats match the contract', () => {
   assert.equal(s.fireInterval, 0.9)
 })
 
-test('blast: one shot consumes one round; centered torso takes 6*22, head takes 6*44', () => {
+test('blast: one shot consumes one round; centered torso takes 6*9, head takes 6*18', () => {
   const { camera, shotgun: s } = makeShotgun()
   const torsoZ = fakeZombie(0, 6) // 6 m ahead; aim at torso center (0,1.2,6)
   const headZ = fakeZombie(4, 6)  // laterally offset, must stay untouched
@@ -63,14 +63,14 @@ test('blast: one shot consumes one round; centered torso takes 6*22, head takes 
   fireOnce(s)
   assert.equal(s.ammo, 4, 'one blast consumes one round')
   assert.equal(torsoZ.hits.length, 6, 'all six pellets hit the centered torso')
-  assert.equal(torsoZ.hits.reduce((a, h) => a + h.amount, 0), 132, '6 * 22 body damage')
+  assert.equal(torsoZ.hits.reduce((a, h) => a + h.amount, 0), 54, "6 * 9 body damage")
   assert.equal(torsoZ._chainShots, 1, 'v3 chain: one blast is one chain step, not six')
   assert.equal(headZ.hits.length, 0, 'offset zombie untouched')
   camera.lookAt(4, 1.8, 6) // aim at the other zombie's head
   s.update(0.9)            // past the 0.9 s fire interval
   fireOnce(s)
   assert.equal(headZ.hits.length, 6, 'all six pellets hit the head')
-  assert.equal(headZ.hits.reduce((a, h) => a + h.amount, 0), 264, '6 * 22 * 2 headshot')
+  assert.equal(headZ.hits.reduce((a, h) => a + h.amount, 0), 108, "6 * 9 * 2 headshot")
   assert.equal(headZ._chainShots, 0, 'v3 chain: a head-hit blast skips the chain')
   assert.equal(torsoZ.hits.length, 6, 'torso zombie not hit again')
 })

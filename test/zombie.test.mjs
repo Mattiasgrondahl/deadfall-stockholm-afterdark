@@ -26,15 +26,15 @@ function makeZombie(type, x, z, wave = 1) {
 }
 
 test('stats: TABLE values exact, wave scaling rounds base * 1.12', () => {
-  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 50, melee: 8, cooldown: 0.9 , shotgunArmor: 1, staggerResist: 1 })
-  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 90, melee: 14, cooldown: 1.2 , shotgunArmor: 1, staggerResist: 1 })
-  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 40, melee: 6, cooldown: 0.7 , shotgunArmor: 1, staggerResist: 1.35 })
+  assert.deepEqual(TABLE.walker, { speed: .5 + 1, hp: 100, melee: 8, cooldown: 0.9 , shotgunArmor: 1, staggerResist: 1 })
+  assert.deepEqual(TABLE.shambler, { speed: 0.8, hp: 180, melee: 14, cooldown: 1.2 , shotgunArmor: 1, staggerResist: 1 })
+  assert.deepEqual(TABLE.screamer, { speed: 2.2, hp: 80, melee: 6, cooldown: 0.7 , shotgunArmor: 1, staggerResist: 1.35 })
   const { zombie } = makeZombie('walker', 0, 0, 1)
-  assert.equal(zombie.maxHealth, 50)
+  assert.equal(zombie.maxHealth, 100)
   const { zombie: w2 } = makeZombie('walker', 0, 0, 2)
-  assert.equal(w2.maxHealth, 56) // Math.round(50 * 1.12)
+  assert.equal(w2.maxHealth, 112) // Math.round(100 * 1.12)
   const { zombie: s2 } = makeZombie('shambler', 0, 0, 2)
-  assert.equal(s2.maxHealth, 101) // Math.round(90 * 1.12)
+  assert.equal(s2.maxHealth, 202) // Math.round(180 * 1.12)
 })
 
 test('unknown type throws', () => {

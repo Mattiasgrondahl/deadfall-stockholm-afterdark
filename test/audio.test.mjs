@@ -967,6 +967,20 @@ function bankWithFakeCtx() {
 }
 
 {
+  // v27 landing: a headless land() is a silent no-op; with a fake ctx it builds a
+  // synthesized thud stack (tone osc+gain + noise src+filter+gain = 5 nodes) when
+  // the sample has not decoded.
+  const headless = new AudioBank()
+  headless.land() // no ctx -> no throw
+  headless.dispose()
+  const bank = bankWithFakeCtx()
+  const before = bank.ctx._created.length
+  bank.land()
+  assert.ok(bank.ctx._created.length - before >= 5, 'land synthesized stack too small')
+  bank.dispose()
+}
+
+{
   // v14 screamer scream: with a decoded sample, groan('screamer') routes the
   // "ahhhhh" buffer source and skips the synthesized sawtooth; the distance
   // falloff makes a close screamer louder than a far one (starts distant,

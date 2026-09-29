@@ -22,6 +22,16 @@ function aimAt(slot, z) {
   slot.player.pitch = 0
 }
 
+/** v27: aim at the zombie's head (y 1.8) so the shot registers as a headshot
+ *  (instant kill). Pitch is the elevation to the head over the aim distance. */
+function aimAtHead(slot, z) {
+  const dx = z.position.x - slot.player.position.x
+  const dz = z.position.z - slot.player.position.z
+  const horiz = Math.hypot(dx, dz)
+  slot.player.yaw = Math.atan2(-dx, -dz)
+  slot.player.pitch = Math.atan2(1.8 - 1.7, horiz) // eye 1.7 → head 1.8
+}
+
 /** Switch to the pistol and arm one trigger pull; the core's step consumes
  *  both edges (switch3, then fire) on that frame. */
 function pistolFire(slot, z) {
@@ -176,7 +186,7 @@ test('applyHit: a client-confirmed hit damages + attributes the server zombie', 
   const z = m.spawnZombie('walker', 12, -3)
   const id = z._matchId
   m.applyHit(id, 30, false, 'A') // one body hit
-  assert.equal(z.health, 20, 'walker 50 - 30 = 20')
+  assert.equal(z.health, 70, 'v27 walker 100 - 30 = 70')
   assert.equal(m.kills.get('A') || 0, 0, 'survives the first hit')
   m.applyHit(id, 30, true, 'A') // fatal headshot
   assert.ok(z.isDead, 'applyHit killed the zombie')
@@ -202,8 +212,8 @@ test('ammo drops: nearest player picks up; ties go to roster order', () => {
   const rA0 = a.reserve, rB0 = b.reserve
   m.step(DT)
   assert.equal(m.drops.count, 0, 'both drops consumed in one frame')
-  assert.equal(a.reserve, rA0 + 8, 'A takes the tied drop')
-  assert.equal(b.reserve, rB0 + 8, 'B takes its own drop')
+  assert.equal(a.reserve, rA0 + 16, 'A takes the tied drop')
+  assert.equal(b.reserve, rB0 + 16, 'B takes its own drop')
   const snap = m.snapshot()
   assert.equal(snap.drops.length, 0)
   const picks = snap.events.filter(e => e.k === 'pickup')
@@ -241,9 +251,10 @@ test('two matches with identical scripted inputs stay bit-identical', () => {
     const a = m.getPlayer('A'), b = m.getPlayer('B')
     const za = m.spawnZombie('walker', 12, -3)
     const zb = m.spawnZombie('shambler', -12, -3)
-    pistolFire(a, za)
-    pistolFire(b, zb)
-    m.step(DT) // A's walker dies (52 >= 50); B's shambler survives at 38 hp
+    aimAtHead(a, za)
+    pistolFire(a, za) // v27: headshot instantly kills the walker
+    b.inputState.switch3 = true // arm B's pistol but do not fire yet
+    m.step(DT) // A's walker dies to the headshot; B's shambler survives
     assert.ok(za.isDead && !zb.isDead, 'script sanity: one kill, one survivor')
     a.inputState.forward = true
     b.inputState.right = true
@@ -252,8 +263,9 @@ test('two matches with identical scripted inputs stay bit-identical', () => {
     a.inputState.forward = false
     b.inputState.right = false
     b.inputState.sprint = false
-    pistolFire(b, zb)
-    stepN(m, 40) // 2 s: B's second headshot kills the shambler; then coast
+    aimAtHead(b, zb)
+    pistolFire(b, zb) // v27: B's headshot instantly kills the shambler
+    stepN(m, 40) // 2 s: coast
     assert.ok(zb.isDead, 'script sanity: shambler dies to B')
   }
   const m1 = mk(), m2 = mk()

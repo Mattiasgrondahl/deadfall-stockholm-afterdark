@@ -11,7 +11,10 @@ import { raySphere } from './ray.js'
 // The rifle body carries a skin texture (assets/weapons/sniper.jpg) loaded in
 // the browser only; headless keeps a flat wood/steel material.
 
-const MAG = 5, RESERVE = 20, DMG = 90
+// v27: DMG 90→100 so the sniper still drops a normal zombie in ONE body shot
+// now that walker HP doubled to 100 (the sniper is the anti-boss weapon and is
+// meant to one-shot regular zombies). Headshots are instant kills regardless.
+const MAG = 5, RESERVE = 20, DMG = 100
 const HEAD_MULT = 2, RANGE = 80, SPREAD = 0.004
 const RELOAD_TIME = 1.6, FIRE_INTERVAL = 1.1
 const FLASH_TIME = 0.06, RECOIL_KICK = 0.05, RECOIL_DECAY = 0.18

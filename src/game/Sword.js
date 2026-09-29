@@ -17,6 +17,11 @@ const HEAD_RANGE = 0.7 // headshot only within this horizontal distance
 const RANGE = 2.4      // v3 T3: max horizontal reach of the swing (was 1.8)
 const ARC = 0.8        // half-width of the swing arc, radians
 const COOLDOWN = 0.22  // v4 co-op: rapid re-swing — a double-click lands two swings (was 0.8)
+// v27: sword swings cost stamina so the melee can't be spammed forever. Each
+// swing drains SWING_STAMINA; a swing needs at least that much to fire. With the
+// player's 18/s regen and the 0.22 s cooldown, a full bar (100) yields ~12
+// swings before exhaustion (net ~8/swing after the between-swing regen).
+const SWING_STAMINA = 12
 const SWING_TIME = 0.26 // v3 T3: shorter swing cycle (was 0.32)
 const SWING_START = -1.1
 const SWING_END = 1.3
@@ -61,6 +66,7 @@ export class Sword {
     this.arc = ARC
     this.cooldown = COOLDOWN
     this.swingTime = SWING_TIME
+    this.staminaCost = SWING_STAMINA
     this.infiniteAmmo = true
     this.onDecapitate = null // (zombie, dir) -> Task E rolling-head pool
     this.owner = null // player id for kill attribution (multiplayer); null in solo
@@ -159,9 +165,15 @@ export class Sword {
     }
   }
 
-  /** One swing; returns false while on cooldown. */
+  /** One swing; returns false while on cooldown or out of stamina. */
   swing() {
     if (this._coolT > 0) return false
+    // v27: a swing costs stamina. If the player has too little breath left, the
+    // swing is refused (no cooldown set, no animation) so spamming melee runs
+    // the player out and forces a breather. Guarded for headless/fake players.
+    const p0 = this.player
+    if (p0 && typeof p0.stamina === 'number' && p0.stamina < this.staminaCost) return false
+    if (p0 && typeof p0.stamina === 'number') p0.stamina = Math.max(0, p0.stamina - this.staminaCost)
     this._coolT = this.cooldown
     this._swingT = 0
     this._swinging = true

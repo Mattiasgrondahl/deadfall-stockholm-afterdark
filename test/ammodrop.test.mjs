@@ -14,8 +14,8 @@ function makeManager() {
 
 test('constants match the contract', () => {
   assert.equal(DROP_CHANCE, 0.55)
-  assert.equal(SHELLS_PER_DROP, 8)
-  assert.equal(BULLETS_PER_DROP, 18)
+  assert.equal(SHELLS_PER_DROP, 16)
+  assert.equal(BULLETS_PER_DROP, 40)
   assert.equal(BULLET_CHANCE, 0.5)
   assert.equal(PICKUP_RADIUS, 2.2)
   assert.equal(LIFETIME, 30)
@@ -29,13 +29,14 @@ test('10-wave ammo economy: pistol survives to the wave-10 boss', () => {
   // DROP_CHANCE (drop spawns) x (1 - BATTERY_CHANCE) (not a battery) x
   // BULLET_CHANCE (bullets, not shells) x BULLETS_PER_DROP.
   const KILLS = 217
-  // 1015 pistol body shots: per-zombie ceil(hp*1.12^(w-1)/26) over waves 1-10
-  // (all-body bound 1115, pooled-HP bound ~1007) — 1015 models a ~10% headshot
-  // mix, between the two bounds. The wave-10 boss + a ~92-shot shortfall at
-  // the finale are covered by shotgun/axe/sword damage, not the pistol alone.
-  const PISTOL_NEED = 1015
+  // v27: normal-zombie HP doubled, so pistol demand doubled too.
+  // 2030 pistol body shots: per-zombie ceil(hp*1.12^(w-1)/26) over waves 1-10
+  // with the doubled base HP (all-body bound ~2230, pooled-HP bound ~2014) —
+  // 2030 models a ~10% headshot mix, between the two bounds. The wave-10 boss +
+  // the finale shortfall are covered by shotgun/axe/sword damage, not pistol.
+  const PISTOL_NEED = 2030
   const PISTOL_START = 36
-  const SHELL_NEED = 350
+  const SHELL_NEED = 700
   const SHELL_START = 30
   const bulletIncome = PISTOL_START + KILLS * DROP_CHANCE * (1 - BATTERY_CHANCE) * BULLET_CHANCE * BULLETS_PER_DROP
   const shellIncome = SHELL_START + KILLS * DROP_CHANCE * (1 - BATTERY_CHANCE) * (1 - BULLET_CHANCE) * SHELLS_PER_DROP

@@ -36,7 +36,7 @@ function addRef(assetRel, src) {
   refs.get(assetRel).add(src)
 }
 
-const SRC_FILES = ['src/game/Game.js', 'src/game/Screens.js', 'src/game/Sniper.js', 'src/game/Axe.js', 'src/game/Zombie.js', 'src/world/cityDressing.js']
+const SRC_FILES = ['src/game/Game.js', 'src/game/Screens.js', 'src/game/Sniper.js', 'src/game/Axe.js', 'src/game/Zombie.js', 'src/world/cityDressing.js', 'src/game/AmmoDrops.js']
 const ASSET_RE = /['"`](assets\/[\w./-]+\.(?:mp3|wav|jpg|jpeg|png|glb|gltf))['"`]/g
 for (const rel of SRC_FILES) {
   const text = read(rel)
