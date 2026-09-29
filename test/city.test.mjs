@@ -532,6 +532,18 @@ test('wanted poster mounted on the center building front face', () => {
   assert.equal(c2._poster.material.map, null, 'headless poster has no image map')
   // The poster adds no collision (lamps: 127) AABBs.
   assert.equal(col2.aabbs.length, 127, 'poster adds no collision (lamps: 127)')
+  // v23: a spotlight above the placard lights it so it reads in the dark. It is
+  // parented to the dressing group, sits above the poster top and out from the
+  // wall (+z, player side), and its target sits at the poster centre.
+  let spot = null
+  c2.group.traverse((o) => { if (o.isSpotLight) spot = o })
+  assert.ok(spot && spot.isSpotLight, 'poster spotlight present')
+  assert.ok(spot.position.y > c2._poster.position.y, 'spotlight sits above the poster')
+  assert.ok(spot.position.z > c2._poster.position.z, 'spotlight is on the player side of the wall')
+  assert.ok(Math.abs(spot.target.position.x - c2._poster.position.x) < 1e-6 &&
+            Math.abs(spot.target.position.y - c2._poster.position.y) < 1e-6,
+            'spotlight aims at the poster centre')
+  assert.equal(spot.castShadow, false, 'poster light casts no shadow (cost)')
   c2.dispose()
 })
 

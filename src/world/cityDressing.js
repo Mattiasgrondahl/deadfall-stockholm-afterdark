@@ -678,8 +678,10 @@ export function addGroundDressing(group, canvasFactory) {
 // at z = +d/2 (facing +z, toward the player's south approach). It loads the
 // WanGP-generated poster image (browser-only, via TextureLoader); when the image
 // is unavailable (missing asset or headless Node) it falls back to a canvas-
-// drawn poster so the feature is always visible. No collision, no lights, no
-// Math.random. Returns the poster mesh (or null when no facade is available).
+// drawn poster so the feature is always visible. A small spotlight above it
+// lights the placard so it reads in the dark (the only light dressing adds).
+// No collision, no Math.random. Returns the poster mesh (or null when no facade
+// is available).
 export function addWantedPoster(group, building, env) {
   if (!building || !building.mesh) return null
   const { w, d, h } = building
@@ -723,6 +725,22 @@ export function addWantedPoster(group, building, env) {
   // poster never z-fights the facade. Vertically centred a bit above eye level.
   mesh.position.set(building.mesh.position.x, Math.min(h - ph / 2 - 0.3, 1.7 + ph / 2), building.mesh.position.z + d / 2 + 0.02)
   group.add(mesh)
+  // v23: a small spotlight above the placard so the WANTED poster reads in the
+  // dark. It sits just above the top edge and ~0.9 m out from the wall (on the
+  // player's +z side), aimed down-forward at the poster centre. Warm 0xffd9a0
+  // matches the streetlights; a tight ~35° cone with a short 6 m range keeps the
+  // pool of light on the placard without spilling into the street or eating the
+  // 40-light budget (this is the only light added by dressing). No shadows
+  // (castShadow stays off scene-wide for cost). The target is parented to the
+  // group so it moves with the world and is torn down with it.
+  const light = new THREE.SpotLight(0xffd9a0, 2.4, 6, Math.PI / 5, 0.4, 2)
+  light.position.set(building.mesh.position.x, mesh.position.y + ph / 2 + 0.5, building.mesh.position.z + d / 2 + 0.9)
+  light.castShadow = false
+  const target = new THREE.Object3D()
+  target.position.copy(mesh.position)
+  light.target = target
+  group.add(light)
+  group.add(target)
   return mesh
 }
 

@@ -2435,3 +2435,24 @@ field, stays deferred for the single-origin deployment).
 - Verification: `node --test` 388/388; `npm run verify` 81 ok / 0 fail / 0 skipped;
   `npm run build` ok; `check-assets` 60/0; `secrets-scan` clean. Headless probe
   confirms wave5 scale 2.5 / hitbox bodyY 3.0, wave10 5×, walker 1×.
+
+## v23 wanted-poster spotlight (Sep 29 2026)
+
+- **A spotlight above the WANTED poster so it reads in the dark**
+  (`src/world/cityDressing.js` `addWantedPoster`): a `SpotLight(0xffd9a0, 2.4,
+  6, π/5, 0.4, 2)` sits just above the placard's top edge and ~0.9 m out from the
+  wall (player +z side), aimed down at the poster centre (its `Object3D` target
+  is parented to the dressing group). Warm colour matches the streetlights; a
+  tight ~36° cone with a 6 m range keeps the pool on the placard without spilling
+  into the street. castShadow off (scene-wide cost rule). This is the only light
+  the dressing group adds — city light count 19→20, still well under the 40 cap.
+- **City.dispose guard** (`src/world/City.js`): the mesh-dispose loop now skips
+  children with no geometry (`if (!m.geometry) continue`) so the spotlight + its
+  Object3D target don't crash dispose (they're torn down with the group).
+- Tests: `test/city.test.mjs` poster test extended to assert the spotlight exists,
+  sits above + in front of the poster, aims at its centre, casts no shadow;
+  `test/lighting.test.mjs` scene total 15→16 (poster spot is City-owned, survives
+  Lighting.dispose); `test/material-hierarchy.test.mjs` city-group light count
+  0→1 (the deliberate poster light).
+- Verification: `node --test` 388/388; `npm run verify` 81/0/0; build ok;
+  check-assets 60/0; secrets clean.

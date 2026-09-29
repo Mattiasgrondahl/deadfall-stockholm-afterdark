@@ -427,6 +427,11 @@ export class City {
     if (this._disposed) return
     this.scene.remove(this.group)
     for (const m of this.group.children) {
+      // v23: the wanted-poster spotlight + its Object3D target are children of
+      // the dressing group. Neither has geometry/material to dispose (removing
+      // the group from the scene already detaches them), so skip children that
+      // carry no geometry. Meshes and sprites (halos, signs) keep disposing.
+      if (!m.geometry) continue
       m.geometry.dispose()
       const mats = Array.isArray(m.material) ? m.material : [m.material]
       for (const mat of mats) {

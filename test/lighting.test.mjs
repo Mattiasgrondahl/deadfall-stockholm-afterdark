@@ -23,10 +23,12 @@ const lightCount = (scene) => {
   return n
 }
 
-test('lighting: 15 lights (1 moon, 1 hemi, 1 ambient, 12 point); r185 settings; dispose', () => {
+test('lighting: 16 lights (1 moon, 1 hemi, 1 ambient, 12 point, 1 poster spot); r185 settings; dispose', () => {
   const { scene, city, renderer } = makeScene()
   const li = new Lighting(scene, city, renderer, 'high')
-  assert.equal(lightCount(scene), 15)
+  // v23: the wanted-poster spotlight is owned by City (the dressing group), not
+  // Lighting, so the scene total is 15 Lighting lights + 1 poster spot = 16.
+  assert.equal(lightCount(scene), 16)
   assert.ok(li.moon.isDirectionalLight)
   assert.equal(li.moon.intensity, 1.45)
   assert.ok(li.moon.castShadow)
@@ -37,7 +39,9 @@ test('lighting: 15 lights (1 moon, 1 hemi, 1 ambient, 12 point); r185 settings; 
   assert.equal(renderer.toneMappingExposure, 1.2)
   assert.ok(renderer.shadowMap.enabled, 'high quality enables shadows')
   li.dispose()
-  assert.equal(lightCount(scene), 0, 'dispose removes all lights')
+  // Lighting's own 15 lights are gone; the City-owned poster spotlight stays
+  // until the City itself is disposed, so exactly 1 light remains.
+  assert.equal(lightCount(scene), 1, 'dispose removes Lighting lights; poster spot is City-owned')
   assert.equal(renderer.shadowMap.enabled, false, 'dispose disables shadows')
 })
 
