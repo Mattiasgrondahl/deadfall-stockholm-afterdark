@@ -20,4 +20,17 @@ game.togglePause()
 assert.equal(game.debug.state(), GameState.PAUSED, 'togglePause works headless')
 game.startGame()
 assert.equal(game.debug.state(), GameState.PLAYING, 'restart works headless')
+
+// v28 R3: headshot hit-stop. While _hitStop is active, step() scales the world
+// clock down (freeze-frame feel) but the real clock (timeInGame) keeps running
+// at full speed, and _hitStop always expires back to 0.
+game._hitStop = 0.2
+const t0 = game.timeInGame
+game.step(1 / 60)
+const realDt = game.timeInGame - t0
+assert.ok(Math.abs(realDt - 1 / 60) < 1e-9, 'real clock runs at full speed during hit-stop')
+assert.ok(game._hitStop > 0 && game._hitStop < 0.2, 'hit-stop timer ticks down each step')
+for (let i = 0; i < 30; i++) game.step(1 / 60) // 0.5 s > 0.2 s window
+assert.equal(game._hitStop, 0, 'hit-stop expires to zero')
+
 console.log('headless-boot OK', JSON.stringify(stats), JSON.stringify(fs))

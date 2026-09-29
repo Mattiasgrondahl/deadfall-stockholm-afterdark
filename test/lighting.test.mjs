@@ -95,3 +95,22 @@ test('streetlights: 12 PointLights, 0xffb066, 82 cd, 14 m, decay 2', () => {
   }
   li.dispose()
 })
+
+test('v28 R3: boss telegraph dips the streetlight pools then recovers', () => {
+  const { scene, city, renderer } = makeScene()
+  const li = new Lighting(scene, city, renderer, 'high')
+  const p = { x: -80, z: 0 }
+  li.update(p)
+  const base = li.lights[0].intensity
+  assert.equal(base, 82, 'undipped pools sit at 82 cd')
+  li.telegraph()
+  li.update(p)
+  // During the telegraph the pools must dip below full (the brownout).
+  const dipped = li.lights[0].intensity
+  assert.ok(dipped < 82, `telegraph dip expected, got ${dipped}`)
+  assert.ok(dipped > 0, 'telegraph never blacks the pools out entirely')
+  // After the window expires the pools return to full.
+  for (let i = 0; i < 120; i++) li.update(p) // 2 s > 1.4 s window
+  assert.equal(li.lights[0].intensity, 82, 'pools recover after the telegraph')
+  li.dispose()
+})

@@ -37,6 +37,8 @@ const SFX_FILES = {
   jump: SFX_BASE + 'sfx_jump.wav',
   // v27: landing thud — two heavy boats slapping onto wet ground at once.
   land: SFX_BASE + 'sfx_land.wav',
+  // v28 R3: crisp footstep on hard-packed ice/frozen snow (brittle crack).
+  footstep_ice: SFX_BASE + 'sfx_footstep_ice.wav',
   snowstorm: SFX_BASE + 'sfx_snowstorm.wav'
 }
 

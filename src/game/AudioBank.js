@@ -717,15 +717,26 @@ export class AudioBank {
    * v4 footstep: one footfall at the listener (no panner — it is the player's
    * own steps). `run` picks the louder/tighter variant. Synthesized crunch
    * fallback when the sample has not decoded.
+   * v28 R3: `surface` selects the sample — 'ice' plays the crisp frozen-snow
+   * crack, anything else the default wet-asphalt scuff. The ice fallback is a
+   * brighter, higher bandpass scuff so it still reads as brittle even headless.
    */
-  footstep(run = false) {
+  footstep(run = false, surface = 'snow') {
     if (!this.ctx) return
     this._resume()
     const gain = run ? FOOTSTEP_RUN_GAIN : FOOTSTEP_WALK_GAIN
-    if (this._playSfx('footstep', { gain, rate: run ? 1.12 : 1 })) return
-    // Synthesized stand-in: a short lowpassed scuff + a soft thud.
-    this._playNoise({ duration: 0.09, filterType: 'lowpass', filterFreq: 900, gain })
-    this._playTone({ type: 'sine', freq: 120, freqEnd: 70, duration: 0.06, gain: gain * 0.5 })
+    const ice = surface === 'ice'
+    const name = ice ? 'footstep_ice' : 'footstep'
+    if (this._playSfx(name, { gain, rate: run ? 1.12 : 1 })) return
+    // Synthesized stand-in: a short lowpassed scuff + a soft thud. Ice is a
+    // brighter, shorter bandpass crack; snow keeps the wet lowpassed scuff.
+    if (ice) {
+      this._playNoise({ duration: 0.05, filterType: 'bandpass', filterFreq: 2600, gain })
+      this._playTone({ type: 'triangle', freq: 320, freqEnd: 180, duration: 0.04, gain: gain * 0.4 })
+    } else {
+      this._playNoise({ duration: 0.09, filterType: 'lowpass', filterFreq: 900, gain })
+      this._playTone({ type: 'sine', freq: 120, freqEnd: 70, duration: 0.06, gain: gain * 0.5 })
+    }
   }
 
   /**
@@ -1075,7 +1086,11 @@ export class AudioBank {
         this._stepAccum -= FOOTSTEP_STRIDE
         this._stepFlip = !this._stepFlip
         const run = playerState.sprint === true || playerState.speed > 5
-        this.footstep(run)
+        // v28 R3: alternate ice-crack and snow-squish per footfall so the walk
+        // reads as crunching across frozen, part-snowy ground (deterministic via
+        // the L/R flip — no RNG). playerState.surface can force one surface.
+        const surface = playerState.surface || (this._stepFlip ? 'ice' : 'snow')
+        this.footstep(run, surface)
         scheduled.push({ type: 'step', distance: 0, gain: run ? FOOTSTEP_RUN_GAIN : FOOTSTEP_WALK_GAIN })
       }
     } else {

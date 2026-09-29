@@ -70,6 +70,8 @@ function makeFakeAudioContext() {
     gain: param(1),
     Q: param(1),
     detune: param(0),
+    playbackRate: param(1),
+    buffer: null,
     connect(target) { this._children.push(target) },
     start() { this.started = true },
     stop() { this.stopped = true }
@@ -904,6 +906,27 @@ function bankWithFakeCtx() {
   assert.ok(rf > wf, `sprint steps ${rf} not > walk steps ${wf}`)
   assert.strictEqual(sf, 0, 'footsteps fired while standing still')
   walk.dispose(); run.dispose(); still.dispose()
+}
+{
+  // v28 R3: footstep surface variant. With both samples decoded, an 'ice' step
+  // must play footstep_ice and a 'snow' step must play footstep — never the
+  // wrong one. We spy on _playSfx to capture which name was requested.
+  const b = bankWithFakeCtx()
+  b.loadSfx('assets/')
+  b._sfx.buffers.set('footstep', { duration: 0.1, getChannelData: () => new Float32Array(8) })
+  b._sfx.buffers.set('footstep_ice', { duration: 0.3, getChannelData: () => new Float32Array(8) })
+  const seen = []
+  const real = b._playSfx.bind(b)
+  b._playSfx = (name, o) => { seen.push(name); return real(name, o) }
+  b.footstep(false, 'ice')
+  b.footstep(true, 'snow')
+  assert.equal(seen[0], 'footstep_ice', 'ice surface plays the ice sample')
+  assert.equal(seen[1], 'footstep', 'snow surface plays the default sample')
+  // Default surface (no arg) stays on the wet-asphalt sample.
+  seen.length = 0
+  b.footstep(false)
+  assert.equal(seen[0], 'footstep', 'default surface is snow/wet')
+  b.dispose()
 }
 {
   // Attack hiss: a zombie inside the strike radius hisses; a far one does not.

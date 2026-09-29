@@ -66,6 +66,10 @@ export class Lighting {
     this._ambientBase = this.ambient.color.clone()
     this._auroraGreen = new THREE.Color(0x2f6b4a)
     this._scratchColor = new THREE.Color()
+    // v28 R3: boss telegraph — a brief streetlight dip/flicker when a boss is
+    // incoming. Countdown of real seconds left; 0 = no telegraph active.
+    this._telegraph = 0
+    this._telegraphDur = 1.4
 
     // Streetlight pool: fixed settings; positions assigned in update().
     this.lights = []
@@ -106,6 +110,15 @@ export class Lighting {
     s.sort((p, q) => p.d2 - q.d2)
 
     const n = this.quality === 'high' ? POINTS_HIGH : POINTS_LOW
+    // v28 R3: boss telegraph — while a telegraph is active the streetlight pools
+    // dip and flicker (a nervous brownout) so the arrival of the brute is felt
+    // before it is seen. Deterministic flicker from the countdown, no RNG.
+    let dip = 1
+    if (this._telegraph > 0) {
+      this._telegraph = Math.max(0, this._telegraph - 1 / 60)
+      const p = this._telegraph / this._telegraphDur // 1 -> 0 over the window
+      dip = 0.35 + 0.4 * p + 0.25 * Math.abs(Math.sin(this._telegraph * 42))
+    }
     // Walk the nearest-first list and assign pool lights to the nearest LIT
     // (non-broken) anchors; broken lamps are skipped so their light goes dark.
     let k = 0
@@ -115,7 +128,7 @@ export class Lighting {
       const anchor = a[idx]
       if (k < n) {
         this.lights[k].position.set(anchor.x, anchor.y, anchor.z)
-        this.lights[k].intensity = POLE_INTENSITY
+        this.lights[k].intensity = POLE_INTENSITY * dip
       } else {
         this.lights[k].intensity = 0
       }
@@ -132,6 +145,12 @@ export class Lighting {
       this.hemi.color.copy(this._hemiSkyBase)
       this.ambient.color.copy(this._ambientBase)
     }
+  }
+
+  // v28 R3: fire the boss-arrival telegraph — the streetlight pools dip and
+  // flicker for ~1.4 s. Idempotent re-fire extends the window.
+  telegraph() {
+    this._telegraph = this._telegraphDur
   }
 
   setQuality(q) {

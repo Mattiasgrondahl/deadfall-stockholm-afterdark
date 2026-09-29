@@ -184,6 +184,7 @@ export class Game {
     this.zombies = []
     this.kills = 0
     this.timeInGame = 0
+    this._hitStop = 0 // v28 R3: headshot freeze-frame timer (s of real time left)
     this._fps = 60
 
     this.debug = {
@@ -244,7 +245,16 @@ export class Game {
       this.togglePause()
     }
     this.timeInGame += d
-    if (this.state === GameState.PLAYING) this.update(d)
+    // v28 R3: headshot hit-stop — for a fraction of a second after a headshot
+    // kill the world time is scaled down (a freeze-frame feel) while the real
+    // clock keeps running so the effect always expires. HUD/render stay on real
+    // dt so the UI never freezes with the world.
+    let simDt = d
+    if (this._hitStop > 0) {
+      this._hitStop = Math.max(0, this._hitStop - d)
+      simDt = d * 0.12
+    }
+    if (this.state === GameState.PLAYING) this.update(simDt)
     this.render()
     // WIRING:HUD (owned by task F)
     if (this.state === GameState.PLAYING && this.hud) {
@@ -469,7 +479,13 @@ export class Game {
         }
       },
       spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
-      onBossIncoming: () => { if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING') },
+      onBossIncoming: () => {
+        if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING')
+        // v28 R3: telegraph the boss before it arrives — the streetlight pools
+        // dip and flicker (a brownout) and a low sub-bass sting swells under it.
+        if (this.lighting) this.lighting.telegraph()
+        if (this.audio) this.audio.playBossIncoming()
+      },
       onBossSpawn: () => {
         if (this.screens) this.screens.showBanner('THE BRUTE')
         // v3 boss fight: mute the mp3 playlist and play the dedicated
@@ -580,6 +596,7 @@ export class Game {
         if (this.achievements) {
           this.achievements.onKill()
           if (z.lastHitHead === true) this.achievements.onHeadshot()
+          if (z.lastHitHead === true) this._hitStop = 0.09 // v28 R3: brief freeze-frame
           if (z.type === 'brute') this.achievements.onBoss()
         }
       },
@@ -711,6 +728,7 @@ export class Game {
     // v3 boss fight: a restart ends any live boss fight and resumes the playlist.
     if (this._bossFightActive) { this._bossFightActive = false; if (this.audio) this.audio.stopBossMusic() }
     this.timeInGame = 0
+    this._hitStop = 0 // v28 R3: clear any pending headshot freeze-frame on reset
     if (this.waveManager) this.waveManager.reset()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()

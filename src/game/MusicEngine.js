@@ -52,6 +52,7 @@ export class MusicEngine {
     this._cycles = 0      // completed pattern loops (pattern index wraps to 0)
     this._nextAt = 0      // start time of the next cycle to schedule
     this._fade = []       // pending fade-out teardowns: { at, nodes }
+    this._noiseBuf = null   // v28 R3: shared wind-bed noise buffer (built lazily)
   }
 
   /** Wire the AudioContext + destination. No-op headless / after dispose. */
@@ -183,6 +184,10 @@ export class MusicEngine {
     // Soft drone under the whole bar (a pad bed), louder for denser tracks.
     const drone = this._voice(name, root - 12, start, bar * 2, 0.12, 'triangle')
     nodes.push(drone.g, drone.osc)
+    // v28 R3: winter wind bed under the AMBIENT track only — a looping filtered
+    // noise through a slow LFO so the calm sections breathe like cold air moving
+    // across the rooftops. Combat/crisis stay dry so the wind never muddies them.
+    if (name === 'ambient') nodes.push(...this._windBed(start, bar))
     for (let i = 0; i < pat.length; i++) {
       const at = start + i * step
       const dur = step * (name === 'ambient' ? 1.8 : 0.85)
@@ -214,6 +219,52 @@ export class MusicEngine {
     // references — otherwise _nodes grows without bound over a long session.
     this._ends.push({ at: t2 + PRUNE_AFTER, nodes: [osc, g] })
     return { osc, g }
+  }
+
+  /**
+   * v28 R3: a looping wind bed for the ambient track. One shared noise buffer
+   * (built once, reused) through a lowpass, with a slow LFO modulating its gain
+   * so the gusts swell and recede. Returns the nodes to track (source + gain +
+   * lfo osc + lfo gain); the source has no scheduled stop (it loops), so it is
+   * torn down only on fade/stop via _kill (which calls stop()).
+   */
+  _windBed(start, bar) {
+    const ctx = this.ctx
+    if (!this._noiseBuf) {
+      const len = Math.floor(ctx.sampleRate * 2)
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate)
+      const d = buf.getChannelData(0)
+      // Deterministic white noise (no Math.random): a seeded LCG.
+      let s = 0x5EED17
+      for (let i = 0; i < len; i++) {
+        s = (Math.imul(s, 48271) >>> 0) % 65537
+        d[i] = (s / 65537) * 2 - 1
+      }
+      this._noiseBuf = buf
+    }
+    const src = ctx.createBufferSource()
+    src.buffer = this._noiseBuf
+    src.loop = true
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 520
+    lp.Q.value = 0.6
+    const g = ctx.createGain()
+    g.gain.value = 0.05
+    // Slow gust LFO (~1 per bar) modulating the wind gain.
+    const lfo = ctx.createOscillator()
+    lfo.type = 'sine'
+    lfo.frequency.value = 1 / bar
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.value = 0.035
+    lfo.connect(lfoGain)
+    lfoGain.connect(g.gain)
+    src.connect(lp)
+    lp.connect(g)
+    g.connect(this.outGain)
+    src.start(start)
+    lfo.start(start)
+    return [src, lp, g, lfo, lfoGain]
   }
 
   /** Advance the scheduler: wrap the pattern index back to 0 each cycle. */
