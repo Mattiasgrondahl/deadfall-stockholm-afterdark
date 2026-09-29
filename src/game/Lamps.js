@@ -24,7 +24,7 @@ export class Lamps {
    * ignored (the glass is already gone).
    */
   hitAt(x, y, z) {
-    let best = null, bestD = 0.6 // 0.6 m capture radius around a head
+    let best = null, bestD = 1.0 // v26: capture the whole pole+head column footprint
     for (const l of this.lamps) {
       if (l.broken) continue
       const dx = x - l.x, dz = z - l.z
@@ -33,7 +33,9 @@ export class Lamps {
       // up through the head, y 0..5.3) breaks it, not just a hit aimed at the
       // head. The lamp AABB is a full-height column, so any crossing point with
       // y in that band and within the head's horizontal radius counts. This lets
-      // every lamp be shot and broken regardless of aim height.
+      // every lamp be shot and broken regardless of aim height. v26 widens the
+      // radius to 1.0 m so a hit on the pole (0.55 m off the head) still breaks
+      // the lamp, not just a hit dead on the head.
       if (d < bestD && y >= 0 && y <= 5.3) { bestD = d; best = l }
     }
     if (!best) return null

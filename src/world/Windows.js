@@ -44,12 +44,22 @@ const BROKEN = new THREE.Color(0x0a0c10)
  * @param {Object} collision       CollisionWorld (or a stub with addAABB)
  * @param {Array} buildings        City building list: {mesh,w,d,h} (+ optional
  *                                 .variant from City's facade-variant LCG)
+ * @param {Object} [exclude]       optional {x, z, halfW, y0, y1} rectangle to
+ *                                 leave bare — the wanted-poster footprint, so a
+ *                                 bright glass pane never overlaps the placard.
  * @returns {{mesh:THREE.InstancedMesh, windows:Array, aabbs:Array}}
  */
-export function addWindows(group, collision, buildings) {
+export function addWindows(group, collision, buildings, exclude) {
   const windows = []
   const aabbs = []
   if (!buildings || !buildings.length) return { windows, aabbs, mesh: null }
+  // A pane is dropped when its centre lands inside the exclusion rectangle.
+  const inExclude = (px, pz, up) => {
+    if (!exclude) return false
+    return Math.abs(px - exclude.x) <= exclude.halfW &&
+      Math.abs(pz - exclude.z) <= exclude.halfD &&
+      up >= exclude.y0 && up <= exclude.y1
+  }
 
   // A unit box reused for every pane, scaled + oriented per instance.
   const paneGeo = new THREE.BoxGeometry(1, 1, 1)
@@ -113,6 +123,7 @@ export function addWindows(group, collision, buildings) {
           // the side faces (the face rotation handles orientation).
           const px = f.ry === 0 || f.ry === Math.PI ? f.px + across : f.px
           const pz = f.ry === 0 || f.ry === Math.PI ? f.pz : f.pz + across
+          if (inExclude(px, pz, up)) continue // leave the wanted-poster wall bare
           e.set(0, f.ry, 0)
           quat.setFromEuler(e)
           pos.set(px, up, pz)

@@ -390,7 +390,24 @@ export class City {
     // v26: shootable glass panes over the lit facade windows. One InstancedMesh;
     // each pane carries a shootable AABB so a bullet that lands on glass breaks
     // it (dim + glass voice + shards) instead of leaving a hole on the wall.
-    const winData = addWindows(group, collision, buildings)
+    // The wanted-poster footprint (buildings[0] front face) is passed as an
+    // exclusion so no bright glass pane overlaps the placard.
+    const _pb = buildings[0]
+    let _winExclude = null
+    if (_pb && _pb.mesh) {
+      const _pw = Math.min(2.2, _pb.w * 0.5)
+      const _ph = _pw * 1.35
+      const _py = Math.min(_pb.h - _ph / 2 - 0.3, 1.7 + _ph / 2)
+      _winExclude = {
+        x: _pb.mesh.position.x,
+        z: _pb.mesh.position.z + _pb.d / 2 + 0.04,
+        halfW: _pw / 2 + 0.4,
+        halfD: 0.5,
+        y0: _py - _ph / 2 - 0.4,
+        y1: _py + _ph / 2 + 0.4
+      }
+    }
+    const winData = addWindows(group, collision, buildings, _winExclude)
     this.windows = winData.windows
     this._windowMesh = winData.mesh
     this._aabbs.push(...winData.aabbs)

@@ -132,7 +132,16 @@ export function addStreetlights(group, collision, buildings) {
     // broken.
     let aabb = null
     if (collision && collision.addAABB) {
-      collision.addAABB(hx - 0.3, hz - 0.3, hx + 0.3, hz + 0.3, 5.3)
+      // v26: the shootable box now spans BOTH the head (hx,hz) and the pole
+      // (x,z) — the arm offsets the head 0.55 m from the pole, so a shot aimed
+      // at the visible pole used to miss the head-centred 0.6 m box entirely and
+      // the lamp could not be broken. Covering the whole column makes every
+      // lamp shootable from any angle.
+      const minX = Math.min(hx, x) - 0.3
+      const maxX = Math.max(hx, x) + 0.3
+      const minZ = Math.min(hz, z) - 0.3
+      const maxZ = Math.max(hz, z) + 0.3
+      collision.addAABB(minX, minZ, maxX, maxZ, 5.3)
       aabb = collision.aabbs[collision.aabbs.length - 1]
       aabb.shootable = true
     }

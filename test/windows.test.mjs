@@ -73,4 +73,17 @@ function mkCol() {
   w.dispose()
 }
 
+// ---- exclude: the wanted-poster footprint stays bare of glass --------------
+{
+  const base = addWindows(new THREE.Group(), mkCol(), [{ mesh: { position: { x: 0, z: 0 } }, w: 8, d: 4, h: 9, variant: 0 }])
+  // A rectangle centred on the front face (+z) where the poster sits.
+  const excl = { x: 0, z: 4 / 2 + 0.04, halfW: 1.5, halfD: 0.5, y0: 1.3, y1: 5.1 }
+  const kept = addWindows(new THREE.Group(), mkCol(), [{ mesh: { position: { x: 0, z: 0 } }, w: 8, d: 4, h: 9, variant: 0 }], excl)
+  assert.ok(kept.windows.length < base.windows.length, 'exclusion drops the panes over the poster')
+  for (const w of kept.windows) {
+    const inside = Math.abs(w.x - excl.x) <= excl.halfW && Math.abs(w.z - excl.z) <= excl.halfD && w.y >= excl.y0 && w.y <= excl.y1
+    assert.ok(!inside, `no kept pane sits inside the poster rect (y=${w.y})`)
+  }
+}
+
 console.log('windows OK')
