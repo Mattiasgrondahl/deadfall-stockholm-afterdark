@@ -750,7 +750,7 @@ function makePosterTexture(env, onLoaded) {
   if (typeof document !== 'undefined') {
     try {
       const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
-      const url = base.replace(/\/$/, '') + '/assets/posters/poster.jpg'
+      const url = base.replace(/\/$/, '') + '/assets/posters/poster_v2.jpg'
       // onLoad fires once the JPEG has decoded; that is when we attach it to the
       // material (see addWantedPoster). onError leaves the paper-tan fallback.
       const tex = new THREE.TextureLoader().load(url, (t) => { if (onLoaded) onLoaded(t) })
