@@ -2483,3 +2483,34 @@ field, stays deferred for the single-origin deployment).
   pin still holds (props are torso children).
 - Verification: `node --test` 389/389; `npm run verify` 81/0/0 (mesh ≤800 ok);
   build ok; check-assets 60/0; secrets clean.
+
+## v25 co-op: remote players show their weapon + muzzle flash (Sep 29 2026)
+
+- **Make teammates' weapons + shooting visible** in co-op. The remote avatar
+  (`src/game/RemotePlayer.js`) was a 6-box body with no weapon, and the local
+  muzzle flash is a camera-attached viewmodel sprite teammates never see. The
+  snapshot ALREADY carried `weapon: w.name` per player (`Match.snapshot`), but
+  nothing rendered it; and there was NO shoot event — only the `fire` boolean
+  reached the server and was consumed by the server WeaponBank.
+  - **Held weapon silhouette** (new `src/game/RemoteWeapon.js`, 125 lines):
+    shared per-kind geometry + materials (axe/shotgun/pistol/sword/sniper)
+    mirroring the FP viewmodel palettes. `buildRemoteWeapon` returns a group the
+    avatar holds in its right hand; `buildMuzzleFlash`/`triggerMuzzleFlash`/
+    `updateMuzzleFlash` drive an additive muzzle-flash sprite (ranged weapons
+    only; melee has none). RemotePlayer builds a default shotgun, swaps to the
+    snapshot `p.weapon` in `apply()`, hides the weapon when dead, and disposes
+    the per-instance flash material (weapon geo/mat are shared).
+  - **Shoot event** (protocol via snapshot `events`, no new MSG): weapons gained
+    an `onFire(name)` hook fired on a confirmed shot (`Pistol`/`Shotgun`/`Sniper`
+    at the flash set, `Axe`/`Sword` at swing start). `WeaponBank.onFire` forwards
+    to all five. `Match.addPlayer` wires `weapon.onFire → events.push({k:'shoot',
+    by:id, weapon})`; `Multiplayer` routes `ev.k==='shoot'` → `players.get(by).flash()`.
+- Budget: 8 avatars add a 1-2-mesh held weapon each (+16 total); 8 avatars + 18
+  alive zombies + city = 579 meshes ≤ 640 (verify gate ≤800). Flash is a Sprite
+  (0 lights), so lights stay 20/40. Clean dispose verified headless.
+- Tests: new `test/remote-weapon.test.mjs` (silhouettes per kind, flash
+  light/decay, server shoot event for ranged + melee) + two avatars tests in
+  `test/remote-player.test.mjs` (weapon swap from snapshot, dead drops weapon,
+  flash fires + decays). Net suites 58 green.
+- Verification: `node --test` 395/395; `npm run verify` 81/0/0; build ok;
+  check-assets 60/0; secrets clean.

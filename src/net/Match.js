@@ -164,6 +164,10 @@ export class Match {
         dir: dir ? { x: dir.x, z: dir.z } : null
       })
     }
+    // v25: a confirmed shot (or melee swing) starts on this player. Broadcast a
+    // `shoot` event so teammates render a muzzle flash / swing on the remote
+    // avatar. Carries the weapon name so the flash reads correctly per weapon.
+    weapon.onFire = (wname) => this.events.push({ k: 'shoot', by: id, weapon: wname })
     player.setOnDeath(() => {
       // v15: record the death on the victim's end-screen stats.
       this.deaths.set(id, (this.deaths.get(id) || 0) + 1)

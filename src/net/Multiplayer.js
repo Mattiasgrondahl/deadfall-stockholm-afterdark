@@ -191,6 +191,12 @@ export class Multiplayer {
       }
       // v12: kill feed — record recent kills (victim id + killer id + headshot).
       if (ev.k === 'kill') this._pushKill(ev, snap)
+      // v25: a teammate fired (or swung). Light that player's remote muzzle flash
+      // so everyone sees who is shooting and roughly what they are firing.
+      if (ev.k === 'shoot') {
+        const rp = this.players.get(ev.by)
+        if (rp) rp.flash()
+      }
     }
     // Drop avatars that left the roster.
     for (const [id, rp] of this.players) {

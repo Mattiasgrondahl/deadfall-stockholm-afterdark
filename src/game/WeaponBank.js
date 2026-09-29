@@ -85,6 +85,19 @@ export class WeaponBank {
     this.sniper.onHit = fn
   }
 
+  // v25: confirmed-shot callback forwarded to all weapons. The server wires it to
+  // a `shoot` snapshot event so teammates see a muzzle flash / swing on this
+  // player's remote avatar. `fn(name)` receives the weapon name that fired.
+  get onFire() { return this._onFire }
+  set onFire(fn) {
+    this._onFire = fn
+    this.axe.onFire = fn
+    this.shotgun.onFire = fn
+    this.pistol.onFire = fn
+    this.sword.onFire = fn
+    this.sniper.onFire = fn
+  }
+
   // Fatal-headshot callback forwarded to all weapons; Game wires it to the
   // DecapitatedHeadPool (Task E).
   get onDecapitate() { return this._onDecapitate }

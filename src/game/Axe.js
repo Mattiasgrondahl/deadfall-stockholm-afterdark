@@ -154,6 +154,9 @@ export class Axe {
     this._coolT = this.cooldown
     this._swingT = 0
     this._swinging = true
+    // v25: notify the owner (server) that a swing actually started so co-op can
+    // show a swing/impact flash on this player's remote avatar.
+    this.onFire?.(this.name)
     const p = this.player
     if (p && !p.isDead) {
       if (typeof p.addPitchKick === 'function') p.addPitchKick(0.008) // small melee kick; guarded for minimal fake players

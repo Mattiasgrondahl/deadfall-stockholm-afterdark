@@ -165,6 +165,9 @@ export class Sword {
     this._coolT = this.cooldown
     this._swingT = 0
     this._swinging = true
+    // v25: notify the owner (server) that a swing actually started so co-op can
+    // show a swing/impact flash on this player's remote avatar.
+    this.onFire?.(this.name)
     this._slashDir = -this._slashDir // alternate the diagonal: R->L, then L->R
     const p = this.player
     if (p && !p.isDead) {

@@ -19,6 +19,7 @@
 // headless runs (no canvas factory) it is skipped and the budget is unchanged.
 import * as THREE from 'three'
 import { OUTFITMATS } from './Zombie.js'
+import { buildRemoteWeapon, buildMuzzleFlash, updateMuzzleFlash, triggerMuzzleFlash } from './RemoteWeapon.js'
 
 // Shared geometry (one instance reused by every avatar).
 const GEO = {
@@ -123,7 +124,35 @@ export class RemotePlayer {
       this._label.position.set(0, 2.15, 0) // above the head, in group (feet) space
       this.group.add(this._label)
     }
+    // v25: the avatar holds a weapon silhouette + carries a muzzle-flash sprite so
+    // teammates can see what it is holding and when it fires. The held group is
+    // swapped when the snapshot's weapon changes; the flash is triggered by the
+    // server's `shoot` event (Multiplayer routes it via flash()). Both are added
+    // to the group so they move with the avatar and go away on dispose.
+    this._weaponName = null
+    this._weapon = null
+    this._flash = null
+    this._setWeapon('shotgun') // default until the first snapshot sets the real one
     scene.add(this.group)
+  }
+
+  /** Swap the held weapon silhouette to match a weapon name (idempotent). */
+  _setWeapon(name) {
+    if (name === this._weaponName) return
+    const g = buildRemoteWeapon(name)
+    if (!g) return // unknown weapon: keep the current one
+    if (this._weapon) this.group.remove(this._weapon)
+    if (this._flash) { this.group.remove(this._flash); this._flash.material.dispose(); this._flash = null }
+    this._weapon = g
+    this._weaponName = name
+    this.group.add(g)
+    this._flash = buildMuzzleFlash(name)
+    if (this._flash) this.group.add(this._flash)
+  }
+
+  /** Light the muzzle flash (called by Multiplayer on a `shoot` event). */
+  flash() {
+    triggerMuzzleFlash(this._flash)
   }
 
   /**
@@ -171,6 +200,12 @@ export class RemotePlayer {
       this.armR.material = this._mat
       if (this._label) this._label.visible = true
     }
+    // v25: keep the held weapon in sync with the snapshot and fade the muzzle
+    // flash. A dead avatar drops its weapon (hidden) so a corpse doesn't float a
+    // gun. The flash ticks down every frame regardless of dead state.
+    if (p.weapon && p.weapon !== this._weaponName) this._setWeapon(p.weapon)
+    if (this._weapon) this._weapon.visible = !p.dead
+    updateMuzzleFlash(this._flash, dt)
   }
 
   dispose() {
@@ -183,6 +218,11 @@ export class RemotePlayer {
       if (this._label.material && this._label.material.map) this._label.material.map.dispose()
       this._label = null
     }
+    // v25: the muzzle-flash sprite material is owned per-instance (a fresh
+    // SpriteMaterial per avatar); the held weapon group uses SHARED geometry +
+    // materials, so it is only detached (with the group), never disposed here.
+    if (this._flash) { this._flash.material.dispose(); this._flash = null }
+    this._weapon = null
     if (this.group.parent) this.group.parent.remove(this.group)
     this.group.clear()
   }

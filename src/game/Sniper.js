@@ -183,6 +183,9 @@ export class Sniper {
     this._recoil = RECOIL_KICK
     if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
+    // v25: notify the owner (server) that a round actually left the barrel so
+    // co-op can show a muzzle flash on this player's remote avatar.
+    this.onFire?.(this.name)
     this.flash.visible = true
     this.camera.getWorldDirection(this._dir)
     this._right.crossVectors(this._dir, UP)

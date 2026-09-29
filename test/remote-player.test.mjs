@@ -94,9 +94,44 @@ test('8 avatars + capped-alive zombies + city stay within the 640-mesh budget', 
   const total = countMeshes(scene)
   assert.ok(total.meshes <= 640, `mesh budget: ${total.meshes} <= 640`)
   assert.ok(total.lights <= 40, `light budget: ${total.lights} <= 40`)
-  // Avatars add exactly 6 meshes each.
+  // Avatars add 6 body meshes + a held-weapon silhouette (1-2 meshes) each.
   assert.ok(total.meshes >= base.meshes + ALIVE_CAP * 9 + 48, 'zombies + avatars present')
   console.log(`[mp-budget] city=${base.meshes} +${ALIVE_CAP} alive zombies +8 avatars => meshes ${total.meshes}/640 lights ${total.lights}/40`)
   for (const z of zs) z.dispose()
   for (const rp of rps) rp.dispose()
+})
+
+test('v25: remote avatars hold a weapon silhouette + swap it from the snapshot', () => {
+  const scene = new THREE.Scene()
+  const rp = new RemotePlayer(scene, 'p0')
+  // Default held weapon until the first snapshot sets the real one.
+  assert.equal(rp._weaponName, 'shotgun', 'defaults to a shotgun silhouette')
+  assert.ok(rp._weapon && rp._weapon.isObject3D, 'a weapon group is attached')
+  // Snapshot weapon name swaps the held silhouette (already sent in the snapshot).
+  rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 0, weapon: 'pistol', dead: false }, 1 / 60)
+  assert.equal(rp._weaponName, 'pistol', 'swaps to the snapshot weapon')
+  assert.equal(rp._weapon.userData.weapon, 'pistol', 'held group matches the weapon')
+  // A ranged weapon carries a muzzle-flash sprite; a melee weapon does not.
+  assert.ok(rp._flash && rp._flash.isSprite, 'pistol has a muzzle-flash sprite')
+  rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 0, weapon: 'axe', dead: false }, 1 / 60)
+  assert.equal(rp._weaponName, 'axe', 'swaps to the axe')
+  assert.equal(rp._flash, null, 'melee has no muzzle flash')
+  // A dead avatar hides its weapon.
+  rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 0, weapon: 'axe', dead: true }, 1 / 60)
+  assert.equal(rp._weapon.visible, false, 'dead avatar drops its weapon')
+  rp.dispose()
+  assert.equal(scene.children.length, 0, 'avatar + weapon removed on dispose')
+})
+
+test('v25: a shoot event lights the shooter avatar muzzle flash and it decays', () => {
+  const scene = new THREE.Scene()
+  const rp = new RemotePlayer(scene, 'p0')
+  rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 0, weapon: 'pistol', dead: false }, 1 / 60)
+  rp.flash()
+  assert.equal(rp._flash.visible, true, 'flash lights on a shot')
+  assert.ok(rp._flash.material.opacity > 0, 'flash has opacity')
+  // It fades out within the flash window (no lingering light).
+  for (let i = 0; i < 12; i++) rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 0, weapon: 'pistol', dead: false }, 1 / 60)
+  assert.equal(rp._flash.visible, false, 'flash decays back off')
+  rp.dispose()
 })

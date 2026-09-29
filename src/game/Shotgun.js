@@ -204,6 +204,9 @@ export class Shotgun {
     this._recoil = RECOIL_KICK
     if (this.player && typeof this.player.addPitchKick === 'function') this.player.addPitchKick(KICK)
     this._flashT = FLASH_TIME
+    // v25: notify the owner (server) that the shell actually fired so co-op can
+    // show a muzzle flash on this player's remote avatar.
+    this.onFire?.(this.name)
     this.flash.material.opacity = this.tier === 'low' ? FLASH_OPACITY_LOW : FLASH_OPACITY
     this.flash.scale.setScalar(0.3)
     this.flash.visible = true
