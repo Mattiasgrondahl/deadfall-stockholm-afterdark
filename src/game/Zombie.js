@@ -251,25 +251,46 @@ const OUTFIT_COUNT = OUTFITMATS.tops.length
 // no normalMap at all, and the arms + head wore the bare per-type skin material
 // (MAT2), so roughly half of every visible body had no texture whatsoever.
 // Two fixes, both shared-module-level so they cost no extra meshes:
-//  (a) one lazily-built 64x64 fabric-weave NORMAL DataTexture (tangent-space,
-//      so colorSpace stays NoColorSpace — a normal map must never be sRGB
-//      decoded) assigned as normalMap of every outfit top/bottom plus the sleeve
-//      materials, with normalScale 0.6 so the weave reads without looking like
-//      canvas plating;
+//  (a) one lazily-built fabric NORMAL DataTexture (tangent-space, so colorSpace
+//      stays NoColorSpace — a normal map must never be sRGB decoded) assigned as
+//      normalMap of every outfit top/bottom plus the sleeve materials; v21 grew
+//      it from a 64px weave-only map to a 128px weave+folds map at normalScale
+//      1.0 so garments read as draped cloth, not a flat decal (see buildFabricNormal);
 //  (b) per-outfit SLEEVE materials that clone the outfit top (its albedo map,
 //      color and roughness are copied when the texture lands — see
 //      loadOutfitTextures) so arms read as clothed sleeves instead of bare
 //      skin. The head keeps MAT2 skin so the face decal still reads.
 // DataTexture (not CanvasTexture) keeps this headless-safe: no document/window
 // touch, and the same deterministic result under Node and in the browser.
-const FABRIC_N_SIZE = 64
+// v21: the old map was a plain 2x2 twill at 64px — micro-relief only, so a
+// garment box still read as a flat printed decal ("looks like a picture of a
+// cloth"). Now the map layers TWO scales of cloth relief on top of each other:
+//   (a) the fine warp/weft weave (kept, so fabric still has tooth), and
+//   (b) large low-frequency FOLDS/WRINKLES — a few octaves of seeded value
+//       noise whose gradient is what actually catches the light, so a jacket
+//       or trouser leg shows soft creases and drape instead of a flat panel.
+// 128px so the folds have room to vary across a box face without tiling into a
+// visible grid. Still a DataTexture (headless-safe, deterministic, no canvas).
+const FABRIC_N_SIZE = 128
 let FABRIC_NORMAL = null
 let FABRIC_REFS = 0 // live zombies; the shared weave map is released at zero
 /** Standard seeded LCG (see AmmoDrops._rand) — no Math.random anywhere. */
 function lcg(s) { return (s = (Math.imul(s, 48271) >>> 0) % 65537) / 65537 }
-/** Build the shared weave normal map once per module load. A plain 2x2 twill
- *  (warp column + weft row per 8px cell) with a seeded per-cell jitter, so the
- *  shading breaks up the box faces instead of reading as a printed grid. */
+/** Deterministic 2D value noise in [0,1] on a 4x4 lattice, bilinearly
+ *  interpolated and wrapped, so it tiles seamlessly. The lattice values come
+ *  from the same LCG shape used everywhere else (no Math.random). */
+function latticeNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y)
+  const xf = x - xi, yf = y - yi
+  // Smoothstep the fractional part so cell crossings are soft, not faceted.
+  const u = xf * xf * (3 - 2 * xf)
+  const v = yf * yf * (3 - 2 * yf)
+  // Wrap the lattice index to 4 so the field repeats every 4 units (tile edge).
+  const g = (ix, iy) => lcg((((Math.imul(ix & 3, 2654435761) ^ Math.imul(iy & 3, 40503)) >>> 0) ^ seed) >>> 0)
+  const a = g(xi, yi), b = g(xi + 1, yi), c = g(xi, yi + 1), d = g(xi + 1, yi + 1)
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+}
+/** Build the shared weave+folds normal map once per module load. */
 function buildFabricNormal() {
   const n = FABRIC_N_SIZE
   const data = new Uint8Array(n * n * 4)
@@ -282,10 +303,21 @@ function buildFabricNormal() {
       const sy = ((y * 29 + x * 13 + 11) >>> 0) ^ 48271
       const jx = lcg(sx) - 0.5
       const jy = lcg(sy) - 0.5
-      // Warp (vertical) threads tilt the normal along x, weft (horizontal)
-      // threads along y; the thread centre is steepest, the crossing flat.
-      const warp = Math.sin((x / 8) * Math.PI * 2) * 0.55 + jx * 0.25
-      const weft = Math.sin((y / 8) * Math.PI * 2) * 0.55 + jy * 0.25
+      // (a) Warp (vertical) threads tilt the normal along x, weft (horizontal)
+      //     threads along y; the thread centre is steepest, the crossing flat.
+      let warp = Math.sin((x / 8) * Math.PI * 2) * 0.55 + jx * 0.25
+      let weft = Math.sin((y / 8) * Math.PI * 2) * 0.55 + jy * 0.25
+      // (b) Large folds: two octaves of tiling value noise form a height field;
+      //     its finite-difference gradient is the fold slope. Low frequency
+      //     (period ~48px) reads as a drape crease, the finer octave (~16px) as
+      //     a soft wrinkle. Diagonal bias (x+y) so creases run like cloth, not
+      //     a checkerboard.
+      const h = (px, py) => latticeNoise(px / 48, py / 48, 101) * 0.7 +
+        latticeNoise(px / 16 + 0.5, py / 16 + 0.5, 733) * 0.3
+      const foldX = (h(x + 1, y) - h(x - 1, y)) * 1.4
+      const foldY = (h(x, y + 1) - h(x, y - 1)) * 1.4
+      warp += foldX
+      weft += foldY
       const len = Math.sqrt(warp * warp + weft * weft + 1)
       const i = (y * n + x) * 4
       data[i] = ((warp / len) * 0.5 + 0.5) * 255
@@ -393,13 +425,17 @@ const SLEEVE_MATS = OUTFITMATS.tops.map((m) => {
   s.color.copy(m.color)
   s.roughness = m.roughness
   s.normalMap = fabricNormal()
-  s.normalScale = new THREE.Vector2(0.6, 0.6)
+  // v21: raised 0.6 -> 1.0. The map now carries large folds, not just weave, so
+  // the full-strength relief is what makes a garment read as draped cloth rather
+  // than a flat decal. Still below the level where the weave would read as
+  // canvas plating.
+  s.normalScale = new THREE.Vector2(1.0, 1.0)
   s.needsUpdate = true
   return s
 })
 for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) {
   m.normalMap = fabricNormal()
-  m.normalScale = new THREE.Vector2(0.6, 0.6)
+  m.normalScale = new THREE.Vector2(1.0, 1.0)
   m.needsUpdate = true
 }
 // Shared accessory geometry + materials (built once, reused across zombies;
