@@ -318,7 +318,16 @@ export class Multiplayer {
       p = e._proxy = {
         get isDead() { return self._dead || self._predictedDead },
         _id: self._id,
-        position: { x: 0, y: 0.85, z: 0 },
+        // Live position view (see RemoteZombie.getTarget): melee reads
+        // position.x/z without calling getHitboxes(), so a snapshot position
+        // would be stale and every co-op melee swing would miss.
+        get position() {
+          const v = self._posView || (self._posView = { x: 0, y: 0.85, z: 0 })
+          const bx = self._box ? self._box.position.x : 0
+          const bz = self._box ? self._box.position.z : 0
+          v.x = bx; v.y = 0; v.z = bz
+          return v
+        },
         knockback() {},
         shotgunArmor: SHOTGUN_ARMOR[self._type] != null ? SHOTGUN_ARMOR[self._type] : 1,
         getHitboxes() {

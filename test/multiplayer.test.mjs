@@ -115,6 +115,34 @@ test('co-op melee (axe/sword) kills a remote zombie via predicted death', () => 
   mp.dispose()
 })
 
+test('co-op melee reads the LIVE proxy position without getHitboxes (v21 fix)', () => {
+  // v21 co-op melee fix: the axe/sword swing loop reads z.position.{x,z} for the
+  // range check and NEVER calls getHitboxes() (only the firearms do). The proxy
+  // position used to be a plain snapshot taken at construction, so it froze at the
+  // zombie's spawn spot while the real zombie walked away — every co-op melee
+  // swing measured a stale distance and missed ("sword/axe don't hit in co-op").
+  // The position is now a live getter over the interpolated _x/_z, so a swing
+  // sees the current position with no getHitboxes() call.
+  const { mp } = makeMP()
+  mp.net.sendHit = () => {}
+  // A walker at (1, 2).
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 2, health: 100, state: 'chase', facing: 0 }
+  ] }) })
+  const t = mp.getTargets().find((q) => q._id === 'z1')
+  assert.equal(t.position.x, 1, 'position.x tracks the snapshot without getHitboxes')
+  assert.equal(t.position.z, 2, 'position.z tracks the snapshot without getHitboxes')
+  // A newer snapshot moves the zombie 10 m away; the proxy interpolates toward it.
+  mp.socket.receive({ t: MSG.SNAP, ...snap({ tick: 2, zombies: [
+    { id: 'z1', type: 'walker', x: 1, z: 12, health: 100, state: 'chase', facing: 0 }
+  ] }) })
+  for (let i = 0; i < 40; i++) mp.update(1 / 60)
+  // The melee-visible position must have advanced toward the new spot — proof it
+  // is live, not the frozen spawn value.
+  assert.ok(t.position.z > 2, 'melee-visible position follows the moved zombie')
+  mp.dispose()
+})
+
 test('avatar leaves the roster -> RemotePlayer disposed', () => {
   const { mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })

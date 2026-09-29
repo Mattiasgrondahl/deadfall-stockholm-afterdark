@@ -312,10 +312,17 @@ export class RemoteZombie {
     const proxy = {
       get isDead() { return self.isDead || self._predictedDead },
       _id: self.id,
-      // Melee weapons read z.position.{x,y,z} for range + blood; the proxy has
-      // no real Vector3, so expose a live plain object (and a no-op knockback)
-      // so melee hits register instead of throwing and freezing the loop.
-      position: { x: self._x, y: 0, z: self._z },
+      // Melee weapons read z.position.{x,y,z} for range + blood and NEVER call
+      // getHitboxes() (only the firearms do), so position must be a LIVE view of
+      // the interpolated zombie, not a snapshot taken at proxy construction. The
+      // old plain {x:self._x,...} froze at spawn, so a swung axe/sword measured a
+      // stale distance and every co-op melee swing missed ("sword/axe don't hit
+      // in co-op"). Getters keep position tracking self._x/_z every read.
+      get position() {
+        const v = self._posView || (self._posView = { x: 0, y: 0, z: 0 })
+        v.x = self._x; v.y = 0; v.z = self._z
+        return v
+      },
       knockback() {},
       shotgunArmor: SHOTGUN_ARMOR[self.type] != null ? SHOTGUN_ARMOR[self.type] : 1,
       getHitboxes() {
