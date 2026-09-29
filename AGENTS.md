@@ -263,8 +263,30 @@ tool call more than twice. Update TASKS.md after every meaningful action with
 changed files, focused test results, partial work, and the next action.
 
 Keep the working context below 120,000 tokens. If compaction fails, save state
-to TASKS.md and start another fresh round.
+to `TASKS.md` and start another fresh round.
 ```
+
+### Skill-loading rules
+
+The following names are documentation topics, not installed DSH skills:
+
+- `audio-postprocessing`
+- `blender-asset-authoring`
+- `asset-pipeline`
+
+Never call the DSH skill tool for those names. Read the relevant project
+documentation directly instead:
+
+```text
+docs/AGENT-ASSET-PIPELINE.md
+docs/ARCHITECTURE.md
+docs/V2-PLAN.md
+```
+
+If a skill load returns `unknown or no longer available`, do not retry it.
+Record the result as unavailable, inspect the named project documentation or
+source files directly, and continue with a different concrete action. Never
+repeat a failed skill load with a changed description.
 
 ## Conventions for agents working here
 

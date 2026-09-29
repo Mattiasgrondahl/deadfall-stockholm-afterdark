@@ -16,19 +16,27 @@
 //    silence reads as death better than letting a loop keep running)
 //
 // Every call no-ops when the audio bank is missing or has no music methods.
+//
+// v13: `enabled: false` (the shipped default in Game.js) keeps ALL bookkeeping
+// — track map, hysteresis, pause flag — but routes nothing to the bank: the
+// procedural oscillator soundtrack is disarmed because it played underneath
+// the mp3 playlist and read as a second music track. The mp3 songs + boss
+// track are the only in-game music now.
 
 export class MusicDirector {
-  constructor(audioBank, { bossEvery = 5 } = {}) {
+  constructor(audioBank, { bossEvery = 5, enabled = true } = {}) {
     this.audio = audioBank || null
     this.bossEvery = Math.max(1, Math.floor(bossEvery) || 5)
+    this.enabled = enabled !== false
     this._current = null   // last track handed to the bank
     this._wave = 0         // last wave seen (decides ambient vs combat)
     this._paused = false
   }
 
-  /** True when the bank exposes the procedural music API. */
+  /** True when the bank exposes the procedural music API AND the director is
+   *  enabled (v13: disabled in the shipped game — see header). */
   get available() {
-    return !!(this.audio && typeof this.audio.playMusicTrack === 'function')
+    return this.enabled && !!(this.audio && typeof this.audio.playMusicTrack === 'function')
   }
 
   /** Game state transitions: pause/resume/stop the soundtrack. */
