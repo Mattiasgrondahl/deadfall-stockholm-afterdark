@@ -390,13 +390,13 @@ test('remote zombies are hit-testable targets; a hit sends authoritative HIT + p
   mp.dispose()
 })
 
-test('remote zombie bodies have face + hair + eyes and mirror server limb loss', () => {
+test('remote zombie bodies have face + hair (no glowing eyes) and mirror server limb loss', () => {
   const { mp } = makeMP()
   mp.socket.receive({ t: MSG.SNAP, ...snap() })
   const e = mp.zombies.get('z1')
   assert.ok(e._face, 'remote body has a face')
   assert.ok(e._hair, 'remote body has hair')
-  assert.equal(e._eyes.length, 2, 'remote body has two eyes')
+  assert.equal(e._eyes.length, 0, 'v26d: no glowing eye boxes over the remote face')
   // v3 T10: a live remote body is grounded — the group origin sits at the ground
   // plane (feet at y 0), never floating above it like the old primitive box.
   assert.equal(e.group.position.y, 0, 'live remote zombie feet sit on the ground (y 0)')

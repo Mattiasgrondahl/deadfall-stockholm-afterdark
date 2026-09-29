@@ -161,8 +161,8 @@ test('shared geometry/materials; dispose detaches only the group', () => {
   }
   // Face: same type, different spawn positions -> possibly DIFFERENT shared
   // variant materials; each must be a member of the type's variant array.
-  assert.ok(FACEMAT.walker.includes(a.group.children[1].children[2].material), 'a face is a shared walker variant')
-  assert.ok(FACEMAT.walker.includes(b.group.children[1].children[2].material), 'b face is a shared walker variant')
+  assert.ok(FACEMAT.walker.includes(a.group.children[1].children[0].material), 'a face is a shared walker variant')
+  assert.ok(FACEMAT.walker.includes(b.group.children[1].children[0].material), 'b face is a shared walker variant')
   assert.equal(scene.children.length, 2) // two groups, no per-zombie geo
   a.dispose()
   assert.equal(scene.children.length, 1)
@@ -178,14 +178,14 @@ test('face variant: deterministic per-zombie pick, distributed across the varian
   const a = new Zombie(new THREE.Scene(), 'walker', 0, 0, 1)
   const a2 = new Zombie(new THREE.Scene(), 'walker', 0, 0, 1)
   assert.equal(variantOf(a), variantOf(a2), 'same position always picks the same variant')
-  assert.equal(a.group.children[1].children[2].material, a2.group.children[1].children[2].material)
+  assert.equal(a.group.children[1].children[0].material, a2.group.children[1].children[0].material)
   // Distributed: different positions map to different variant indices
   // (verified LCG phases: (0,0) -> 1, (1,0) -> 2), so the two face materials
   // really are different shared variant materials.
   const b = new Zombie(new THREE.Scene(), 'walker', 1, 0, 1)
   assert.notEqual(variantOf(a), variantOf(b), 'phases of (0,0) and (1,0) map to different variants')
-  const fa = a.group.children[1].children[2].material
-  const fb = b.group.children[1].children[2].material
+  const fa = a.group.children[1].children[0].material
+  const fb = b.group.children[1].children[0].material
   assert.ok(FACEMAT.walker.includes(fa) && FACEMAT.walker.includes(fb), 'both face materials are shared walker variants')
   assert.notEqual(fa, fb, 'different variants -> different face materials')
 })
@@ -208,7 +208,7 @@ test('hit flash swaps to HITMAT then restores per-part rest materials', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
   zombie.damage(10) // non-fatal
   for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
-  assert.ok(FACEMAT.walker.includes(zombie.group.children[1].children[2].material)) // face untouched by flash (a shared variant)
+  assert.ok(FACEMAT.walker.includes(zombie.group.children[1].children[0].material)) // face untouched by flash (a shared variant)
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
   for (let i = 0; i < zombie.group.children.length; i++) {
     assert.equal(zombie.group.children[i].material, zombie._restMats[i])
@@ -221,7 +221,7 @@ test('fatal hit switches every part to DEADMAT', () => {
   zombie.damage(zombie.maxHealth + 10)
   assert.ok(zombie.isDead)
   for (const m of zombie.group.children) assert.equal(m.material, DEADMAT)
-  assert.equal(zombie.group.children[1].children[2].material, DEADMAT) // face darkened with the corpse
+  assert.equal(zombie.group.children[1].children[0].material, DEADMAT) // face darkened with the corpse
 })
 
 test('L-pocket: walker touching two boxes slides out and keeps moving', () => {
@@ -247,30 +247,28 @@ test('L-pocket: walker touching two boxes slides out and keeps moving', () => {
   assert.ok(collision.isWalkable(zombie.position.x, zombie.position.z, 0.5))
 })
 
-test('eye glow: two shared-material eyes nested under head; dimmed on death', () => {
+test('face portrait: no glowing eyes over it, enlarged disc, lifted off the torso', () => {
   for (const type of ['walker', 'shambler', 'screamer']) {
     const { zombie } = makeZombie(type, 1, 1, 1)
     const head = zombie.group.children[1]
     assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
-    // Eyes + face + hair are always the first head children; a head-mounted
-    // accessory (police cap / fireman helmet) or a female long-hair prop is
-    // appended after them, so the count is 4 + (head-mounted props).
+    // v26d: the glowing eye boxes are gone — the face portrait is now the first
+    // head child, followed by hair and any head-mounted accessory / female
+    // long-hair prop. So the count is 1 (face) + 1 (hair) + head props.
     const headAcc = zombie._acc && head.children.includes(zombie._acc) ? 1 : 0
     const headProps = (zombie._outfitProps || []).filter(p => head.children.includes(p)).length
-    assert.equal(head.children.length, 4 + headAcc + headProps, `${type}: eye + face + hair count`)
-    assert.equal(head.children[0].position.x, -0.075)
-    assert.equal(head.children[0].position.z, 0.14)
-    assert.equal(head.children[1].position.x, 0.075)
-    for (const eye of head.children.slice(0, 2)) assert.equal(eye.material, EYEMAT[type])
-    const face = head.children[2]
-    assert.deepEqual(face.position.toArray(), [0, 0, 0.155])
-    assert.ok(FACEMAT[type].includes(face.material))
+    assert.equal(head.children.length, 2 + headAcc + headProps, `${type}: face + hair count`)
+    const face = head.children[0]
+    assert.ok(FACEMAT[type].includes(face.material), `${type}: head child 0 is the face`)
+    assert.deepEqual(face.position.toArray(), [0, 0.01, 0.155], `${type}: face lifted, proud of the head`)
+    assert.ok(face.geometry.parameters.radius > 0.13, `${type}: face disc enlarged to show the full portrait`)
     assert.ok(!zombie._parts.includes(face), `${type}: face excluded from hit-flash parts`)
+    // No glowing eye boxes anywhere on the head.
+    // No glowing eye boxes anywhere on the head (no child is the tiny eye box).
+    assert.equal(zombie._eyes.length, 0, `${type}: glowing eyes removed`)
+    assert.ok(!head.children.some(c => c.geometry && c.geometry.type === 'BoxGeometry' &&
+      Math.abs(c.geometry.parameters.width - 0.07) < 1e-9), `${type}: no eye box under the head`)
   }
-  const { zombie } = makeZombie('walker', 0, 0, 1)
-  assert.equal(zombie._eyes.length, 2)
-  zombie.damage(zombie.maxHealth + 10)
-  for (const e of zombie._eyes) assert.equal(e.material, DEADEYEMAT)
 })
 
 test('contactNormal writes into caller scratch (no per-frame allocs)', () => {

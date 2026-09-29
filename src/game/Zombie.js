@@ -154,7 +154,13 @@ const POSE2 = {
 // (radius 0.13 keeps the same head width). A shared circular alphaMap + alphaTest
 // clips the corners so only the centered head reads (the portraits are head-
 // centered and fill the frame, per vision inspection).
-const FACE_GEO = new THREE.CircleGeometry(0.13, 24)
+// v26d: the user reports the face is partly hidden by the body and the glowing
+// eyes cover the eyes painted on the portrait. The circle is enlarged 0.13→0.15
+// so the full portrait (including the chin) clears the torso, and the glowing
+// eye boxes are no longer placed over the face (see the head builders) so the
+// portrait's own eyes read. A slightly larger disc still clips cleanly via the
+// shared round alpha mask.
+const FACE_GEO = new THREE.CircleGeometry(0.15, 24)
 // One shared round alpha mask: white disc (opaque) on black (transparent), so
 // alphaTest discards the square corners and keeps the head.
 const FACE_ALPHA = (() => {
@@ -837,15 +843,11 @@ export { loadSkinMesh, MESH_ASSET, meshCache }
 export function buildFaceFor(type, dropY = 0) {
   const variant = 0
   const face = new THREE.Mesh(FACE_GEO, FACEMAT[type] ? FACEMAT[type][variant] : FACEMAT.walker[variant])
-  face.position.set(0, dropY + 0.02, 0.13)
-  const eyes = []
-  const eMat = EYEMAT[type] || EYEMAT.walker
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(EYE, eMat)
-    eye.position.set(0.07 * side, dropY + 0.05, 0.12)
-    eyes.push(eye)
-  }
-  return { face, eyes }
+  // v26d: lift the portrait a touch and drop the glowing eye boxes that used to
+  // sit on top of it and hide the painted eyes. The face image now carries its
+  // own eyes, so `eyes` is returned empty (callers still iterate it safely).
+  face.position.set(0, dropY + 0.03, 0.13)
+  return { face, eyes: [] }
 }
 
 /** Build the full primitive humanoid body (torso, head, arms, legs, face, eyes,
@@ -879,17 +881,12 @@ export function buildPrimitiveBody(type, phase) {
   head.scale.set(pose.headS[0], pose.headS[1], pose.headS[2])
   head.rotation.x = pose.headR
   parts.push(head)
+  // v26d: no glowing eye boxes over the head — the portrait carries its own
+  // eyes, and the boxes were hiding them. `eyes` stays empty for callers.
   const eyes = []
-  const eMat = EYEMAT[t]
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(EYE, eMat)
-    eye.position.set(0.075 * side, 0.03, 0.14)
-    head.add(eye)
-    eyes.push(eye)
-  }
   const variant = Math.floor((phase / (2 * Math.PI)) * 3) % 3
   const face = new THREE.Mesh(FACE_GEO, FACEMAT[t][variant])
-  face.position.set(0, 0, 0.155)
+  face.position.set(0, 0.01, 0.155)
   head.add(face)
   // Hair cap on top of the head so the silhouette reads as a person.
   const hair = new THREE.Mesh(HAIR_GEO, HAIR_MATS[outfit % HAIR_MATS.length])
@@ -1142,27 +1139,21 @@ export class Zombie {
     head.rotation.x = pose.headR
     this._head = head
     parts.push(head)
-    // Eye glow: two small unlit boxes nested under the head; local +z faces the
-    // player (group.rotation.y = atan2(dx, dz)). Shared per-type material. Eyes
-    // are NOT in _parts, so hit flash and death swaps never touch them.
-    const eMat = EYEMAT[type]
+    // v26d: the glowing eye boxes used to sit over the face portrait and hide
+    // the eyes painted on it. They are gone now — the portrait carries its own
+    // eyes. `this._eyes` stays an (empty) array so the death-swap loop and the
+    // head-reparent loops below remain safe no-ops.
     this._eyes = []
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(EYE, eMat)
-      eye.position.set(0.075 * side, 0.03, 0.14)
-      head.add(eye)
-      this._eyes.push(eye)
-    }
     // Face portrait plane nested under the head, just in front of the head's
-    // front face (0.15 -> 0.155, no z-fighting); the eyes (front z 0.16) still
-    // protrude over the portrait. NOT in _parts, so hit flash never touches it;
-    // only the death branch swaps it to DEADMAT.
+    // front face (0.15 -> 0.155, no z-fighting). Lifted a touch (+0.01) so the
+    // chin clears the torso. NOT in _parts, so hit flash never touches it; only
+    // the death branch swaps it to DEADMAT.
     // Variant pick: the spawn-derived LCG phase (above) selects one of the
     // 3 shared variant materials per zombie — deterministic (no Math.random)
     // and spreads zombies of a type across the variants by position.
     const variant = Math.floor((this._phase / (2 * Math.PI)) * 3) % 3
     const face = new THREE.Mesh(FACE_GEO, FACEMAT[type][variant])
-    face.position.set(0, 0, 0.155)
+    face.position.set(0, 0.01, 0.155)
     head.add(face)
     this._face = face
     // Hair cap on top of the head so the silhouette reads as a person with hair.
@@ -1342,7 +1333,7 @@ export class Zombie {
       // Keep both placements recorded for compatibility, but parent to the head.
       const faceDrop = -0.7
       this._faceOnBone = new THREE.Vector3(0, faceDrop, 0.13)
-      this._faceOnHead = new THREE.Vector3(0, 0, 0.155)
+      this._faceOnHead = new THREE.Vector3(0, 0.01, 0.155)
       this._eyeOnBone = new THREE.Vector3(0.07, faceDrop + 0.05, 0.12)
       this._eyeOnHead = new THREE.Vector3(0.075, 0.03, 0.14)
       const headHost = this._parts[1]

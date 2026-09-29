@@ -46,7 +46,8 @@ test('attachSkin swaps primitives for a skinned mesh and routes states', async (
   // overrides the clothed primitive up close.
   assert.ok(z._parts.every((p) => p.visible === true), 'all primitives visible (primitive is the visual)')
   assert.equal(z._face.parent, z._parts[1], 'face stays on the primitive head')
-  assert.equal(z._eyes[0].parent, z._parts[1], 'eyes stay on the primitive head')
+  // v26d: the glowing eye boxes are gone (the portrait carries its own eyes).
+  assert.equal(z._eyes.length, 0, 'no glowing eye boxes over the face')
   assert.equal(z._skin.root.visible, false, 'skinned root hidden (primitive is the visual)')
   // Actions exist for the mapped states (fallback to Idle where a clip is absent).
   for (const s of ['idle', 'walk', 'run', 'attack', 'hurt', 'death']) {
