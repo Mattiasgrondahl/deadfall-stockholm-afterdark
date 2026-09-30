@@ -10,6 +10,7 @@ import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
 import { DroppedLimbPool } from '../game/DroppedLimbPool.js'
 import { FlagState, TEAMS as CTF_TEAMS } from '../game/Flag.js'
 import { CityCTF, CTF_BASES } from '../world/CityCTF.js'
+import { SwarmDirector } from '../game/SwarmDirector.js'
 
 /**
  * Match — Phase 0 of MULTIPLAYER_PLAN.md (§4.1, §9): the server-side
@@ -128,13 +129,27 @@ export class Match {
     // The server never renders, so the pool's meshes are inert here — it
     // exists to keep the code path identical (and to bound limb meshes).
     this.limbs = new DroppedLimbPool(this.scene)
-    this.wave = new WaveManager(this.scene, this.spawnPoints, this.collision, null, {
-      onWaveStart: (w) => this.events.push({ k: 'waveStart', wave: w }),
-      onWaveCleared: (w) => this.events.push({ k: 'waveCleared', wave: w }),
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
-      onBossIncoming: (w) => this.events.push({ k: 'bossIncoming', wave: w }),
-      onBossSpawn: (w) => this.events.push({ k: 'bossSpawn', wave: w })
-    })
+    // Survival uses discrete waves; CTF drives a continuous neutral swarm instead.
+    this.swarm = null
+    if (this.mode === 'ctf') {
+      this.wave = null
+      this.swarm = new SwarmDirector({
+        spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+        players: () => Array.from(this.players.values()).filter((s) => !s.disconnected),
+        flag: this.flag,
+        liveCount: () => this.zombies.filter((z) => !z.isDead).length,
+        bases: this.city.bases
+      })
+      this.swarm.start()
+    } else {
+      this.wave = new WaveManager(this.scene, this.spawnPoints, this.collision, null, {
+        onWaveStart: (w) => this.events.push({ k: 'waveStart', wave: w }),
+        onWaveCleared: (w) => this.events.push({ k: 'waveCleared', wave: w }),
+        spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+        onBossIncoming: (w) => this.events.push({ k: 'bossIncoming', wave: w }),
+        onBossSpawn: (w) => this.events.push({ k: 'bossSpawn', wave: w })
+      })
+    }
 
     // Authoritative core state (WorldCore.updateWorld). ws.zombies is
     // this.zombies itself, so the core's corpse removal and the wave spawner
@@ -152,7 +167,7 @@ export class Match {
     }
 
     for (const p of opts.players || []) this.addPlayer(p.id, p.x, p.z)
-    this.wave.reset() // start wave 1 (fires the waveStart event)
+    if (this.wave) this.wave.reset() // start wave 1 (fires the waveStart event)
   }
 
   /** Add a player at (x, z) (default: shared spawn). Returns the slot or null. */
@@ -285,6 +300,7 @@ export class Match {
     // CTF: drive the flag state machine from live player positions, then check
     // the win condition (first team to WIN_SCORE captures).
     if (this.mode === 'ctf' && this.flag) {
+      if (this.swarm) this.swarm.update(dt)
       this._processFlags()
       if (this.flag.winner) { this._end('ctf'); return }
     }
