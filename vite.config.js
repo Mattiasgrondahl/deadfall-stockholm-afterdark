@@ -20,6 +20,11 @@ export default defineConfig({
       '/api/highscore': {
         target: process.env.MP_SERVER || 'http://127.0.0.1:8080',
       },
+      // v29 lobby browser: the title screen polls GET /api/lobby for live rooms +
+      // online counts, served by the same game server.
+      '/api/lobby': {
+        target: process.env.MP_SERVER || 'http://127.0.0.1:8080',
+      },
     },
   },
   preview: { port: 4173, host: true },

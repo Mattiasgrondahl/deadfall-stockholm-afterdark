@@ -8,6 +8,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { startServer } from '../server/server.js'
+import WebSocket from 'ws'
+import { buildHello, MAX_PLAYERS } from '../src/net/protocol.js'
 
 /** Boot a server and resolve once it is actually listening. */
 function listen(opts = {}) {
@@ -74,26 +76,20 @@ test('v6: the leaderboard caps at 10 entries, keeping the highest scores', async
   } finally { s.close() }
 })
 
-test('v3 T6: a hostile XSS name is sanitized server-side, never stored as markup', async () => {
-  const s = await listen({ highScore: 10 })
+test('v29: an XSS-probe name is rejected outright, never stored on the board', async () => {
+  const s = await listen({ highScore: 10, highScoreName: 'Ana' })
   try {
     const post = (body) => fetch(s.base + '/api/highscore', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
-    // Control chars stripped, whitespace collapsed, clamped to 24 chars.
-    const hostile = '<img src=x onerror=alert(1)>\n\t<b>zz</b>'
-    const r = await (await post(JSON.stringify({ score: 500, name: hostile }))).json()
-    assert.equal(r.best, 500)
-    const holder = r.top[0]
-    assert.ok(holder.name.length <= 24, `name clamped to 24 (${holder.name.length})`)
-    assert.ok(!new RegExp('[\\u0000-\\u001f\\u007f]').test(holder.name), 'no control characters survive')
-    assert.ok(!/\s{2,}/.test(holder.name), 'no runs of whitespace survive')
-    // v4 XSS defense-in-depth: HTML-significant characters are stripped at the
-    // source too, so the payload is neutralized even before the textContent
-    // render. v4 UI: the name is also allow-listed to a-z 0-9 space _ ! ?, so
-    // every other char (parens, =, /) is dropped too — the payload can't even
-    // survive as inert text. Assert the exact cleaned string.
-    assert.ok(!/[<>&"']/.test(holder.name), 'no HTML-significant characters survive')
-    assert.ok(!/[^A-Za-z0-9 _!?]/.test(holder.name), 'only the allowed charset survives')
-    assert.equal(holder.name, 'img srcx onerroralert1bz')
+    // A leftover injection probe is now dropped (not just sanitized into inert
+    // text), so it can never sit on the shared board or be restored on restart.
+    const probe = '<img src=x onerror=alert(1)>\n\t<b>zz</b>'
+    const r = await (await post(JSON.stringify({ score: 500, name: probe }))).json()
+    assert.ok(!r.top.some((e) => /onerror|alert|img\s*src/i.test(e.name)), 'probe payload rejected')
+    assert.equal(r.best, 10, 'the probe did not take the lead')
+    // A clean name still posts normally.
+    const clean = await (await post(JSON.stringify({ score: 700, name: 'Zed' }))).json()
+    assert.equal(clean.best, 700)
+    assert.ok(clean.top.some((e) => e.name === 'Zed' && e.score === 700), 'clean name stored')
   } finally { s.close() }
 })
 
@@ -141,6 +137,58 @@ test('v7/v8: each room keeps its own seeded leaderboard, isolated from the defau
     assert.equal(blank.best, 500, 'blank room falls back to default')
   } finally {
     s.close()
+    if (prev === undefined) delete process.env.HIGHSCORE_FILE
+    else process.env.HIGHSCORE_FILE = prev
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('v29: GET /api/lobby lists live rooms with player counts (root + base path)', async () => {
+  const s = await listen()
+  try {
+    // No connections yet -> empty lobby, zero online.
+    const empty = await (await fetch(s.base + '/api/lobby')).json()
+    assert.deepEqual(empty, { rooms: [], players: 0 }, 'empty lobby when nobody is connected')
+    // Two players in one room, one in another -> both listed, sorted by count.
+    const wsBase = s.base.replace(/^http/, 'ws')
+    const join = (name, room) => new Promise((resolve) => {
+      const w = new WebSocket(wsBase + '/ws')
+      w.on('open', () => w.send(JSON.stringify(buildHello(name, room))))
+      w.on('message', (m) => { const j = JSON.parse(m.toString()); if (j.t === 'welcome') resolve(w) })
+    })
+    const sockets = [await join('Alice', 'ARENA_1'), await join('Bob', 'ARENA_1'), await join('Cara', 'OTHER_2')]
+    await new Promise((r) => setTimeout(r, 60))
+    const a = await (await fetch(s.base + '/api/lobby')).json()
+    assert.equal(a.players, 3, 'total online reflects all rooms')
+    assert.equal(a.rooms.length, 2, 'two live rooms')
+    assert.deepEqual(a.rooms[0], { room: 'ARENA_1', players: 2, max: MAX_PLAYERS }, 'busiest room first')
+    assert.deepEqual(a.rooms[1], { room: 'OTHER_2', players: 1, max: MAX_PLAYERS }, 'second room')
+    // The Pages base path answers the same shape.
+    const b = await (await fetch(s.base + '/deadfall-stockholm-afterdark/api/lobby')).json()
+    assert.equal(b.players, 3, 'base-path lobby matches')
+    for (const w of sockets) w.close()
+  } finally { s.close() }
+})
+
+test('v29: a persisted XSS-probe entry is purged on read, never restored', async () => {
+  // A leaderboard file that still holds the old injection probe + an empty-name
+  // junk row must come back clean: readHighScore drops both, so a redeploy that
+  // reuses the same file cannot resurrect the payload.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hs-purge-'))
+  const prev = process.env.HIGHSCORE_FILE
+  process.env.HIGHSCORE_FILE = path.join(dir, 'highscore.json')
+  fs.writeFileSync(process.env.HIGHSCORE_FILE, JSON.stringify({
+    top: [{ name: 'img srcx onerroralert1bz', score: 500 }, { name: '', score: 10 }]
+  }))
+  try {
+    const s = await listen()
+    try {
+      const r = await (await fetch(s.base + '/api/highscore')).json()
+      assert.ok(!r.top.some((e) => /onerror|alert|img\s*src/i.test(e.name)), 'probe payload purged')
+      assert.ok(r.top.length > 0, 'the board still answers (seed ladder + any clean rows)')
+      assert.ok(r.top.every((e) => !/onerror|alert|img\s*src/i.test(e.name)), 'no probe survives anywhere')
+    } finally { s.close() }
+  } finally {
     if (prev === undefined) delete process.env.HIGHSCORE_FILE
     else process.env.HIGHSCORE_FILE = prev
     fs.rmSync(dir, { recursive: true, force: true })

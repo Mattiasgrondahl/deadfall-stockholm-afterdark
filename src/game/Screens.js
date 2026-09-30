@@ -14,6 +14,12 @@
 import { VERSION } from '../version.js'
 import { sanitizeName } from './Score.js'
 
+// v29 lobby browser: how often the title screen re-polls GET /api/lobby, and how
+// many open rooms it lists at most. A 3 s cadence keeps the online count fresh
+// without hammering the host; 8 rows matches the server's per-room player cap.
+const LOBBY_POLL_MS = 3000
+const MAX_LOBBY_ROWS = 8
+
 // v6: random player-handle generator. AGENTS.md forbids Math.random in src/,
 // so this uses the standard seeded-LCG shape (see AmmoDrops._rand) seeded from
 // the load time — a fresh name per page load, deterministic within a load so
@@ -51,6 +57,10 @@ export function randomRoomCode(seed) {
 }
 
 export class Screens {
+  // v29: lobby poll cadence + row cap, exposed as statics so tests can read them.
+  static LOBBY_POLL_MS = LOBBY_POLL_MS
+  static MAX_LOBBY_ROWS = MAX_LOBBY_ROWS
+
   constructor(root, game) {
     this._doc = root.ownerDocument
     this._root = root
@@ -199,6 +209,17 @@ export class Screens {
     mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(roomHint)
     mpRow.appendChild(joinBtn)
     panelT.appendChild(mpRow)
+    // v29 LOBBY BROWSER: a live list of open co-op rooms on the title screen so
+    // other players can see how many people are online and click a room to drop
+    // into it. Populated from GET /api/lobby (see _refreshLobby). Every label is
+    // textContent-only, so a hostile room code renders as inert text, never markup.
+    const lobbyRow = d.createElement('div'); lobbyRow.className = 'mp-row lobby-row'
+    const lobbyLabel = d.createElement('div'); lobbyLabel.className = 'difficulty-label'; lobbyLabel.textContent = 'LOBBIES'
+    this._lobbyOnline = d.createElement('div'); this._lobbyOnline.className = 'lobby-online'
+    this._lobbyOnline.textContent = 'ONLINE: 0'
+    const lobbyList = d.createElement('div'); lobbyList.className = 'lobby-list'; this._lobbyList = lobbyList
+    lobbyRow.appendChild(lobbyLabel); lobbyRow.appendChild(this._lobbyOnline); lobbyRow.appendChild(lobbyList)
+    panelT.appendChild(lobbyRow)
     // Title-screen backdrop: the Wan2GP-generated alley plate sits behind the
     // panel inside the title overlay (dimmed by the overlay's own rgba wash).
     // Missing image is harmless — the browser just renders no background.
@@ -565,6 +586,82 @@ export class Screens {
     this._game.startMultiplayer({ room, name })
   }
 
+  /** v29: join a specific room straight from the lobby list — set the room input
+   *  to it (so the same code shows in the field) and join, reusing the co-op
+   *  path. A blank/absent code falls back to the default room. */
+  _joinRoom(room) {
+    const code = sanitizeName(room) || 'default'
+    if (this._roomInput) this._roomInput.value = code
+    this._joinCoop()
+  }
+
+  /** v29: pull the live lobby from GET /api/lobby and repopulate the title-screen
+   *  LOBBIES list — the total online count plus one clickable row per open room
+   *  (room code + player count). Best-effort: a fetch failure leaves the last
+   *  list standing rather than blanking it. Rows are textContent-only and click
+   *  straight into _joinRoom. */
+  async _refreshLobby(fetchFn) {
+    if (!this._lobbyList || !this._lobbyOnline) return
+    const f = fetchFn || (typeof fetch !== 'undefined' ? fetch : null)
+    if (!f) return
+    let j
+    try {
+      const r = await f(this._apiBase() + '/api/lobby')
+      if (!r || !r.ok) return
+      j = await r.json()
+    } catch { return } // network/host failure -> keep the previous list
+    const rooms = Array.isArray(j && j.rooms) ? j.rooms : []
+    const total = Number(j && j.players)
+    this._lobbyOnline.textContent = 'ONLINE: ' + (Number.isFinite(total) && total > 0 ? total : 0)
+    // Rebuild the rows from scratch each poll; the list is short (<= 8 rows) so
+    // this is cheap and avoids stale rows pointing at rooms that closed.
+    const d = this._doc
+    const list = this._lobbyList
+    while (list.firstChild) list.removeChild(list.firstChild)
+    this._lobbyRows = []
+    for (let i = 0; i < rooms.length && i < Screens.MAX_LOBBY_ROWS; i++) {
+      const e = rooms[i]
+      if (!e || typeof e !== 'object') continue
+      const code = sanitizeName(e.room)
+      if (!code) continue
+      const players = Number(e.players)
+      const max = Number(e.max)
+      const row = d.createElement('button')
+      row.className = 'lobby-entry'
+      row.textContent = code + '  ·  ' + (Number.isFinite(players) ? players : 0) + '/' + (Number.isFinite(max) ? max : 8)
+      row.addEventListener('click', () => this._joinRoom(code))
+      list.appendChild(row)
+      this._lobbyRows.push(row)
+    }
+    if (!this._lobbyRows.length) {
+      const empty = d.createElement('div'); empty.className = 'lobby-empty'
+      empty.textContent = 'No open lobbies — start a co-op room to play together.'
+      list.appendChild(empty)
+    }
+  }
+
+  /** v29: the host base for /api/lobby, mirroring Score._apiBase — the browser
+   *  origin in production (and the dev proxy), the base path otherwise. */
+  _apiBase() {
+    if (typeof location !== 'undefined' && location && location.host) {
+      return location.protocol + '//' + location.host
+    }
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
+    return base.replace(/\/$/, '')
+  }
+
+  /** v29: start polling the lobby while the title screen is up, and stop when it
+   *  is not. A single interval is reused; the first poll fires immediately. */
+  _startLobbyPoll() {
+    if (this._lobbyTimer) return
+    this._refreshLobby()
+    this._lobbyTimer = setInterval(() => { this._refreshLobby() }, Screens.LOBBY_POLL_MS)
+  }
+
+  _stopLobbyPoll() {
+    if (this._lobbyTimer) { clearInterval(this._lobbyTimer); this._lobbyTimer = 0 }
+  }
+
   /** v3 T6 / v11: START a solo run, carrying the chosen display name into the
    *  score so a new record is attributed to it (and hosted). The same name input
    *  feeds co-op, so one handle covers both modes. */
@@ -614,6 +711,9 @@ export class Screens {
     this._banner.classList.remove('show')
     if (this._bannerTimer) { clearTimeout(this._bannerTimer); this._bannerTimer = 0 }
     if (this._game.hud) this._game.hud.hide()
+    // v29: leaving the title stops the lobby poll — no point hitting /api/lobby
+    // while gameplay/pause/game-over is up.
+    this._stopLobbyPoll()
   }
 
   showTitle() {
@@ -633,6 +733,9 @@ export class Screens {
       }
       this._game.score._onBestChange = this._hsRefresh
     }
+    // v29: the title screen is the lobby browser — start polling /api/lobby so
+    // the online count and open rooms stay fresh while the player is here.
+    this._startLobbyPoll()
   }
 
   /** v6: populate the title-screen TOP 10 board from the hosted leaderboard
@@ -791,6 +894,8 @@ export class Screens {
     }
     this._hsRefresh = null
     if (this._bannerTimer) clearTimeout(this._bannerTimer)
+    // v29: stop the lobby poll so a disposed Screens leaves no live interval.
+    this._stopLobbyPoll()
     // v4 VISUALS (D1): stop the attract clip + release its media resource so
     // the decoded buffer / network stream are freed, not just the DOM node.
     if (this._titleVideo) {

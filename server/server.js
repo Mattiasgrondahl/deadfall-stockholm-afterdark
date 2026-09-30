@@ -43,6 +43,11 @@ const HS_MARKUP = new RegExp('[<>&"\']', 'g')
 // POST like `img src=x onerror=alert(1)` can never be stored — every disallowed
 // char is dropped. Mirrors the client sanitizeName in src/game/Score.js.
 const HS_ALLOWED = new RegExp('[^A-Za-z0-9 _!?]', 'g')
+// v29: junk filter for the leaderboard. A stored entry is dropped when its
+// sanitized name matches a known injection-probe signature (the leftover `img
+// srcx onerroralert1bz` payload that used to sit on the board). cleanEntry
+// applies it, so a payload already persisted is purged on read AND never rewritten.
+const HS_XSS_PROBE = new RegExp('onerror|onload|alert|script|img\\s*src', 'i')
 
 // v4 request logging: make writes attributable. The server had no per-request
 // logging at all, so a hostile POST (e.g. the XSS name) left no trace of who
@@ -131,12 +136,20 @@ const DEFAULT_TOP = [
   { name: 'SETTOR', score: 100 }
 ]
 
-/** Coerce one stored/hosted entry to a clean {name, score}; null when junk. */
+/** Coerce one stored/hosted entry to a clean {name, score}; null when junk.
+ *  v29: an entry is junk when its score is not a positive finite number, or when
+ *  its sanitized name matches a known injection-probe signature (the leftover
+ *  `img srcx onerroralert1bz` payload that used to sit on the board). Dropping
+ *  these on read AND write means a payload that was once persisted is purged from
+ *  the board and never restored on a server restart/redeploy. An empty name is
+ *  still allowed (the seed path posts a bare best with no holder name). */
 function cleanEntry(e) {
   if (!e || typeof e !== 'object') return null
   const v = Number(e.score)
   if (!Number.isFinite(v) || v <= 0) return null
-  return { name: sanitizeName(e.name), score: Math.floor(v) }
+  const name = sanitizeName(e.name)
+  if (HS_XSS_PROBE.test(name)) return null // known injection-probe artifact -> junk
+  return { name, score: Math.floor(v) }
 }
 
 /** Normalize a top list: drop junk, sort by score desc (ties keep insertion
@@ -254,6 +267,30 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
 }
 
+/** v29 lobby browser: answer GET /api/lobby with the live co-op rooms so the
+ *  title screen can show how many players are online and let a visitor click a
+ *  room to join. Each room reports its code, current player count, and capacity.
+ *  Rooms that have drained to zero players are omitted (nothing to join). The
+ *  registry is the room-code -> Room Map attached as req._rooms. */
+function serveLobby(req, res) {
+  logReq(req)
+  const rooms = req._rooms
+  const out = []
+  let total = 0
+  if (rooms && typeof rooms.forEach === 'function') {
+    rooms.forEach((room, code) => {
+      const players = room && room.sockets ? room.sockets.size : 0
+      if (players <= 0) return // empty room -> nothing to join
+      out.push({ room: code, players, max: MAX_PLAYERS })
+      total += players
+    })
+  }
+  // Most-populated first so the busiest lobby is the obvious click target.
+  out.sort((a, b) => b.players - a.players)
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+  res.end(JSON.stringify({ rooms: out, players: total }))
+}
+
 function serveStatic(req, res) {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
   // Hosted high-score API, served at both the root and the Pages base path so
@@ -262,6 +299,15 @@ function serveStatic(req, res) {
   const hsStore = req._hsStore
   if (hsStore && (urlPath === '/api/highscore' || urlPath === '/deadfall-stockholm-afterdark/api/highscore')) {
     serveHighScore(req, res, hsStore)
+    return
+  }
+  // v29 lobby browser: GET /api/lobby lists the live co-op rooms so the title
+  // screen can show how many players are online and let a visitor click a room
+  // to join it. Served at both the root and the Pages base path, like the
+  // high-score API. The room registry is attached as req._rooms by the HTTP
+  // handler; an empty/absent registry answers an empty list.
+  if (urlPath === '/api/lobby' || urlPath === '/deadfall-stockholm-afterdark/api/lobby') {
+    serveLobby(req, res)
     return
   }
   // The Pages build is emitted with Vite base `/deadfall-stockholm-afterdark`,
@@ -419,7 +465,7 @@ export function startServer(opts = {}) {
   } else {
     hsStore.set(DEFAULT_ROOM, readHighScore(DEFAULT_ROOM))
   }
-  const httpServer = http.createServer((req, res) => { req._hsStore = hsStore; serveStatic(req, res) })
+  const httpServer = http.createServer((req, res) => { req._hsStore = hsStore; req._rooms = rooms; serveStatic(req, res) })
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
   wss.on('connection', (socket) => {

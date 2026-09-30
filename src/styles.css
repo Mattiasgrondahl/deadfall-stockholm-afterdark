@@ -799,6 +799,30 @@ html, body {
 }
 .mp-input:focus { border-color: var(--accent); outline: none; }
 
+/* v29 lobby browser: online count + clickable open-room rows on the title screen. */
+.lobby-row { margin-top: 14px; }
+.lobby-online {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.lobby-list { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.lobby-entry {
+  background: rgba(10, 14, 22, 0.6);
+  border: 1px solid var(--panel-edge);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lobby-entry:hover { border-color: var(--accent); background: rgba(20, 28, 42, 0.7); }
+.lobby-empty { font-size: 12px; opacity: 0.7; letter-spacing: 0.04em; }
+
 /* v12: co-op scoreboard health bars + kill feed (built in Multiplayer._renderScoreboard). */
 .mp-hp {
   height: 4px;

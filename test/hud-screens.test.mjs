@@ -998,4 +998,55 @@ function fakeWave(o) {
   screens.dispose()
 }
 
+{
+  // v29: the title-screen lobby browser shows the online count + one clickable
+  // row per open room, and clicking a row joins that room via startMultiplayer.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  let joined = null
+  game.startMultiplayer = (opts) => { joined = opts }
+  game.score = { best: 0, top: [], _onBestChange: null }
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  // A fake lobby response: two open rooms, three players online.
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({ rooms: [{ room: 'ARENA_1', players: 2, max: 8 }, { room: 'OTHER_2', players: 1, max: 8 }], players: 3 })
+  })
+  await screens._refreshLobby(fakeFetch)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  const online = find(title, 'lobby-online')
+  assert.strictEqual(online.textContent, 'ONLINE: 3', 'online count reflects the lobby')
+  const list = find(title, 'lobby-list')
+  const entries = list.children.filter((c) => c.classList.contains('lobby-entry'))
+  assert.strictEqual(entries.length, 2, 'one row per open room')
+  assert.ok(entries[0].textContent.includes('ARENA_1') && entries[0].textContent.includes('2/8'), 'row shows room code + player count')
+  // Clicking the first row joins that room (sets the room input + calls startMultiplayer).
+  entries[0]._listeners.click[0]()
+  assert.ok(joined, 'clicking a lobby row starts a co-op join')
+  assert.strictEqual(joined.room, 'ARENA_1', 'joins the clicked room')
+  assert.ok(joined.name, 'carries a display name')
+  screens.dispose()
+  assert.strictEqual(screens._lobbyTimer, 0, 'dispose stops the lobby poll')
+}
+
+{
+  // v29: an empty lobby renders the placeholder rather than blank rows.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  game.score = { best: 0, top: [], _onBestChange: null }
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  await screens._refreshLobby(async () => ({ ok: true, json: async () => ({ rooms: [], players: 0 }) }))
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  assert.strictEqual(find(title, 'lobby-online').textContent, 'ONLINE: 0', 'zero online')
+  assert.ok(find(title, 'lobby-empty'), 'empty placeholder shown')
+  // A failed fetch leaves the previous list standing (no throw, no blank).
+  await screens._refreshLobby(async () => { throw new Error('network down') })
+  assert.strictEqual(find(title, 'lobby-online').textContent, 'ONLINE: 0', 'fetch failure is swallowed')
+  screens.dispose()
+}
+
 console.log('hud-screens OK')
