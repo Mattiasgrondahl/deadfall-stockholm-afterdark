@@ -59,6 +59,7 @@ test('carrying the enemy flag home scores a capture', () => {
 test('a carrier who dies drops the flag', () => {
   const m = ctfMatch()
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
+  place(m, 'b', 0, 0) // move the krag owner off their base so the drop stays free
   run(m, 0.1)
   assert.equal(m.flag.flagOf('krag').carrier, 'a')
   m.getPlayer('a').player.damage(9999) // killed -> drop
@@ -72,6 +73,7 @@ test('a carrier who dies drops the flag', () => {
 test('a carrier who is HIT (non-lethal) drops the flag', () => {
   const m = ctfMatch()
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
+  place(m, 'b', 0, 0) // move the krag owner off their base so the drop stays free
   run(m, 0.1)
   assert.equal(m.flag.flagOf('krag').carrier, 'a')
   const p = m.getPlayer('a').player
@@ -110,4 +112,27 @@ test('survival mode has no flag state and keeps team null', () => {
   assert.equal(m.players.get('a').team, null, 'no team in survival')
   const snap = m.snapshot()
   assert.equal(snap.ctf, undefined, 'no ctf block in survival snapshot')
+})
+
+test('CTF players spawn at their own base flag', () => {
+  const m = ctfMatch()
+  // 'a' is lovis → lovis base; 'b' is krag → krag base.
+  const a = m.getPlayer('a').player, b = m.getPlayer('b').player
+  assert.equal(a.position.x, CTF_BASES.lovis.x, 'lovis player spawns at lovis base x')
+  assert.equal(a.position.z, CTF_BASES.lovis.z, 'lovis player spawns at lovis base z')
+  assert.equal(b.position.x, CTF_BASES.krag.x, 'krag player spawns at krag base x')
+  assert.equal(b.position.z, CTF_BASES.krag.z, 'krag player spawns at krag base z')
+})
+
+test('a dead CTF player respawns at their own base', () => {
+  const m = ctfMatch()
+  const a = m.getPlayer('a').player
+  // Move 'a' off their base, then kill them.
+  place(m, 'a', 0, 0)
+  a.damage(9999)
+  assert.ok(a.isDead, 'a is dead')
+  run(m, 3.2) // past RESPAWN_DELAY
+  assert.ok(!a.isDead, 'a respawned')
+  assert.equal(a.position.x, CTF_BASES.lovis.x, 'respawned at the lovis base x')
+  assert.equal(a.position.z, CTF_BASES.lovis.z, 'respawned at the lovis base z')
 })

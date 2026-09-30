@@ -219,6 +219,13 @@ export class Match {
     // null (single shared team).
     if (this.mode === 'ctf') {
       slot.team = team === 'lovis' || team === 'krag' ? team : CTF_TEAMS[this._teamTurn++ % CTF_TEAMS.length]
+      // CTF: spawn at the player's own base flag (not the shared survival spawn)
+      // so each side starts beside their own pedestal.
+      const home = this.city && this.city.bases ? this.city.bases[slot.team] : null
+      if (home) {
+        player.position.set(home.x, SPAWN.y, home.z)
+        player.camera.position.set(home.x, SPAWN.y, home.z)
+      }
     } else {
       slot.team = team || null
     }
@@ -311,6 +318,15 @@ export class Match {
         if (slot) {
           slot.player.reset()
           slot.weapon.reset?.()
+          // CTF: respawn at the player's own base flag (not the shared survival
+          // spawn), so a killed carrier comes back at their side's pedestal.
+          if (this.mode === 'ctf' && this.city && this.city.bases && slot.team) {
+            const home = this.city.bases[slot.team]
+            if (home) {
+              slot.player.position.set(home.x, SPAWN.y, home.z)
+              slot.player.camera.position.set(home.x, SPAWN.y, home.z)
+            }
+          }
           this.events.push({ k: 'respawn', victim: id })
         }
         this._respawnAt.delete(id)

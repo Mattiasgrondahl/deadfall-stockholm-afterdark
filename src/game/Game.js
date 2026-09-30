@@ -784,6 +784,10 @@ export class Game {
     // CTF: reset the flag state + restart the neutral swarm for a fresh run.
     if (this.flag) this.flag.dispose()
     if (this.swarm) { this.swarm.dispose(); this.swarm.start() }
+    // CTF solo: spawn the player at their chosen base flag (the side picked on
+    // the title screen), facing into the map toward the enemy base. Hosted CTF
+    // spawns come from the server roster instead, so this is solo-only.
+    if (this.mode === 'ctf' && !this.multiplayer) this._spawnAtBase()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
     // v9: the procedural ambient wind bed (drone + gusts + city hum) is removed —
@@ -1201,6 +1205,27 @@ export class Game {
     const out = []
     if (this.player) out.push({ id: 'p1', player: this.player })
     return out
+  }
+
+  /** CTF solo: place the player at their chosen base flag and face them toward
+   *  the enemy base. Player yaw 0 faces -Z, so yaw = atan2(dx, -dz) points the
+   *  view along the vector from the base to the enemy base. */
+  _spawnAtBase() {
+    const p = this.player
+    if (!p || !this.city || !this.city.bases) return
+    const team = this._myTeam === 'krag' ? 'krag' : 'lovis'
+    this._myTeam = team
+    const home = this.city.bases[team]
+    const enemy = this.city.bases[team === 'lovis' ? 'krag' : 'lovis']
+    if (!home) return
+    p.position.set(home.x, 1.7, home.z)
+    // Face from our base toward the enemy base. Player forward (fwd=1) moves
+    // along (-sin yaw, -cos yaw), so to point that at the enemy offset (dx, dz)
+    // we need sin(yaw) = -dx, cos(yaw) = -dz → yaw = atan2(-dx, -dz).
+    p.yaw = Math.atan2(-(enemy.x - home.x), -(enemy.z - home.z))
+    p._eyeHeight = 1.7
+    p.camera.position.set(p.position.x, p.position.y + p._eyeHeight, p.position.z)
+    p.camera.rotation.set(0, p.yaw, 0)
   }
 
   /** CTF: advance the flag state + push positions to the render + HUD.

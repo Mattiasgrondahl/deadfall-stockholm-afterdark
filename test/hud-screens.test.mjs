@@ -112,6 +112,7 @@ function makeGame(doc, hud) {
   return {
     state: 'title',
     mode: 'survival',
+    _myTeam: 'lovis',
     kills: 0,
     hud,
     waveManager: { wave: 1, remaining: 5 },
@@ -328,6 +329,24 @@ function makeGame(doc, hud) {
   assert.equal(onCount(), 1, 'still exactly one mode selected')
   survival.click()
   assert.equal(game.mode, 'survival')
+  // CTF TEAM picker: LOVISEDAL / KRAGSTALUND single-choice toggles that set
+  // game._myTeam. They live in a row hidden until CTF is selected.
+  const lovis = byName('LOVISEDAL'), krag = byName('KRAGSTALUND')
+  assert.ok(lovis && krag, 'both team toggles exist')
+  assert.equal(game._myTeam, 'lovis', 'lovis is the default side')
+  assert.equal(lovis.classList.contains('on'), true, 'lovis selected by default')
+  const TEAM = new Set(['LOVISEDAL', 'KRAGSTALUND'])
+  const teamOn = () => toggles.filter((b) => TEAM.has(b.textContent) && b.classList.contains('on')).length
+  assert.equal(teamOn(), 1, 'exactly one team selected on load')
+  krag.click()
+  assert.equal(game._myTeam, 'krag', 'clicking KRAGSTALUND sets the side')
+  assert.equal(krag.classList.contains('on'), true, 'krag selected')
+  assert.equal(lovis.classList.contains('on'), false, 'lovis not lit when krag chosen')
+  assert.equal(teamOn(), 1, 'still exactly one team selected')
+  // The team row is hidden in survival and revealed when CTF is chosen.
+  assert.equal(screens._teamRow.classList.contains('hidden'), true, 'team row hidden in survival')
+  ctf.click()
+  assert.equal(screens._teamRow.classList.contains('hidden'), false, 'team row shown in ctf')
   screens.dispose()
 }
 {

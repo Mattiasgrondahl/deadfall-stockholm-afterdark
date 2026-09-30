@@ -143,6 +143,20 @@ export class Screens {
     modeRow.appendChild(modeLabel); modeRow.appendChild(this._survivalBtn); modeRow.appendChild(this._ctfBtn)
     modeRow.appendChild(modeHint)
     panelT.appendChild(modeRow)
+    // CTF TEAM picker: a single-choice side selector shown only in CTF mode. The
+    // chosen side is stored on the game (`_myTeam`) and read by startGame, which
+    // spawns the player at that team's base flag. Hidden in survival.
+    const teamRow = d.createElement('div'); teamRow.className = 'difficulty-row ctf-team-row hidden'
+    const teamLabel = d.createElement('div'); teamLabel.className = 'difficulty-label'; teamLabel.textContent = 'YOUR SIDE'
+    this._lovisBtn = d.createElement('button'); this._lovisBtn.className = 'toggle on'; this._lovisBtn.textContent = 'LOVISEDAL'
+    this._kragBtn = d.createElement('button'); this._kragBtn.className = 'toggle'; this._kragBtn.textContent = 'KRAGSTALUND'
+    const teamHint = d.createElement('div'); teamHint.className = 'tagline dim'; teamHint.textContent = 'Pick your side. You spawn at your base flag; steal the enemy flag and bring it home — first to 3 wins.'
+    this._lovisBtn.addEventListener('click', () => this._setTeam('lovis'))
+    this._kragBtn.addEventListener('click', () => this._setTeam('krag'))
+    teamRow.appendChild(teamLabel); teamRow.appendChild(this._lovisBtn); teamRow.appendChild(this._kragBtn)
+    teamRow.appendChild(teamHint)
+    panelT.appendChild(teamRow)
+    this._teamRow = teamRow
     // v11: ONE display name drives both modes. It is sanitized (control chars
     // stripped, whitespace collapsed, clamped to 24), attributed to a solo high
     // score AND sent to the co-op room, so the same generated handle appears on
@@ -527,6 +541,18 @@ export class Screens {
     this._game.mode = name === 'ctf' ? 'ctf' : 'survival'
     this._survivalBtn.classList.toggle('on', this._game.mode === 'survival')
     this._ctfBtn.classList.toggle('on', this._game.mode === 'ctf')
+    // The team picker is only meaningful in CTF; reveal it there, hide it in
+    // survival so the title screen stays clean.
+    if (this._teamRow) this._teamRow.classList.toggle('hidden', this._game.mode !== 'ctf')
+  }
+
+  /** CTF: single-choice side picker (LOVISEDAL vs KRAGSTALUND). Stored on the
+   *  game so startGame spawns the player at that team's base flag. */
+  _setTeam(name) {
+    const team = name === 'krag' ? 'krag' : 'lovis'
+    this._game._myTeam = team
+    this._lovisBtn.classList.toggle('on', team === 'lovis')
+    this._kragBtn.classList.toggle('on', team === 'krag')
   }
 
   /** JOIN CO-OP: read the room code + name from the title inputs and start a

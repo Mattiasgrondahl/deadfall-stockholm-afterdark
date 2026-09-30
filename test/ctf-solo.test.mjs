@@ -55,3 +55,31 @@ test('a non-lethal hit drops the carried flag (drop-on-hit, not just death)', ()
   assert.ok(g.flag.flagOf('krag').dropped, 'flag lies on the ground where the carrier was hit')
   g.dispose()
 })
+
+test('solo CTF spawns the player at their chosen base flag facing the enemy', () => {
+  // Default side is lovis → spawn at the lovis base, facing toward krag.
+  const g = bootCtf()
+  const lovis = g.city.bases.lovis, krag = g.city.bases.krag
+  assert.equal(g._myTeam, 'lovis', 'default side is lovis')
+  assert.equal(g.player.position.x, lovis.x, 'spawned at the lovis base x')
+  assert.equal(g.player.position.z, lovis.z, 'spawned at the lovis base z')
+  // Facing the enemy base: forward moves along (-sin yaw, -cos yaw), so facing
+  // from lovis (-90,-90) toward krag (90,90) (+x,+z) needs sin & cos negative.
+  assert.ok(Math.sin(g.player.yaw) < -0.5, 'facing +x toward the enemy base')
+  assert.ok(Math.cos(g.player.yaw) < -0.5, 'facing +z toward the enemy base')
+  g.dispose()
+})
+
+test('solo CTF spawns a krag player at the krag base facing lovis', () => {
+  const g = new Game({ headless: true, mode: 'ctf' })
+  g.start()
+  g._myTeam = 'krag' // chosen on the title screen
+  g.startGame()
+  const lovis = g.city.bases.lovis, krag = g.city.bases.krag
+  assert.equal(g._myTeam, 'krag', 'krag side honored')
+  assert.equal(g.player.position.x, krag.x, 'spawned at the krag base x')
+  assert.equal(g.player.position.z, krag.z, 'spawned at the krag base z')
+  assert.ok(Math.sin(g.player.yaw) > 0.5, 'facing -x toward the enemy base')
+  assert.ok(Math.cos(g.player.yaw) > 0.5, 'facing -z toward the enemy base')
+  g.dispose()
+})
