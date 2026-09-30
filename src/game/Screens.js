@@ -196,10 +196,15 @@ export class Screens {
     const mpRow = d.createElement('div'); mpRow.className = 'mp-row'
     const mpLabel = d.createElement('div'); mpLabel.className = 'difficulty-label'; mpLabel.textContent = 'CO-OP'
     this._roomInput = d.createElement('input'); this._roomInput.className = 'mp-input'
-    this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'default'
+    this._roomInput.type = 'text'; this._roomInput.placeholder = 'room code'; this._roomInput.value = 'public'
     // v4 UI: same 24-char cap + live charset filter as the name field.
     this._roomInput.maxLength = 24
     this._roomInput.addEventListener('input', () => Screens._filterInput(this._roomInput))
+    // v33: RANDOM button — fills the room field with a fresh zombie-themed code
+    // (see randomRoomCode) so players can spin up a private room without typing.
+    const randBtn = d.createElement('button'); randBtn.className = 'btn'; randBtn.textContent = 'RANDOM'
+    randBtn.addEventListener('click', () => { this._roomInput.value = randomRoomCode() })
+    this._roomRandomBtn = randBtn
     // v3 T6b: short helper line under the co-op field, rendered via textContent
     // (same XSS rules as the high-score name).
     const roomHint = d.createElement('div'); roomHint.className = 'tagline dim'
@@ -207,7 +212,7 @@ export class Screens {
     const joinBtn = d.createElement('button'); joinBtn.className = 'btn'; joinBtn.textContent = 'JOIN CO-OP'
     joinBtn.addEventListener('click', () => this._joinCoop())
     mpRow.appendChild(mpLabel); mpRow.appendChild(this._roomInput); mpRow.appendChild(roomHint)
-    mpRow.appendChild(joinBtn)
+    mpRow.appendChild(joinBtn); mpRow.appendChild(randBtn)
     panelT.appendChild(mpRow)
     // v29 LOBBY BROWSER: a live list of open co-op rooms on the title screen so
     // other players can see how many people are online and click a room to drop
@@ -783,10 +788,10 @@ export class Screens {
     const name = randomPlayerName()
     // v11: one name input feeds both solo and co-op, so only it is prefilled.
     if (this._nameInput && this._nameInput.value === 'player') this._nameInput.value = name
-    // v7: a random zombie-themed room code so a fresh co-op session lands in a
-    // uniquely-named room with its own leaderboard, instead of the shared
-    // "default". Only overwrites the untouched default so a typed code stands.
-    if (this._roomInput && this._roomInput.value === 'default') this._roomInput.value = randomRoomCode()
+    // v33: the co-op room now defaults to the shared "public" room (see the room
+    // input's initial value) instead of a random code, so a fresh session lands
+    // in the common lobby. Players who want a private room click the RANDOM
+    // button, which fills a fresh zombie-themed code (see randomRoomCode).
   }
 
   /** v4 UI: strip disallowed characters from an input's value in place, keeping

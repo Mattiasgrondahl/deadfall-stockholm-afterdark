@@ -258,7 +258,7 @@ function makeGame(doc, hud) {
   const btns = []
   const collectBtns = (el) => { for (const c of el.children) { if (c.classList.contains('btn')) btns.push(c); collectBtns(c) } }
   collectBtns(title)
-  assert.deepStrictEqual(btns.map(b => b.textContent), ['SETTINGS', 'START', 'JOIN CO-OP'])
+  assert.deepStrictEqual(btns.map(b => b.textContent), ['SETTINGS', 'START', 'JOIN CO-OP', 'RANDOM'])
   // other screens are hidden
   assert(!screenWithText(screensRoot, 'PAUSED').classList.contains('visible'))
   assert(!screenWithText(screensRoot, 'YOU DIED').classList.contains('visible'))
@@ -946,12 +946,20 @@ function fakeWave(o) {
   assert.ok(/\S \S/.test(soloName.value), 'random handle is "Adjective Noun"')
   // Deterministic: randomPlayerName with a fixed seed is stable.
   assert.strictEqual(randomPlayerName(1234), randomPlayerName(1234), 'seeded name is deterministic')
-  // v7: the co-op room input is prefilled with a random zombie-themed room code
-  // instead of the shared "default", so a fresh session lands in its own room.
+  // v33: the co-op room defaults to the shared "public" room so a fresh session
+  // lands in the common lobby; a RANDOM button fills a private zombie-themed code.
   const roomInput = nameInputs.find((c) => c.placeholder === 'room code')
   assert.ok(roomInput, 'a room-code input exists')
-  assert.notStrictEqual(roomInput.value, 'default', 'default room replaced by a random code')
-  assert.ok(/^[A-Z]+_[A-Z]+_\d{2}$/.test(roomInput.value), `room code is WORD_WORD_NN (${roomInput.value})`)
+  assert.strictEqual(roomInput.value, 'public', 'room defaults to the shared public room')
+  // Find the RANDOM button in the title tree and click it.
+  const buttons = []
+  const collectButtons = (el) => { for (const c of el.children) { if (String(c.tagName).toLowerCase() === 'button') buttons.push(c); collectButtons(c) } }
+  collectButtons(title)
+  const randBtn = buttons.find((b) => /RANDOM/i.test(b.textContent))
+  assert.ok(randBtn, 'a RANDOM room-code button exists')
+  randBtn.click()
+  assert.notStrictEqual(roomInput.value, 'public', 'RANDOM replaces the public default')
+  assert.ok(/^[A-Z]+_[A-Z]+_\d{2}$/.test(roomInput.value), `RANDOM fills a WORD_WORD_NN code (${roomInput.value})`)
   // Deterministic + zombie-themed: seeded codes are stable and use the word list.
   assert.strictEqual(randomRoomCode(1234), randomRoomCode(1234), 'seeded room code is deterministic')
   assert.ok(/^[A-Z]+_[A-Z]+_\d{2}$/.test(randomRoomCode(99)), 'seeded code matches the shape')
