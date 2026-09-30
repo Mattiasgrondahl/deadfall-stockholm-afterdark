@@ -755,6 +755,14 @@ export class Game {
   /** Title or gameover -> fresh PLAYING run. */
   startGame() {
     if (this.state === GameState.PLAYING) return
+    // v30: a fresh single-player run picked from the TITLE screen must not inherit
+    // a stale co-op controller. When starting from the title and this is NOT a
+    // co-op join (startMultiplayer sets _mpStarting), tear down any leftover
+    // multiplayer so update() runs the pure single-player branch and solo CTF
+    // builds its arena. A game-over RESTART is left untouched so a co-op run can
+    // resume its own room. _mpStarting is cleared unconditionally right after.
+    if (this.state === GameState.TITLE && !this._mpStarting) this._teardownMultiplayer()
+    this._mpStarting = false
     // WIRING:RESET (owned by task A, extended by later tasks)
     if (this.player) this.player.reset()
     if (this.weapon) this.weapon.reset()
@@ -831,6 +839,7 @@ export class Game {
     // v7: the run's score belongs to the joined room, so its leaderboard reads
     // and posts to that room's board (not the shared default).
     if (this.score) this.score.setRoom(this._mpOpts.room)
+    this._mpStarting = true // v30: tells startGame this run IS a co-op join (skip teardown)
     if (!this.multiplayer && this.scene) {
       try {
         this.multiplayer = new Multiplayer({
@@ -856,6 +865,23 @@ export class Game {
     }
     this.startGame()
     return this.multiplayer
+  }
+
+  /** v30: tear down the co-op controller + its remote proxies and clear the
+   *  stored join options, restoring the pre-coop quality tier. Called whenever a
+   *  NON-co-op run starts (single-player SURVIVAL/CTF) so a stale controller from
+   *  a previous co-op game can't keep update() on the server-authoritative branch
+   *  or block solo CTF from building its arena. Idempotent + headless-safe. */
+  _teardownMultiplayer() {
+    if (this.multiplayer) { this.multiplayer.dispose(); this.multiplayer = null }
+    this._mpOpts = null
+    // Restore the lighting/postfx tier that was dropped for co-op.
+    if (this._mpPrevQuality) {
+      const q = this._mpPrevQuality
+      this._mpPrevQuality = null
+      if (this.lighting) this.lighting.setQuality(q)
+      if (this.postfx) this.postfx.setEnabled(q === 'high')
+    }
   }
 
   togglePause() {
