@@ -1361,7 +1361,14 @@ export class Game {
       for (const row of (mp.lastSnap.players || [])) carriers.push({ id: row.id, x: row.x, y: row.y || 1.7, z: row.z })
       if (this.flagRender) this.flagRender.sync(ctf, carriers)
       if (this.flagRender) this.flagRender.update(dt, this.time || 0)
-      if (this.hud) this.hud.setCtf(ctf, this._myTeam)
+      if (this.hud) {
+        // Minimap needs carrier positions to follow a carried flag; pass them as
+        // an id->pos map plus the local player marker (position + facing).
+        const cmap = new Map()
+        for (const c of carriers) cmap.set(c.id, c)
+        this.hud._mmCarriers = cmap
+        this.hud.setCtf(ctf, this._myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+      }
       return
     }
     const flag = this.flag
@@ -1391,13 +1398,19 @@ export class Game {
         // A carrier who was just hit dropped the flag at their own feet; give a
         // one-frame grace so they don't instantly re-snatch it — they must step
         // off and back on (or a teammate grab it) to pick it up again.
-        flag.tryPickup(me, myTeam, x, z)
+        flag.tryPickup(me, myTeam, x, z, dt)
       }
     }
     const snap = flag.snapshot()
-    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, this._swarmPlayers().map((s) => ({ id: s.id, x: s.player.position.x, y: s.player.position.y, z: s.player.position.z })))
+    const swarm = this._swarmPlayers()
+    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, swarm.map((s) => ({ id: s.id, x: s.player.position.x, y: s.player.position.y, z: s.player.position.z })))
     if (this.flagRender) this.flagRender.update(dt, this.time || 0)
-    if (this.hud) this.hud.setCtf(snap, myTeam)
+    if (this.hud) {
+      const cmap = new Map()
+      for (const s of swarm) cmap.set(s.id, { x: s.player.position.x, z: s.player.position.z })
+      this.hud._mmCarriers = cmap
+      this.hud.setCtf(snap, myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+    }
   }
 
   /** Spawn a zombie (used by WaveManager and debug). */
