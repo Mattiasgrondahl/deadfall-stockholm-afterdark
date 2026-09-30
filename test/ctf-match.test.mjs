@@ -69,6 +69,24 @@ test('a carrier who dies drops the flag', () => {
   assert.ok(snap.events.some((e) => e.k === 'flagDrop' && e.team === 'lovis'), 'drop event emitted')
 })
 
+test('a carrier who is HIT (non-lethal) drops the flag', () => {
+  const m = ctfMatch()
+  place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
+  run(m, 0.1)
+  assert.equal(m.flag.flagOf('krag').carrier, 'a')
+  const p = m.getPlayer('a').player
+  p.damage(1) // a scratch — not lethal, but the objective drops the flag on any hit
+  assert.ok(p.health > 0 && !p.isDead, 'carrier survives the hit')
+  // One tick observes the hit and releases the flag. The one-frame grace keeps
+  // the carrier from instantly re-snatching it at their own feet, so the drop
+  // is observable directly.
+  m.step(TICK)
+  const f = m.flag.flagOf('krag')
+  assert.equal(f.carrier, null, 'flag released on a non-lethal hit')
+  assert.ok(f.dropped, 'flag lies on the ground where the carrier was hit')
+  assert.ok(m.events.some((e) => e.k === 'flagDrop' && e.team === 'lovis'), 'drop event emitted')
+})
+
 test('first team to 3 captures wins the match', () => {
   const m = ctfMatch()
   for (let i = 0; i < 3; i++) {

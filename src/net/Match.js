@@ -366,8 +366,9 @@ export class Match {
   }
 
   /** CTF: advance the flag state from live player positions each tick.
-   *  - A carrier who just died drops the flag at their death spot (handled via
-   *    the death path below, keyed on the carrier id).
+   *  - A carrier who is HIT this tick (any damage, not just death) drops the
+   *    flag at their spot — the objective is "if a zombie hits them the flag is
+   *    dropped".
    *  - A carrier reaching their OWN base with the enemy flag scores a capture.
    *  - A live player near a pickable flag (enemy flag at base, or any dropped
    *    flag) claims it.
@@ -375,15 +376,24 @@ export class Match {
   _processFlags() {
     const flag = this.flag
     if (!flag) return
-    // Drop carried flags whose carrier is now dead (died this tick or earlier
-    // and still marked carrying — dropFlag is idempotent for non-carriers).
+    // Drop carried flags whose carrier was HIT this tick (any damage, not just
+    // death) — the objective is "if a zombie hits them the flag is dropped".
+    // Track each slot's health across ticks and drop on any decrease; a carrier
+    // who died (health 0) is covered by the same decrease. dropFlag is
+    // idempotent for non-carriers.
+    if (!this._prevHealth) this._prevHealth = new Map()
+    const droppedThisTick = new Set()
     for (const slot of this.players.values()) {
       if (slot.disconnected) continue
-      if (slot.player.isDead && flag.isCarrying(slot.id)) {
-        const p = slot.player
-        if (flag.dropFlag(slot.id, p.position.x, p.position.z)) {
-          this.events.push({ k: 'flagDrop', team: slot.team, x: p.position.x, z: p.position.z })
-        }
+      const p = slot.player
+      const prev = this._prevHealth.get(slot.id)
+      this._prevHealth.set(slot.id, p.health)
+      const carrying = flag.isCarrying(slot.id)
+      if (!carrying) continue
+      const hit = (prev != null && p.health < prev) || p.isDead
+      if (hit && flag.dropFlag(slot.id, p.position.x, p.position.z)) {
+        this.events.push({ k: 'flagDrop', team: slot.team, x: p.position.x, z: p.position.z })
+        droppedThisTick.add(slot.id)
       }
     }
     // Pickups + captures from live players.
@@ -399,7 +409,10 @@ export class Match {
         this.events.push({ k: 'flagCapture', team: slot.team, scores: { ...flag.scores } })
         continue
       }
-      if (!flag.isCarrying(slot.id) && flag.tryPickup(slot.id, slot.team, x, z)) {
+      // Skip pickup for a player who was just hit and dropped the flag this
+      // tick — a one-frame grace so they don't instantly re-snatch the flag at
+      // their own feet; they must step off and back on (or a teammate grab it).
+      if (!flag.isCarrying(slot.id) && !droppedThisTick.has(slot.id) && flag.tryPickup(slot.id, slot.team, x, z)) {
         this.events.push({ k: 'flagPickup', team: slot.team, by: slot.id })
       }
     }

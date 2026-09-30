@@ -1228,13 +1228,29 @@ export class Game {
     if (!flag) return
     const me = 'p1'
     const myTeam = this._myTeam || 'lovis'
-    // Drop the flag the frame the carrier dies.
-    if (p.isDead && flag.isCarrying(me)) flag.dropFlag(me, p.position.x, p.position.z)
+    // Drop the flag the frame the carrier is HIT (any damage, not just death) —
+    // the objective is "if a zombie hits them the flag is dropped". Track the
+    // carrier's health across frames and drop on any decrease.
+    const carrying = flag.isCarrying(me)
+    const prev = this._ctfPrevHealth
+    this._ctfPrevHealth = p.health
+    let droppedThisFrame = false
+    if (carrying && prev != null && p.health < prev) {
+      flag.dropFlag(me, p.position.x, p.position.z)
+      droppedThisFrame = true
+    } else if (p.isDead && carrying) {
+      // A lethal hit that skipped the damage step (respawn/debug) still drops.
+      flag.dropFlag(me, p.position.x, p.position.z)
+      droppedThisFrame = true
+    }
     if (!p.isDead) {
       const x = p.position.x, z = p.position.z
       if (flag.isCarrying(me) && flag.tryCapture(me, myTeam, x, z)) {
         if (this.screens) this.screens.showBanner('FLAG CAPTURED!')
-      } else if (!flag.isCarrying(me)) {
+      } else if (!flag.isCarrying(me) && !droppedThisFrame) {
+        // A carrier who was just hit dropped the flag at their own feet; give a
+        // one-frame grace so they don't instantly re-snatch it — they must step
+        // off and back on (or a teammate grab it) to pick it up again.
         flag.tryPickup(me, myTeam, x, z)
       }
     }
