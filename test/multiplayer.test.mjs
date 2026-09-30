@@ -301,7 +301,7 @@ test('co-op suppresses local zombie sim + HUD reads server snapshot', () => {
   solo.dispose && solo.dispose()
 })
 
-test('co-op self death respawns instead of ending the run', () => {
+test('co-op self death respawns instead of ending the run', async () => {
   const game = new Game({ headless: true })
   game.start()
   const mp = game.startMultiplayer({ room: 'alpha', name: 'Ada', Socket: FakeWS })
@@ -328,6 +328,25 @@ test('co-op self death respawns instead of ending the run', () => {
   ], events: [{ k: 'respawn', victim: 'ada' }] }) })
   assert.equal(game._respawning, false, 'respawn event cleared the flag')
   assert.equal(game.player.isDead, false, 'local player revived')
+  // v34: respawn re-acquires the pointer lock (the stuck-mouse fix). In a real
+  // browser the lock is granted asynchronously after the exit cooldown, so the
+  // retry loop keeps asking until it lands. Drive it with a stub that grants the
+  // lock on the 2nd request.
+  game.state = 'playing'
+  game.headless = false
+  let lockRequests = 0
+  game.canvas = { requestPointerLock() { lockRequests++; return Promise.resolve() } }
+  game.env = { document: { pointerLockElement: null, exitPointerLock() {} } }
+  game.input = {
+    locked() { return game.env.document.pointerLockElement === game.canvas },
+    requestLock() { game.canvas.requestPointerLock(); if (lockRequests >= 2) game.env.document.pointerLockElement = game.canvas }
+  }
+  game._reacquireLockAfterRespawn()
+  assert.ok(lockRequests >= 1, 'a lock request was issued on respawn')
+  // The retry runs on a timer; let it tick until the stub grants the lock.
+  await new Promise((r) => setTimeout(r, 320))
+  assert.ok(game.input.locked(), 'pointer lock re-acquired after the retry window')
+  if (game._respawnLockTimer) clearTimeout(game._respawnLockTimer)
   // Single-player death still ends the run.
   const solo = new Game({ headless: true })
   solo.start()
@@ -761,5 +780,35 @@ test('v4 co-op: a remote zombie glides toward its snapshot target (no 10 Hz tele
   // Converges to the target within a few frames.
   for (let i = 0; i < 30; i++) e.update(1 / 60)
   assert.ok(Math.abs(e.group.position.z - 10) < 0.5, 'proxy converges to the target within ~0.5 s')
+  mp.dispose()
+})
+
+test('v34: friendly-fire setting gates the teammate hit proxies', () => {
+  const scene = new THREE.Scene()
+  let ff = true
+  const mp = new Multiplayer({ scene, env: {}, Socket: FakeWS, url: 'ws://x/ws', name: 'me', room: 'r', getFriendlyFire: () => ff })
+  mp.socket = mp.net.socket
+  mp.socket.open()
+  mp.socket.receive({ t: MSG.WELCOME, pid: 'me', roster: [] })
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap() })
+  // Friendly fire ON: the two live teammates (alice + bob) are hit proxies.
+  assert.equal(mp.getPlayers().length, 2, 'FF on -> proxies for both teammates')
+  // Friendly fire OFF: no proxies, so shots pass straight through teammates.
+  ff = false
+  assert.equal(mp.getPlayers().length, 0, 'FF off -> no proxies, shots pass through')
+  // Re-enabling restores them.
+  ff = true
+  assert.equal(mp.getPlayers().length, 2, 'FF back on -> proxies return')
+  mp.dispose()
+})
+
+test('v34: a Multiplayer with no getFriendlyFire defaults to friendly fire ON', () => {
+  const scene = new THREE.Scene()
+  const mp = new Multiplayer({ scene, env: {}, Socket: FakeWS, url: 'ws://x/ws', name: 'me', room: 'r' })
+  mp.socket = mp.net.socket
+  mp.socket.open()
+  mp.socket.receive({ t: MSG.WELCOME, pid: 'me', roster: [] })
+  mp.net.socket.receive({ t: MSG.SNAP, ...snap() })
+  assert.equal(mp.getPlayers().length, 2, 'default (no getter) keeps friendly fire enabled')
   mp.dispose()
 })

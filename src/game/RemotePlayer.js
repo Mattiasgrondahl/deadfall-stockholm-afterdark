@@ -27,7 +27,15 @@ const GEO = {
   head: new THREE.BoxGeometry(0.28, 0.3, 0.28),
   arm: new THREE.BoxGeometry(0.13, 0.6, 0.13),
   leg: new THREE.BoxGeometry(0.16, 0.9, 0.16),
+  // v34: facial features so a remote avatar's FACING is readable at a glance.
+  // Mounted on the head's front face (local -Z, the yaw-0 facing direction), so
+  // they rotate with the group's yaw. Tiny boxes read as eyes/nose/mouth.
+  eye: new THREE.BoxGeometry(0.05, 0.05, 0.02),
+  nose: new THREE.BoxGeometry(0.05, 0.06, 0.04),
+  mouth: new THREE.BoxGeometry(0.12, 0.03, 0.02),
 }
+// One shared dark material for every avatar's face features (never disposed here).
+const FACE_MAT = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.9 })
 // Per-id tint so players read as distinct; falls back to a neutral color.
 const PALETTE = [0x3f7fbf, 0xbf7f3f, 0x3fbf7f, 0xbf3f7f, 0x7f3fbf, 0xbfbf3f, 0x3fbfbe, 0xbe3fbf]
 const DEAD_MAT = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 1 })
@@ -110,6 +118,21 @@ export class RemotePlayer {
     }
     this.torso = mk(GEO.torso, 0, 1.1, 0, topMat)
     this.head = mk(GEO.head, 0, 1.75, 0, mat)
+    // v34: face features parented to the head so the avatar's facing is legible.
+    // Local -Z is the yaw-0 facing direction; the head sits at the group origin's
+    // head height, so these offsets are relative to the head center.
+    const face = (geo, x, y, z) => {
+      const m = new THREE.Mesh(geo, FACE_MAT)
+      m.position.set(x, y, z)
+      this.head.add(m)
+      return m
+    }
+    this._faceParts = [
+      face(GEO.eye, -0.06, 0.03, -0.145),
+      face(GEO.eye, 0.06, 0.03, -0.145),
+      face(GEO.nose, 0, -0.01, -0.15),
+      face(GEO.mouth, 0, -0.08, -0.145),
+    ]
     this.armL = mk(GEO.arm, -0.36, 1.1, 0, mat)
     this.armR = mk(GEO.arm, 0.36, 1.1, 0, mat)
     this.legL = mk(GEO.leg, -0.12, 0.45, 0, bottomMat)
@@ -246,6 +269,12 @@ export class RemotePlayer {
     // materials, so it is only detached (with the group), never disposed here.
     if (this._flash) { this._flash.material.dispose(); this._flash = null }
     this._weapon = null
+    // v34: detach the face features from the head (their geometry + FACE_MAT are
+    // shared module-level and must NOT be disposed here).
+    if (this._faceParts) {
+      for (const m of this._faceParts) if (this.head) this.head.remove(m)
+      this._faceParts = null
+    }
     if (this.group.parent) this.group.parent.remove(this.group)
     this.group.clear()
   }

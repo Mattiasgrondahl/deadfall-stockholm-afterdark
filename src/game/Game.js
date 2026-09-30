@@ -188,6 +188,7 @@ export class Game {
     this.multiplayer = null
     this._mpOpts = opts.multiplayer || null
     this._respawning = false
+    this._respawnLockTimer = 0 // v34: respawn pointer-lock retry handle
     // State-transition listeners (Screens syncs its overlays through these).
     this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
@@ -240,7 +241,8 @@ export class Game {
           this.multiplayer = new Multiplayer({
             scene: this.scene, env: this.env,
             name: this._mpOpts.name, room: this._mpOpts.room,
-            url: this._mpOpts.url, Socket: this._mpOpts.Socket
+            url: this._mpOpts.url, Socket: this._mpOpts.Socket,
+            getFriendlyFire: () => this.settings.get('friendlyFire')
           })
           this._wireMpHooks(this.multiplayer)
         }
@@ -400,7 +402,8 @@ export class Game {
       this.multiplayer = new Multiplayer({
         scene: this.scene, env: this.env,
         name: this._mpOpts.name, room: this._mpOpts.room,
-        url: this._mpOpts.url, Socket: this._mpOpts.Socket
+        url: this._mpOpts.url, Socket: this._mpOpts.Socket,
+        getFriendlyFire: () => this.settings.get('friendlyFire')
       })
       this._wireMpHooks(this.multiplayer)
     }
@@ -845,7 +848,8 @@ export class Game {
         this.multiplayer = new Multiplayer({
           scene: this.scene, env: this.env,
           name: this._mpOpts.name, room: this._mpOpts.room,
-          url: this._mpOpts.url, Socket: this._mpOpts.Socket
+          url: this._mpOpts.url, Socket: this._mpOpts.Socket,
+          getFriendlyFire: () => this.settings.get('friendlyFire')
         })
         this._wireMpHooks(this.multiplayer)
         // Co-op renders many remote bodies on top of the city + post-processing,
@@ -853,7 +857,11 @@ export class Game {
         // Drop to the lighter lighting/postfx tier for co-op; restored when the
         // session ends. Headless: these are no-ops.
         this._mpPrevQuality = this.quality
-        if (this.quality === 'high') {
+        // v34: co-op lag fix — many remote bodies + postfx saturate weak GPUs.
+        // The old guard only fired for 'high'; 'medium' still ran postfx + heavier
+        // lighting and felt laggy. Drop postfx + lighting to the light tier for ANY
+        // non-low quality in co-op; restored when the session ends. Headless: no-ops.
+        if (this.quality !== 'low') {
           if (this.lighting) this.lighting.setQuality('low')
           if (this.postfx) this.postfx.setEnabled(false)
         }
@@ -944,6 +952,30 @@ export class Game {
     if (this.player) this.player.reset()
     if (this.weapon) this.weapon.reset()
     if (this.screens) this.screens.showBanner('RESPAWNED')
+    // v34: re-acquire the pointer lock after a co-op respawn. Death released the
+    // lock (onPlayerDeath / mp.onSelfDeath) and respawn carries no user gesture,
+    // so a single requestPointerLock is usually rejected (browser re-lock cooldown
+    // after exitPointerLock) and the mouse stayed stuck until the player pressed
+    // Escape to pause+resume. Retry over a short window until the lock returns;
+    // a still-unlocked mouse after the window falls back to the pause overlay,
+    // whose click-to-resume is a real gesture.
+    this._reacquireLockAfterRespawn()
+  }
+
+  /** v34: retry pointer-lock acquisition after a co-op respawn until it succeeds
+   *  or the retry window elapses. Headless-safe (no input/canvas → no-op). */
+  _reacquireLockAfterRespawn() {
+    if (!this.input || !this.canvas || this.headless) return
+    if (this._respawnLockTimer) { clearTimeout(this._respawnLockTimer); this._respawnLockTimer = 0 }
+    const deadline = Date.now() + 1500
+    const tryLock = () => {
+      this._respawnLockTimer = 0
+      if (this.state !== GameState.PLAYING || this._respawning) return
+      if (this.input.locked()) return
+      this.input.requestLock()
+      if (Date.now() < deadline) this._respawnLockTimer = setTimeout(tryLock, 250)
+    }
+    tryLock()
   }
 
   /** v12: the server ended the co-op match (wave-5 cleared / time cap / all
@@ -1456,6 +1488,7 @@ export class Game {
     if (this.flagRender) { this.flagRender.dispose(); this.flagRender = null }
     if (this.flag) { this.flag.dispose(); this.flag = null }
     if (this.swarm) this.swarm = null
+    if (this._respawnLockTimer) { clearTimeout(this._respawnLockTimer); this._respawnLockTimer = 0 }
   }
 
   render() {

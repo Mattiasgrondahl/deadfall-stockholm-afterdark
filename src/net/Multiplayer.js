@@ -74,6 +74,11 @@ export class Multiplayer {
     this.onMatchEnd = null
     this.matchEnded = false
     this.endReason = null
+    // v34: friendly-fire toggle. The Game wires a getter that reads the persisted
+    // 'friendlyFire' setting; when it returns false the local weapon builds no
+    // FF proxies, so shots pass straight through teammates. Defaults to enabled
+    // when no getter is supplied (back-compat for tests / headless).
+    this.getFriendlyFire = typeof opts.getFriendlyFire === 'function' ? opts.getFriendlyFire : null
     this.finalScoreboard = null
     // v12: rolling kill feed (most-recent first) for the co-op scoreboard.
     this._killFeed = []
@@ -361,6 +366,10 @@ export class Multiplayer {
    *  authoritative MSG.FF to the server. Rebuilt from the last snapshot's roster
    *  so positions track the interpolated avatars. */
   getPlayers() {
+    // v34: friendly fire is a player setting. When disabled, return no proxies so
+    // the local weapon's hit loop can't register a teammate hit (shots pass
+    // through). A missing getter defaults to enabled.
+    if (this.getFriendlyFire && !this.getFriendlyFire()) return []
     const snap = this.lastSnap
     if (!snap || !Array.isArray(snap.players)) return []
     const out = []
