@@ -720,22 +720,27 @@ export class AudioBank {
    * v28 R3: `surface` selects the sample — 'ice' plays the crisp frozen-snow
    * crack, anything else the default wet-asphalt scuff. The ice fallback is a
    * brighter, higher bandpass scuff so it still reads as brittle even headless.
+   * v31: running plays its OWN boot-strike sample (footstep_run) at natural rate
+   * instead of pitch-shifting the walk clip up 1.12x, which sounded weird/chippy.
    */
   footstep(run = false, surface = 'snow') {
     if (!this.ctx) return
     this._resume()
     const gain = run ? FOOTSTEP_RUN_GAIN : FOOTSTEP_WALK_GAIN
     const ice = surface === 'ice'
-    const name = ice ? 'footstep_ice' : 'footstep'
-    if (this._playSfx(name, { gain, rate: run ? 1.12 : 1 })) return
+    // v31: pick the walk vs run boot sample; ice keeps its own brittle crack.
+    const name = ice ? 'footstep_ice' : (run ? 'footstep_run' : 'footstep')
+    if (this._playSfx(name, { gain, rate: 1 })) return
     // Synthesized stand-in: a short lowpassed scuff + a soft thud. Ice is a
     // brighter, shorter bandpass crack; snow keeps the wet lowpassed scuff.
     if (ice) {
       this._playNoise({ duration: 0.05, filterType: 'bandpass', filterFreq: 2600, gain })
       this._playTone({ type: 'triangle', freq: 320, freqEnd: 180, duration: 0.04, gain: gain * 0.4 })
     } else {
-      this._playNoise({ duration: 0.09, filterType: 'lowpass', filterFreq: 900, gain })
-      this._playTone({ type: 'sine', freq: 120, freqEnd: 70, duration: 0.06, gain: gain * 0.5 })
+      // Running is a harder, slightly brighter strike than a walk.
+      const cut = run ? 1200 : 900
+      this._playNoise({ duration: run ? 0.07 : 0.09, filterType: 'lowpass', filterFreq: cut, gain })
+      this._playTone({ type: 'sine', freq: run ? 150 : 120, freqEnd: run ? 80 : 70, duration: 0.06, gain: gain * 0.5 })
     }
   }
 

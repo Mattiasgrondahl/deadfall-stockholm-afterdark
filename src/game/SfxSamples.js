@@ -34,6 +34,9 @@ const SFX_FILES = {
   moan_distant: SFX_BASE + 'sfx_moan_distant.wav',
   attack_hiss: SFX_BASE + 'sfx_attack_hiss.wav',
   footstep: SFX_BASE + 'sfx_footstep.wav',
+  // v31: dedicated running footfall so sprint steps are a real boot strike, not a
+  // pitch-shifted walk sample (which sounded weird).
+  footstep_run: SFX_BASE + 'sfx_footstep_run.wav',
   jump: SFX_BASE + 'sfx_jump.wav',
   // v27: landing thud — two heavy boats slapping onto wet ground at once.
   land: SFX_BASE + 'sfx_land.wav',
