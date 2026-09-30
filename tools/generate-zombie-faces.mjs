@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // tools/generate-zombie-faces.mjs
-// Generates twelve zombie-face images (4 types x 3 variants, z_image +
+// Generates sixteen zombie-face images (4 types x 4 variants, z_image +
 // mattias_1024_z_2 LoRA) through the WanGP Gradio UI at http://127.0.0.1:7860
 // using headless Playwright, and saves results under public/assets/faces/.
 // Variant 0 of each type is the original portrait ({type}-face.jpg); variants
-// 1 and 2 are extra distinct faces ({type}2-face.jpg, {type}3-face.jpg).
+// 1-3 are extra distinct faces ({type}2-face.jpg .. {type}4-face.jpg). The
+// variant-4 faces are winter/frostbite looks for the Stockholm-winter CTF pass.
 //
 // Usage:
 //   node tools/generate-zombie-faces.mjs            run all not-yet-complete variants
 //   node tools/generate-zombie-faces.mjs --probe    load page, dump DOM probe + screenshots, exit
 //   node tools/generate-zombie-faces.mjs --only NAME  run a single variant
-//     (walker|walker2|walker3|shambler|shambler2|shambler3|screamer|screamer2|screamer3|brute|brute2|brute3)
+//     (walker|walker2|walker3|walker4|shambler|...|brute4)
 
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -37,7 +38,11 @@ const VARIANTS = [
   { name: 'screamer3', seed: 50, prompt: 'front-facing close-up portrait of Mattias as a screaming zombie, twisted open mouth, bared teeth, blood on chin, bruised dark skin, wild disheveled hair, plain solid dark maroon background color, realistic photograph, no text' },
   { name: 'brute', seed: 51, prompt: 'front-facing close-up portrait of Mattias as a massive hulking brute zombie boss, thick heavy brow, scarred grey-green necrotic skin, broken yellowed teeth, furious angry expression, shaved head with scars, thick neck, plain solid dark olive-green background color, realistic photograph, no text' },
   { name: 'brute2', seed: 52, prompt: 'front-facing close-up portrait of Mattias as a massive hulking brute zombie boss, heavy brow ridge, split scarred lip, one milky blind eye, jaw torn open with exposed teeth, old slash scar across the forehead, shaved head, thick neck, plain solid dark olive-green background color, realistic photograph, no text' },
-  { name: 'brute3', seed: 53, prompt: 'front-facing close-up portrait of Mattias as a massive hulking brute zombie boss, deep cheek wound with blackened tissue, veins across the temples, snarling with cracked yellow teeth, half of the scalp torn away, shaved head with scars, thick neck, plain solid dark olive-green background color, realistic photograph, no text' }
+  { name: 'brute3', seed: 53, prompt: 'front-facing close-up portrait of Mattias as a massive hulking brute zombie boss, deep cheek wound with blackened tissue, veins across the temples, snarling with cracked yellow teeth, half of the scalp torn away, shaved head with scars, thick neck, plain solid dark olive-green background color, realistic photograph, no text' },
+  { name: 'walker4', seed: 54, prompt: 'front-facing close-up portrait of Mattias as a fresh zombie, pale grey-green skin, frost-dusted brows and lashes, chapped cracked lips, faint frostbite redness on the cheeks, short cold-numb stare, plain solid dark olive background color, realistic photograph, no text' },
+  { name: 'shambler4', seed: 55, prompt: 'front-facing close-up portrait of Mattias as a rotting zombie, gaunt hollow face, frost-rimed greasy hair, frostbitten blackened fingertips near the jaw, sunken blue-tinged eyes, cracked bleeding lips, plain solid dark brown background color, realistic photograph, no text' },
+  { name: 'screamer4', seed: 56, prompt: 'front-facing close-up portrait of Mattias as a screaming zombie, mouth wide in a howl, frosted breath cloud on the lips, blood-flecked chin, frost-dusted wild hair, frostbitten nose, plain solid dark maroon background color, realistic photograph, no text' },
+  { name: 'brute4', seed: 57, prompt: 'front-facing close-up portrait of Mattias as a massive hulking brute zombie boss, frost-caked brow and beard stubble, frostbitten blackened nose, furious glare with icy cloudy eyes, frozen scarred grey-green skin, shaved head with scars, thick neck, plain solid dark olive-green background color, realistic photograph, no text' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -136,7 +136,7 @@ const POSE2 = {
 
 // Per-type face portrait plane. Colors/emissive mirror MAT2 so a headless or
 // not-yet-loaded face blends with the head color. Each type owns an array of
-// THREE shared face materials (3 portrait variants); individual zombies pick
+// THREE shared face materials (4 portrait variants); individual zombies pick
 // one variant deterministically from their spawn-derived phase, so same-type
 // zombies no longer look cloned. The textures are attached lazily in the
 // browser only (headless Node keeps the flat materials). When a texture lands,
@@ -183,9 +183,11 @@ const FACEMAT = {
   walker: [
     new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
     new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 }),
     new THREE.MeshStandardMaterial({ color: 0x8b9c77, roughness: 0.9 })
   ],
   shambler: [
+    new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
     new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
     new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 }),
     new THREE.MeshStandardMaterial({ color: 0x998873, roughness: 0.9 })
@@ -193,9 +195,11 @@ const FACEMAT = {
   screamer: [
     new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
     new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 }),
     new THREE.MeshStandardMaterial({ color: 0xb46574, roughness: 0.9, emissive: 0x401018, emissiveIntensity: 0.5 })
   ],
   brute: [
+    new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
     new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
     new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 }),
     new THREE.MeshStandardMaterial({ color: 0x65755b, roughness: 0.95 })
@@ -545,10 +549,10 @@ function loadFaceTextures() {
   faceTexturesLoading = true
   const loader = new THREE.TextureLoader()
   for (const type of ORDER) {
-    for (let i = 0; i < 3; i++) {
-      // Variant 0 is the original portrait ({type}-face.jpg); variants 1 and 2
-      // are the extra faces ({type}2-face.jpg, {type}3-face.jpg) — the file
-      // suffix is i + 1, so variant 1 loads the "2" file and variant 2 the "3"
+    for (let i = 0; i < 4; i++) {
+      // Variant 0 is the original portrait ({type}-face.jpg); variants 1-3
+      // are the extra faces ({type}2-face.jpg .. {type}4-face.jpg) — the file
+      // suffix is i + 1, so variant 1 loads the "2" file and variant 3 the "4"
       // file.
       loader.load(ASSET_BASE + 'assets/faces/' + type + (i === 0 ? '' : i + 1) + '-face.jpg', (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
@@ -883,7 +887,7 @@ export function buildPrimitiveBody(type, phase) {
   // v26d: no glowing eye boxes over the head — the portrait carries its own
   // eyes, and the boxes were hiding them. `eyes` stays empty for callers.
   const eyes = []
-  const variant = Math.floor((phase / (2 * Math.PI)) * 3) % 3
+  const variant = Math.floor((phase / (2 * Math.PI)) * 4) % 4
   const face = new THREE.Mesh(FACE_GEO, FACEMAT[t][variant])
   face.position.set(0, 0.01, 0.155)
   head.add(face)
