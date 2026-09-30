@@ -331,6 +331,22 @@ function makeGame(doc, hud) {
   screens.dispose()
 }
 {
+  // CTF: HUD.setCtf drives the scoreboard + carrier line from a snapshot ctf block.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const box = hud._ctfBox
+  assert.ok(box.classList.contains('hidden'), 'ctf box hidden by default')
+  hud.setCtf({ scores: { lovis: 2, krag: 1 }, flags: { lovis: { carrier: null, dropped: null }, krag: { carrier: 'me', dropped: null } } }, 'lovis')
+  assert.equal(box.classList.contains('hidden'), false, 'ctf box shown when fed')
+  assert.equal(hud._ctfLovis.textContent, 'LOVISEDAL 2 / 3', 'lovis score row')
+  assert.equal(hud._ctfKrag.textContent, 'KRAGSTALUND 1 / 3', 'krag score row')
+  assert.equal(hud._ctfCarrier.textContent, 'YOU CARRY THE FLAG — GET HOME!', 'carrier line: I carry the enemy flag')
+  hud.setCtf({ scores: { lovis: 2, krag: 1 }, flags: { lovis: { carrier: 'x', dropped: null }, krag: { carrier: null, dropped: null } } }, 'lovis')
+  assert.equal(hud._ctfCarrier.textContent, 'ENEMY HAS YOUR FLAG', 'carrier line: enemy has my flag')
+  hud.setCtf(null, 'lovis')
+  assert.equal(box.classList.contains('hidden'), true, 'null hides the ctf box (survival)')
+}
+{
   const doc = makeDocument()
   const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
   const game = makeGame(doc, hud)

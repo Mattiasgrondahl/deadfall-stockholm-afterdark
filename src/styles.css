@@ -422,6 +422,26 @@ html, body {
 }
 .hud-threat.danger { color: var(--danger); }
 
+/* CTF scoreboard: two team rows (Lovisedal green / Kragstalund amber) with a
+   capture count x/3, plus a carrier banner line. Top-right panel, hidden in
+   survival mode. */
+.hud-ctf {
+  position: absolute;
+  top: 20px; right: 20px;
+  text-align: right;
+  font-family: var(--mono);
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 6px 12px;
+  min-width: 160px;
+}
+.hud-ctf .hud-label { font-size: 11px; letter-spacing: 0.18em; color: var(--ink-dim); margin-bottom: 4px; }
+.ctf-team { font-size: 14px; letter-spacing: 0.1em; }
+.ctf-lovis { color: #6fae86; }
+.ctf-krag { color: #d99a5b; }
+.ctf-carrier { font-size: 12px; letter-spacing: 0.14em; color: var(--banner); margin-top: 4px; min-height: 14px; }
+
 /* v6 visuals (8): second line of the two existing wave readouts — the
    intermission countdown + composition preview (inside the .hud-wave panel)
    and the cap-pressure line under the threat readout. Both are small, dim,

@@ -80,6 +80,18 @@ export class HUD {
     this._bossBox = boss
     this._hudRoot.appendChild(boss)
 
+    // CTF scoreboard (hidden until a capture-the-flag match wires it): two team
+    // rows (Lovisedal / Kragstalund) with a score x/3 each, plus a carrier banner
+    // line ("YOU CARRY THE FLAG" / "ENEMY HAS YOUR FLAG"). Hidden in survival.
+    const ctf = d.createElement('div'); ctf.className = 'hud-ctf hidden'
+    const ctfLabel = d.createElement('div'); ctfLabel.className = 'hud-label'; ctfLabel.textContent = 'CAPTURE THE FLAG'
+    this._ctfLovis = d.createElement('div'); this._ctfLovis.className = 'ctf-team ctf-lovis'; this._ctfLovis.textContent = 'LOVISEDAL 0 / 3'
+    this._ctfKrag = d.createElement('div'); this._ctfKrag.className = 'ctf-team ctf-krag'; this._ctfKrag.textContent = 'KRAGSTALUND 0 / 3'
+    this._ctfCarrier = d.createElement('div'); this._ctfCarrier.className = 'ctf-carrier'
+    ctf.appendChild(ctfLabel); ctf.appendChild(this._ctfLovis); ctf.appendChild(this._ctfKrag); ctf.appendChild(this._ctfCarrier)
+    this._ctfBox = ctf
+    this._hudRoot.appendChild(ctf)
+
     // Weapons (bottom-right, v2): one slot per bank weapon with name, ammo,
     // and reload indicator; the active slot is highlighted. A legacy
     // single-weapon slot is kept for non-bank weapons. Battery (flashlight)
@@ -402,6 +414,32 @@ export class HUD {
       if (this._killsValue.textContent !== kText) this._killsValue.textContent = kText
       if (this._headValue.textContent !== hText) this._headValue.textContent = hText
     }
+  }
+
+  /** CTF: update the scoreboard from a snapshot's ctf block. `ctf` is the
+   *  { scores:{lovis,krag}, flags:{...}, winner } snapshot; `myTeam` is this
+   *  client's team so the carrier line can say "YOU CARRY" vs "ENEMY HAS".
+   *  Passing null hides the whole block (survival mode). */
+  setCtf(ctf, myTeam) {
+    if (!this._ctfBox) return
+    if (!ctf) { this._ctfBox.classList.add('hidden'); return }
+    this._ctfBox.classList.remove('hidden')
+    const s = ctf.scores || { lovis: 0, krag: 0 }
+    const lv = 'LOVISEDAL ' + (s.lovis | 0) + ' / 3'
+    const kv = 'KRAGSTALUND ' + (s.krag | 0) + ' / 3'
+    if (this._ctfLovis.textContent !== lv) this._ctfLovis.textContent = lv
+    if (this._ctfKrag.textContent !== kv) this._ctfKrag.textContent = kv
+    // Who carries what: my team carrying the enemy flag = I have the objective;
+    // the enemy carrying MY flag = I must defend/steal it back.
+    let msg = ''
+    if (myTeam && ctf.flags) {
+      const enemyFlag = ctf.flags[myTeam === 'lovis' ? 'krag' : 'lovis']
+      const myFlag = ctf.flags[myTeam]
+      if (enemyFlag && enemyFlag.carrier !== null) msg = 'YOU CARRY THE FLAG — GET HOME!'
+      else if (myFlag && myFlag.carrier !== null) msg = 'ENEMY HAS YOUR FLAG'
+      else if (myFlag && myFlag.dropped) msg = 'YOUR FLAG IS DOWN — RETURN IT'
+    }
+    if (this._ctfCarrier.textContent !== msg) this._ctfCarrier.textContent = msg
   }
 
   show() { this._hudRoot.classList.add('visible') }
