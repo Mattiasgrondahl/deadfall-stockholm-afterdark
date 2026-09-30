@@ -8,6 +8,8 @@ import { Zombie, ATTACK_RANGE, AIR_CLEAR, DIFFICULTY } from '../game/Zombie.js'
 import { WaveManager } from '../game/WaveManager.js'
 import { updateWorld, nearestAlivePlayer } from '../game/WorldCore.js'
 import { DroppedLimbPool } from '../game/DroppedLimbPool.js'
+import { FlagState, TEAMS as CTF_TEAMS } from '../game/Flag.js'
+import { CityCTF, CTF_BASES } from '../world/CityCTF.js'
 
 /**
  * Match — Phase 0 of MULTIPLAYER_PLAN.md (§4.1, §9): the server-side
@@ -68,6 +70,9 @@ export class Match {
    */
   constructor(opts = {}) {
     this.playersCap = opts.playersCap ?? 8
+    // CTF: 'survival' (default) is the shared wave-co-op room; 'ctf' is the
+    // two-team Capture-the-Flag match on the bespoke Lovisedal/Kragstalund map.
+    this.mode = opts.mode === 'ctf' ? 'ctf' : 'survival'
     // Difficulty preset (see DIFFICULTY in Zombie.js); 'normal' is the
     // default. A future lobby/room message can select 'frenzy'.
     this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal'
@@ -83,6 +88,19 @@ export class Match {
     this.collision.clear()
     this.city = new City(this.scene, this.collision, { canvasFactory: () => null })
     this.spawnPoints = this.city.getSpawnPoints()
+
+    // CTF: swap in the bespoke two-base arena + the authoritative flag state.
+    // The map exposes the same surface (getSpawnPoints/bases) so the rest of
+    // the room is unchanged. Teams are assigned round-robin on join.
+    this.flag = null
+    this._teamTurn = 0
+    if (this.mode === 'ctf') {
+      this.collision = new CollisionWorld(220, 220)
+      this.collision.clear()
+      this.city = new CityCTF(this.scene, this.collision, { canvasFactory: () => null })
+      this.spawnPoints = this.city.getSpawnPoints()
+      this.flag = new FlagState({ bases: this.city.bases })
+    }
 
     this.players = new Map() // id -> slot { id, player, weapon, inputState }
     this.zombies = []
@@ -138,7 +156,7 @@ export class Match {
   }
 
   /** Add a player at (x, z) (default: shared spawn). Returns the slot or null. */
-  addPlayer(id, x = SPAWN.x, z = SPAWN.z, name = '') {
+  addPlayer(id, x = SPAWN.x, z = SPAWN.z, name = '', team = null) {
     // v12: a reconnect within the grace window reclaims the held slot (same id,
     // position, score, kills) rather than being rejected as a duplicate. The
     // cap counts CONNECTED players only — a graced slot is not a live socket,
@@ -181,6 +199,14 @@ export class Match {
       k: 'hit', victim: id, dmg: n, by: source && source.type ? source.type : null
     })
     const slot = { id, player, weapon, inputState, flashlight: null, name: String(name || '').slice(0, 24) }
+    // CTF: assign a team. An explicit team wins; otherwise round-robin across
+    // the two teams so a lobby splits players evenly. Survival mode leaves team
+    // null (single shared team).
+    if (this.mode === 'ctf') {
+      slot.team = team === 'lovis' || team === 'krag' ? team : CTF_TEAMS[this._teamTurn++ % CTF_TEAMS.length]
+    } else {
+      slot.team = team || null
+    }
     this.players.set(id, slot)
     this.ws.players = Array.from(this.players.values())
     this.kills.set(id, 0)
@@ -256,6 +282,12 @@ export class Match {
    *  pending respawn), and emit the end event once. */
   _flow(dt) {
     if (this._ended) return
+    // CTF: drive the flag state machine from live player positions, then check
+    // the win condition (first team to WIN_SCORE captures).
+    if (this.mode === 'ctf' && this.flag) {
+      this._processFlags()
+      if (this.flag.winner) { this._end('ctf'); return }
+    }
     // Respawn dead players whose timer has elapsed.
     for (const [id, at] of this._respawnAt) {
       if (this.time >= at) {
@@ -283,6 +315,12 @@ export class Match {
       }
     }
     // End conditions.
+    if (this.mode === 'ctf') {
+      // CTF ends on a capture-win (handled above) or the time cap; the wave /
+      // kill-target survival conditions do not apply.
+      if (this.time >= this.matchTimeCap) this._end('timecap')
+      return
+    }
     if (this.wave && this.wave.wave >= BOSS_WAVE && this.wave.remaining === 0 && this.zombies.filter((z) => !z.isDead).length === 0) {
       this._end('waves')
     } else if (this._totalKills() >= this.killTarget) {
@@ -309,6 +347,46 @@ export class Match {
       if (this._respawnAt.has(slot.id)) return false // pending respawn -> not over
     }
     return connected > 0
+  }
+
+  /** CTF: advance the flag state from live player positions each tick.
+   *  - A carrier who just died drops the flag at their death spot (handled via
+   *    the death path below, keyed on the carrier id).
+   *  - A carrier reaching their OWN base with the enemy flag scores a capture.
+   *  - A live player near a pickable flag (enemy flag at base, or any dropped
+   *    flag) claims it.
+   *  Emits flagDrop / flagCapture / flagPickup events for the snapshot. */
+  _processFlags() {
+    const flag = this.flag
+    if (!flag) return
+    // Drop carried flags whose carrier is now dead (died this tick or earlier
+    // and still marked carrying — dropFlag is idempotent for non-carriers).
+    for (const slot of this.players.values()) {
+      if (slot.disconnected) continue
+      if (slot.player.isDead && flag.isCarrying(slot.id)) {
+        const p = slot.player
+        if (flag.dropFlag(slot.id, p.position.x, p.position.z)) {
+          this.events.push({ k: 'flagDrop', team: slot.team, x: p.position.x, z: p.position.z })
+        }
+      }
+    }
+    // Pickups + captures from live players.
+    for (const slot of this.players.values()) {
+      if (slot.disconnected) continue
+      const p = slot.player
+      if (p.isDead || !slot.team) continue
+      const x = p.position.x, z = p.position.z
+      // Capture first: a carrier reaching their own base scores and frees the
+      // flag, so it must run before pickup (a fresh arrival could otherwise
+      // re-grab the flag it just scored).
+      if (flag.isCarrying(slot.id) && flag.tryCapture(slot.id, slot.team, x, z)) {
+        this.events.push({ k: 'flagCapture', team: slot.team, scores: { ...flag.scores } })
+        continue
+      }
+      if (!flag.isCarrying(slot.id) && flag.tryPickup(slot.id, slot.team, x, z)) {
+        this.events.push({ k: 'flagPickup', team: slot.team, by: slot.id })
+      }
+    }
   }
 
   _end(reason) {
@@ -455,7 +533,7 @@ export class Match {
         yaw: p.yaw, pitch: p.pitch,
         health: p.health, stamina: Math.round(p.stamina),
         weapon: w.name, ammo: w.ammo, reserve: w.reserve,
-        dead: p.isDead, name: slot.name || ''
+        dead: p.isDead, name: slot.name || '', team: slot.team || null
       })
     }
     const zombies = []
@@ -471,7 +549,7 @@ export class Match {
     }
     const events = this.events
     this.events = []
-    return {
+    const snap = {
       tick: this.tick, time: this.time,
       wave: this.wave ? this.wave.wave : 0,
       remaining: this.wave ? this.wave.remaining : 0,
@@ -481,5 +559,9 @@ export class Match {
       drops: this.drops._drops.map(d => ({ x: d.x, z: d.z, t: d.t })),
       events
     }
+    // CTF: attach the flag state so clients render the pedestals + carrier +
+    // scoreboard. Only present in ctf mode.
+    if (this.mode === 'ctf' && this.flag) snap.ctf = this.flag.snapshot()
+    return snap
   }
 }
