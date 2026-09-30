@@ -308,7 +308,7 @@ export class Match {
     // the win condition (first team to WIN_SCORE captures).
     if (this.mode === 'ctf' && this.flag) {
       if (this.swarm) this.swarm.update(dt)
-      this._processFlags()
+      this._processFlags(dt)
       if (this.flag.winner) { this._end('ctf'); return }
     }
     // Respawn dead players whose timer has elapsed.
@@ -389,7 +389,7 @@ export class Match {
    *  - A live player near a pickable flag (enemy flag at base, or any dropped
    *    flag) claims it.
    *  Emits flagDrop / flagCapture / flagPickup events for the snapshot. */
-  _processFlags() {
+  _processFlags(dt) {
     const flag = this.flag
     if (!flag) return
     // Drop carried flags whose carrier was HIT this tick (any damage, not just
@@ -428,7 +428,7 @@ export class Match {
       // Skip pickup for a player who was just hit and dropped the flag this
       // tick — a one-frame grace so they don't instantly re-snatch the flag at
       // their own feet; they must step off and back on (or a teammate grab it).
-      if (!flag.isCarrying(slot.id) && !droppedThisTick.has(slot.id) && flag.tryPickup(slot.id, slot.team, x, z)) {
+      if (!flag.isCarrying(slot.id) && !droppedThisTick.has(slot.id) && flag.tryPickup(slot.id, slot.team, x, z, dt)) {
         this.events.push({ k: 'flagPickup', team: slot.team, by: slot.id })
       }
     }

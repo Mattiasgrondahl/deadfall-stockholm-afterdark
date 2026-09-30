@@ -18,6 +18,11 @@ export const WIN_SCORE = 3
 // (reaching the base area should not feel pixel-perfect on a 20 Hz tick).
 export const PICKUP_RADIUS = 2.0
 export const CAPTURE_RADIUS = 4.0
+// v35: a flag is only lifted after the player has STOOD inside its ring for this
+// many seconds without leaving — standing on the pad is a commitment, not a
+// drive-by grab. Callers pass the frame/tick `dt`; a caller that omits it keeps
+// the old instant behaviour (back-compat for any headless probe).
+export const PICKUP_DWELL = 3.0
 export const TEAMS = ['lovis', 'krag']
 // Opposite corners of the arena map; the map may override both via opts.bases.
 export const BASE = { lovis: { x: -90, z: -90 }, krag: { x: 90, z: 90 } }
@@ -53,6 +58,10 @@ export class FlagState {
     this.scores = { lovis: 0, krag: 0 }
     this.winner = null
     this.flags = { lovis: freshFlag(this.bases.lovis), krag: freshFlag(this.bases.krag) }
+    // v35: per-player pickup dwell. playerId -> { flag: <flag object>, t: seconds
+    // stood inside its ring }. Reset whenever the player leaves the ring, the
+    // target flag changes, or the flag is picked/dropped/captured.
+    this._dwell = new Map()
   }
 
   /** The flag OWNED by `team` (which starts at that team's own base). */
@@ -90,10 +99,16 @@ export class FlagState {
    * own base, or (b) ANY dropped flag (including your own team's — you pick it
    * up to walk it home). Rejected: already carried by someone else, out of
    * PICKUP_RADIUS, or this player already carries a flag.
+   *
+   * v35: standing inside the ring is not enough — the player must HOLD position
+   * there for PICKUP_DWELL seconds. Each call adds `dt` to that player's dwell
+   * timer for the flag they are currently in range of; leaving the ring (or the
+   * target changing) resets it, and the lift only fires once the timer reaches
+   * the dwell. Omitting `dt` (a legacy caller) keeps the old instant grab.
    */
-  tryPickup(playerId, team, x, z) {
+  tryPickup(playerId, team, x, z, dt) {
     if (this.isOver() || playerId == null || !this.flags[team]) return false
-    if (this.isCarrying(playerId)) return false
+    if (this.isCarrying(playerId)) { this._dwell.delete(playerId); return false }
     const mine = this.flags[team], foe = this.flags[other(team)]
     const d2 = (fx, fz) => (x - fx) * (x - fx) + (z - fz) * (z - fz)
     let target = null
@@ -108,11 +123,27 @@ export class FlagState {
     if (!target && mine.carrier === null && mine.dropped) {
       if (d2(mine.dropped.x, mine.dropped.z) <= R2(PICKUP_RADIUS)) target = mine
     }
-    if (!target) return false
+    if (!target) { this._dwell.delete(playerId); return false }
+    // No dt → legacy instant pickup (headless probes, tests that predate v35).
+    if (typeof dt !== 'number') {
+      target.carrier = playerId
+      target.carriedBy = team
+      target.atBase = false
+      target.dropped = null
+      this._dwell.delete(playerId)
+      return true
+    }
+    // Accumulate dwell only while the SAME flag stays the in-range target.
+    let st = this._dwell.get(playerId)
+    if (!st || st.flag !== target) st = { flag: target, t: 0 }
+    st.t += dt
+    this._dwell.set(playerId, st)
+    if (st.t < PICKUP_DWELL) return false
     target.carrier = playerId
     target.carriedBy = team
     target.atBase = false
     target.dropped = null
+    this._dwell.delete(playerId)
     return true
   }
 
@@ -120,6 +151,7 @@ export class FlagState {
    *  object, or null when that player was not carrying anything. */
   dropFlag(playerId, x, z) {
     if (playerId == null) return null
+    this._dwell.delete(playerId)
     for (const t of TEAMS) {
       const f = this.flags[t]
       if (f.carrier === playerId) {
@@ -140,6 +172,7 @@ export class FlagState {
    */
   returnFlag(playerId, team, x, z) {
     if (this.isOver() || playerId == null || !this.flags[team]) return false
+    this._dwell.delete(playerId)
     const mine = this.flags[team]
     if (mine.carrier !== null || !mine.dropped) return false
     const dx = x - mine.dropped.x, dz = z - mine.dropped.z
@@ -160,6 +193,7 @@ export class FlagState {
     // Only counts if this player is the one carrying the enemy flag — a
     // spoofed capture from a player standing on base carrying nothing is inert.
     if (foe.carrier !== playerId || foe.carriedBy !== team) return false
+    this._dwell.delete(playerId)
     const bx = this.bases[team].x, bz = this.bases[team].z
     if ((x - bx) * (x - bx) + (z - bz) * (z - bz) > R2(CAPTURE_RADIUS)) return false
     this.scores[team] += 1
@@ -204,5 +238,6 @@ export class FlagState {
     this.winner = null
     this.flags.lovis = freshFlag(this.bases.lovis)
     this.flags.krag = freshFlag(this.bases.krag)
+    this._dwell.clear()
   }
 }

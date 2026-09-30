@@ -1057,4 +1057,45 @@ function fakeWave(o) {
   screens.dispose()
 }
 
+{
+  // v35: the CTF minimap canvas is created hidden and revealed by setCtf; the
+  // 2D draw plots a green (lovis) and red (krag) flag dot plus the player marker.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const mm = hud._minimap
+  assert.ok(mm, 'minimap canvas element exists')
+  assert.ok(mm.classList.contains('hidden'), 'minimap starts hidden')
+  // Stub a recording 2D context so the draw path is exercised headlessly.
+  const arcs = []
+  const fills = []
+  mm.getContext = () => ({
+    clearRect() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+    save() {}, restore() {}, translate() {}, rotate() {}, closePath() {},
+    arc(x, y, r) { arcs.push({ x, y, r }) },
+    fill() { fills.push('fill') }
+  })
+  hud._minimapCtx = mm.getContext()
+  hud._mmCarriers = new Map([['c1', { x: 0, z: 0 }]])
+  hud.setCtf({
+    scores: { lovis: 1, krag: 0 },
+    flags: {
+      lovis: { home: { x: -90, z: -90 }, carrier: null, dropped: null, atBase: true },
+      krag: { home: { x: 90, z: 90 }, carrier: 'c1', carriedBy: 'lovis', dropped: null, atBase: false }
+    },
+    winner: null
+  }, 'lovis', { x: 0, z: 0, yaw: 0 })
+  assert.ok(!mm.classList.contains('hidden'), 'setCtf reveals the minimap')
+  // Two flag dots (green + red) then the player chevron => at least 3 arcs.
+  assert.ok(arcs.length >= 2, 'both flag dots drawn')
+  // Green lovis flag sits at its home base; red krag flag tracks its carrier (0,0).
+  // Map world [-110,110] -> [0,160]: lovis(-90,-90) -> ~14.5, krag carrier(0,0) -> 80.
+  // Each flag dot draws two arcs (fill + white ring), so index 0/1 = green, 2/3 = red.
+  const green = arcs[0], red = arcs[2]
+  assert.ok(green.x < 40 && green.y < 40, 'green dot near the lovis (top-left) corner')
+  assert.ok(Math.abs(red.x - 80) < 1 && Math.abs(red.y - 80) < 1, 'red dot tracks the carrier at centre')
+  // Passing null hides the minimap again (survival mode).
+  hud.setCtf(null, 'lovis')
+  assert.ok(mm.classList.contains('hidden'), 'null snapshot hides the minimap')
+}
+
 console.log('hud-screens OK')

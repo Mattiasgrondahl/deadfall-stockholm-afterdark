@@ -38,7 +38,7 @@ test('a player reaching the enemy base picks up the enemy flag', () => {
   const m = ctfMatch()
   // 'a' is lovis; walk to the krag base pedestal.
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
-  run(m, 0.1)
+  run(m, 3.2) // stand in the ring for the full 3 s dwell
   assert.equal(m.flag.flagOf('krag').carrier, 'a', 'lovis player carries the krag flag')
   const snap = m.snapshot()
   assert.ok(snap.events.some((e) => e.k === 'flagPickup' && e.by === 'a'), 'pickup event emitted')
@@ -47,7 +47,7 @@ test('a player reaching the enemy base picks up the enemy flag', () => {
 test('carrying the enemy flag home scores a capture', () => {
   const m = ctfMatch()
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z) // grab krag flag
-  run(m, 0.1)
+  run(m, 3.2) // dwell fills, flag comes up
   place(m, 'a', CTF_BASES.lovis.x, CTF_BASES.lovis.z) // bring it to lovis base
   run(m, 0.1)
   assert.equal(m.flag.scores.lovis, 1, 'lovis scored')
@@ -60,7 +60,7 @@ test('a carrier who dies drops the flag', () => {
   const m = ctfMatch()
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
   place(m, 'b', 0, 0) // move the krag owner off their base so the drop stays free
-  run(m, 0.1)
+  run(m, 3.2) // dwell fills, flag comes up
   assert.equal(m.flag.flagOf('krag').carrier, 'a')
   m.getPlayer('a').player.damage(9999) // killed -> drop
   run(m, 0.1)
@@ -74,7 +74,7 @@ test('a carrier who is HIT (non-lethal) drops the flag', () => {
   const m = ctfMatch()
   place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
   place(m, 'b', 0, 0) // move the krag owner off their base so the drop stays free
-  run(m, 0.1)
+  run(m, 3.2) // dwell fills, flag comes up
   assert.equal(m.flag.flagOf('krag').carrier, 'a')
   const p = m.getPlayer('a').player
   p.damage(1) // a scratch — not lethal, but the objective drops the flag on any hit
@@ -91,9 +91,19 @@ test('a carrier who is HIT (non-lethal) drops the flag', () => {
 
 test('first team to 3 captures wins the match', () => {
   const m = ctfMatch()
+  // Move the krag owner off their own base so a dropped krag flag is not
+  // instantly returned by 'b' — 'a' must be the one to reclaim it each round.
+  place(m, 'b', 0, 0)
   for (let i = 0; i < 3; i++) {
-    place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z) // grab
-    run(m, 0.1)
+    // Stand in the krag ring until the 3 s dwell lifts the flag. A neutral
+    // swarm zombie may hit the carrier and drop it mid-dwell, so keep standing
+    // (with a bounded retry) until the flag is actually in hand.
+    let tries = 0
+    while (m.flag.flagOf('krag').carrier !== 'a' && tries++ < 8) {
+      place(m, 'a', CTF_BASES.krag.x, CTF_BASES.krag.z)
+      run(m, 3.2)
+    }
+    assert.equal(m.flag.flagOf('krag').carrier, 'a', 'grabbed the krag flag')
     place(m, 'a', CTF_BASES.lovis.x, CTF_BASES.lovis.z) // score
     run(m, 0.1)
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { FlagState, WIN_SCORE, PICKUP_RADIUS, CAPTURE_RADIUS, TEAMS, BASE } from '../src/game/Flag.js'
+import { FlagState, WIN_SCORE, PICKUP_RADIUS, CAPTURE_RADIUS, PICKUP_DWELL, TEAMS, BASE } from '../src/game/Flag.js'
 
 // CTF mode: server-authoritative flag state. Pure logic (no three, no DOM, no
 // Math.random) so it is testable headlessly. Rules under test: one flag per
@@ -204,4 +204,66 @@ test('flag: determinism — identical scripts give identical snapshots', () => {
   assert.equal(a.scores.lovis, 1)
   assert.equal(a.scores.krag, 1)
   assert.equal(a.winner, null)
+})
+// v35: pickup now requires standing inside the ring for PICKUP_DWELL seconds.
+test('v35 flag: pickup needs a 3s dwell in the ring, not an instant grab', () => {
+  const f = newMatch()
+  const dt = 1 / 60
+  const kr = BASE.krag
+  // Tick in ~1 s chunks well short of the dwell — nothing is lifted.
+  for (let i = 0; i < 60; i++) {
+    assert.equal(f.tryPickup('p1', 'lovis', kr.x + 1, kr.z, dt), false, 'no grab before the dwell fills')
+  }
+  // Keep ticking until the flag finally lifts; it must take at least the dwell.
+  let ticks = 60
+  while (!f.tryPickup('p1', 'lovis', kr.x + 1, kr.z, dt)) {
+    ticks++
+    assert.ok(ticks < 300, 'dwell must complete within a few seconds')
+  }
+  assert.ok(ticks * dt >= PICKUP_DWELL - 1e-6, 'flag lifted only after the full dwell')
+  assert.equal(f.isCarrying('p1'), true)
+})
+
+test('v35 flag: leaving the ring resets the dwell timer', () => {
+  const f = newMatch()
+  const dt = 1 / 60
+  const kr = BASE.krag
+  // Stand in the ring for ~2 s (well short of the dwell).
+  for (let i = 0; i < Math.floor(2 / dt); i++) f.tryPickup('p1', 'lovis', kr.x + 1, kr.z, dt)
+  // Step out — the partial dwell is discarded.
+  assert.equal(f.tryPickup('p1', 'lovis', kr.x + PICKUP_RADIUS + 5, kr.z, dt), false)
+  // Step back in: the clock restarts from zero, so a short re-entry does not lift.
+  for (let i = 0; i < Math.floor(1 / dt); i++) {
+    assert.equal(f.tryPickup('p1', 'lovis', kr.x + 1, kr.z, dt), false, 'dwell restarted, not carried over')
+  }
+  // Keep ticking from the re-entry until it lifts; it must take a FULL dwell
+  // (~3 s), proving the pre-exit progress was discarded, not carried over.
+  let ticks = Math.floor(1 / dt)
+  while (!f.tryPickup('p1', 'lovis', kr.x + 1, kr.z, dt)) {
+    ticks++
+    assert.ok(ticks < 300, 'dwell must complete after re-entry')
+  }
+  assert.ok(ticks * dt >= PICKUP_DWELL - 1e-6, 're-entry needed a full dwell, not the leftover ~2 s')
+  assert.equal(f.isCarrying('p1'), true, 'flag lifts after a full dwell from the re-entry')
+})
+
+test('v35 flag: a caller that omits dt keeps the legacy instant pickup', () => {
+  const f = newMatch()
+  const kr = BASE.krag
+  assert.equal(f.tryPickup('p1', 'lovis', kr.x + 1, kr.z), true, 'no dt → instant grab (back-compat)')
+})
+
+test('v35 flag: returning the enemy flag to your own base scores a point', () => {
+  const f = newMatch()
+  const kr = BASE.krag, lv = BASE.lovis
+  // Pick the enemy flag (instant path), then carry it home to the lovis base.
+  assert.equal(f.tryPickup('p1', 'lovis', kr.x + 1, kr.z), true)
+  assert.equal(f.scores.lovis, 0)
+  // Outside the capture ring → no score yet.
+  assert.equal(f.tryCapture('p1', 'lovis', lv.x + CAPTURE_RADIUS + 1, lv.z), false)
+  // Inside the capture ring at your own base → one point + the flag resets home.
+  assert.equal(f.tryCapture('p1', 'lovis', lv.x + 1, lv.z), true)
+  assert.equal(f.scores.lovis, 1)
+  assert.equal(f.flagOf('krag').atBase, true, 'captured flag reset to its pedestal')
+  assert.equal(f.flagOf('krag').carrier, null)
 })

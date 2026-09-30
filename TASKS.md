@@ -4,7 +4,8 @@ Internal task tracking (git-ignored). Reconstructed after a workspace corruption
 the original; state below is recovered from git history + probe evidence.
 
 ## Status overview
-- **CURRENT HEAD (v4): v28 Stockholm-winter polish pass IN PROGRESS — R1 (aurora + amber horizon + green ambient) + R2 (breath plumes + frost vignette) DONE, uncommitted on top of `3229ef5` (v27).** Tests 410/410, verify 81/0/0, build ok, check-assets 62/0, secrets clean (301 files). See `## v28 Stockholm-winter polish pass` below. (Prior: `3229ef5`/`9532d90` v27 balance+SFX+crate, `e2d369a` v26d face, `8015814` v26c windows.)
+- **CURRENT HEAD (v4): v28 Stockholm-winter polish pass COMPLETE — R1 (aurora + amber horizon + green ambient) + R2 (breath plumes + frost vignette) + R3 (winter wind bed + snow/ice footsteps + boss telegraph + headshot hit-stop) + R4 (Stockholm landmarks + view-model frost + zombie contact shadows + volumetric light shafts) ALL DONE.** Baseline `0e7826c`; R4 committed `0d6395e`. Tests 436/436, verify 81/0/0, build ok, check-assets 63/0, secrets clean (312 files). **New branch `feat/ctf` cut from v4 for the Capture-the-Flag mode (Lovisedal vs Kragstalund)** — CTF vertical slice COMPLETE: Flag.js/SwarmDirector/FlagRender/HUD scoreboard/Game CTF flow/CityCTF map + server swarm/hosted-CTF client render/team tinting/4 new winter zombie faces/CTF arena look-capture/drop-on-hit ALL committed; **deployed to gh-pages (`498e4dc`) + prod server launched on :8080**; **CTF team-select + base-spawn DONE (`d57e937`)** — title-screen LOVISEDAL/KRAGSTALUND picker + spawn/respawn at your own base flag; **CTF hang-on-start FIXED (`2ce75ef`)** — the survival-built Game now swaps in the CTF arena at run start (`_buildCtfWorld`); **v29 highscore+lobby DONE** — the persisted XSS-probe highscore entry is purged on read AND the on-disk `server/highscore.json` reset to the clean seed ladder (never restored on redeploy since the file is git-ignored), plus a new `GET /api/lobby` server endpoint + a title-screen LOBBIES browser (online count + clickable open-room rows that join via `startMultiplayer`); **v30 mode-switch fix DONE (`645bff1`)** — switching game mode from the title now tears down a stale co-op controller (`Game._teardownMultiplayer` called from `startGame` when starting from the title and not a co-op join) so single↔co-op↔CTF no longer keeps the previous mode; **v31 footstep SFX DONE** — the walking footstep was re-generated as a clearer leather-boot step and running now plays its OWN `sfx_footstep_run.wav` boot-strike sample instead of pitch-shifting the walk clip up 1.12x (which sounded weird); branch topology restructured: `feat/ctf` renamed to `dev` (staging, :8090, worktree `/home/mgr/Workspace/Zombie`), new `main` cut from `bd26f00` is GitHub default + prod (:8080 / `zombie.p4pps3n.top`, worktree `/home/mgr/Workspace/Zombie-prod`); dev/prod are isolated worktrees with separate `dist/` so dev rebuilds never touch prod (verified); features graduate dev→main by explicit merge + prod rebuild + :8080 restart (see `docs/DEPLOYMENT.md`); tests **488/488**, verify 81/0/0, build ok, check-assets 64/0, secrets clean. Remaining: optional hosted-CTF co-op probe; redeploy gh-pages to ship the team-select + hang-fix + v29/v30/v31 build. See `## CTF capture-the-flag mode` below. (Prior: `3229ef5`/`9532d90` v27 balance+SFX+crate, `e2d369a` v26d face, `8015814` v26c windows.)
+- **CURRENT (v35, branch `dev`)**: CTF minimap + 3 s flag dwell DONE on `dev` (pending commit). Bottom-right `.hud-minimap` canvas plots the green lovis + red krag flags (base/drop/carrier-follow) + a player chevron; pickup now needs a 3 s dwell in the ring (`Flag.PICKUP_DWELL`, dt-wired into `Match._processFlags` + `Game._updateCtfFlags`); returning the enemy flag to your own base still scores via `tryCapture`. Tests **495/495**, verify 81/0/0, build ok, check-assets 64/0, secrets clean, E2E 17/18 (`pickup restores ammo` = pre-existing SwiftShader flake).
 - **v4 VISUAL UPGRADE (Sep 27–28, branch `v4`, plan `docs/VISUALS-PLAN-V4.md`)**: user-approved scope = per-type zombie look, weapon skins + view-model feel, building/atmosphere upgrades, attract video ≤15 MB. Progress: (B1) pistol+shotgun AI PBR skins wired via `_loadSkin` — `49beea7`. (B2) view-model feel: pitch/roll recoil + lateral bob on pistol/shotgun, WeaponBank swap raise/lower — `89fa21e`. (B3) sniper muzzle-flash Sprite+PointLight + Axe textured-head dispose fix — `831fd31`. (A3) shared gore/dirt detail DataTexture on bare-skin zombie materials (refcounted) — `d99a0a8`. (C1) buildings: 8 facade variants + 6-color palette + new `src/world/FacadeTrim.js` instanced window trim (+1 InstancedMesh) — `2cbb2b3`. (C2) sky lift + skyline depth + envmap — `5e57d21`/`2cbb2b3`. (D1) title-screen looping attract `<video>` over the static plate — wiring `0da4a6d`, Wan2GP i2v clip `attract.mp4` (4s 832x480 h264, 2.3MB faststart) `fb95224`. All 365/365, verify 81/0/0, build ok, check-assets 0 problems, secrets clean, E2E 18/18. **(A+B) mesh-budget headroom (Sep 28)**: the ≤640 gate was self-imposed in `tools/verify-game.mjs` (not a Three.js limit); real peak was 633 (11-alive wave cap) so there was NO live breach, only thin headroom. Fix = (A) raise the gate 640→800 + (B) instance repeated city dressing in `src/world/cityDressing.js` — streetlight pools 40→1, barricade planks 16→1, landmark strips 10→2, danger strips 4→2, outer strips 20→2, sign posts+panels 44→2, crosswalk bands 16→2, snowdrifts 8→1 (InstancedMesh, one mesh/one draw call each; `City.dispose` already disposes InstancedMeshes via its traverse). Streetlight **heads** stay separate Meshes (per-lamp `headMat.clone()` lets a shot lamp go dark independently — instancing would break shootable-lamps). Base scene 515→370, peak@11 633→488, peak@24 755→629, all under the 800 gate (≥171 spare). Tests updated to count instances not meshes (`test/city.test.mjs` `expandInstances`/`instanceCount` helpers; `material-hierarchy` city count 389→244). 365/365, verify 81/0/0, build ok, check-assets 39/0, secrets clean. This headroom is what makes **A2 (distinct per-type Pixal3D meshes)** affordable. **A1 (skinned-rig revival) deliberately NOT done**: the primitive clothed humanoid (face image + per-type SKIN_TINT/SKIN_WIDTH) is the intentional always-on visual; the walker-final.glb rig clips are corrupted post-repair-rig (stripped to `animations:[]`) and `_applyLOD` keeps the rig hidden so the pale featureless body never overrides the primitive — see Zombie.js `_applyLOD`/`loadSkin` comments. **A2 (new per-type Pixal3D meshes) DONE (Sep 28)**: shambler/screamer/brute now render a distinct high-quality BODY mesh instead of the generic primitive torso/limbs, while the primitive HEAD (face portrait + glowing eyes + hair + accessory) stays so headshots, hit-flash, dismemberment and the walk-bob all keep working; walker keeps the primitive body as the fallback. Pipeline: Wan2GP full-body ref (z_image + mattias LoRA) → Pixal3D `1024_cascade` NAF candidate (GPU 2 via `CUDA_VISIBLE_DEVICES=2`, CPU rembg + CuMesh `fill_holes` stub) → Blender finish (`tools/blender/finish-candidate.py`) to ≤3k tris / 1.8 m → strip embedded WebP textures (they hung the headless GLTFLoader `load` callback and are dropped by the tinted-material path anyway). Assets `public/assets/zombies/{shambler,screamer,brute}-mesh.glb` (single unrigged mesh each: shambler 1404 tris 0.94×1.08, screamer 2308 tris 1.01×0.74, brute 2252 tris 1.46×0.57). Wiring in `src/game/Zombie.js`: `MESH_ASSET`/`loadSkinMesh`/`_attachSkinMesh` mirror the existing `loadSkin`/`_attachSkin` path but attach a STATIC body (no rig/mixer); `_applyLOD` re-enforces the mesh-body policy on every call (the rig loader re-shows primitives, so a one-shot gate caused a double body — fixed); hit-flash/death repaint `_skinMesh.body.material`; dispose detaches the clone + disposes the owned material. `tools/check-assets.mjs` gained a mirrored `MESH_ASSET` parse. Tests +6 in `test/zombie-skin.test.mjs` (parses the real GLBs, drives `_attachSkinMesh`/`_applyLOD`/flash/death/dispose headlessly). 372/372, verify 81/0/0, build ok, check-assets 42/0, secrets clean, E2E 18/18; browser probe confirms all 3 types attach a visible mesh with the primitive torso/limbs hidden + head kept, walker stays primitive. Worst-case 24-zombie peak 629 ≤ 800 gate. (Supersedes the earlier "A2 evaluated and DEFERRED" note — the primitive body still gives distinct silhouettes, but the per-type meshes now give distinct *geometry* too.) **A2 fix round (Sep 28, post-playtest):** the user reported the first wave-1 shamblers rendered *distorted* (lying on their side) and the weapon skins looked bad. Root cause of the distortion: the Pixal3D/Blender-finished meshes were authored **lying down** — the body's head-to-toe axis was the geometry's local **X** (raw bbox X-span 1.8, Y/Z ~1), so the static body rendered sideways and read as a sideways "skeleton"; `finish-candidate.py`'s "height 1.8" check measured the largest bbox dim, not Y, so it passed. The first fix attempt (`.research/orient-mesh-up.mjs`, GLTFExporter-based) **never wrote the files** — the exporter's `parse` promise hung ("unsettled top-level await") so `writeFileSync` never ran, and the committed GLBs stayed lying down. Real fix = `.research/bake-upright-bytes.mjs`: edits the GLB **binary chunk in place** (no exporter/hang) — finds the POSITION+NORMAL accessors, rotates the float arrays so the tallest raw axis maps to +Y (`(x,y,z)->(-y,x,z)` for X-up), drops feet to y=0, recomputes accessor min/max, re-serializes. CRITICAL gotcha: the BIN chunk type must be `BIN\0` (NUL, uint32 0x004E4942), NOT `BIN ` (space) — a space made GLTFLoader ignore the chunk → `getDependency('buffer')` null → `parse` threw "Cannot read properties of null (reading 'slice')" → the game silently fell back to the primitive body (which has limbs, so a VLM saw "full body" while the mesh never attached). After the NUL fix all 3 GLBs parse OK and stand upright (Y=1.80, feet≈0, tris 1404/2308/2252 preserved). Second bug: `_attachSkinMesh` scaled the body by `_skinHeight()` which inflates by the POSE2 **head** scale (screamer/brute headS 1.15/1.2) → bodies ~15% too tall; changed to a fixed `h = 1.8` (×BOSS_SCALE for the boss) since the head is a separate primitive. Browser probe (`tools/_a2-upright.mjs`) + VLM (`tools/mcpm_vision.py --image .research/zombie-look.png`) confirm shambler/screamer ~1.85 tall, feet ~0, head 1.79, distinct widths, "standing upright / full body with arms and legs / solid humanoid"; brute boss ~10.8 (×5.6, intentional). **A2 mesh bodies DISABLED (Sep 28, second post-playtest round — Supersedes the "A2 DONE" + upright claims above):** even after the upright bake, the user still saw the first spawned zombies as *skeletons with no solid body*. Diagnosis: each mesh is a solid upright humanoid in an isolated bright render (`.research/render-glb-pw.mjs` / in-page three.js render), but under the game's dim night lighting + single-color emissive tint (`map=null`, `emissiveIntensity 0.55`) the bodies read as dark, thin SILHOUETTES with no visible torso — the screamer especially (authored width only 0.74 m, depth 1.01 > width). VLM on the in-game close-up crop (`tools/mcpm_vision.py --image .research/zombie-crop.png`) said both figures "do not have a clearly visible solid torso." Fix = flip `USE_MESH_BODY` to `false` in `src/game/Zombie.js` so `loadSkinMesh` early-returns and every type falls back to the proven primitive clothed humanoid (face + per-type SKIN_TINT/SKIN_WIDTH). The whole mesh path (`MESH_ASSET`/`loadSkinMesh`/`_attachSkinMesh`/`_applyLOD` mesh branch + the upright-baked GLBs) is kept intact so a future higher-quality mesh pass can flip the flag back to `true`. Tests call `_attachSkinMesh` directly so they still pass (372/372). Browser probe + VLM on `.research/zombie-primitive.png` confirm all types now render a solid connected body (torso+arms+legs), no skeleton. 372/372, verify 81/0/0, build ok, check-assets 41/0, secrets clean. **Weapon skins → flat dark gunmetal (user choice "no photo"):** dropped the AI `assets/weapons/*.jpg` overlay on all 5 view-models — Pistol/Shotgun/Sniper `_loadSkin()` now early-returns (method + headless guard kept so callers/dispose are unchanged), Axe/Sword TextureLoader→head-material blocks removed (head/blade keep steelMat); body materials retuned to gunmetal (Pistol 0x1c1e21 metal .85, Shotgun 0x212429 metal .8, Sniper 0x23262b metal .8). The jpgs stay in `public/assets/weapons/` for tooling but are no longer code-referenced (check-assets 42→41). 372/372, verify 81/0/0, build ok, check-assets 41/0, secrets clean. NEXT: optional full-face melee skins, or deploy v4. **Deployed (Sep 28):** `v4` pushed to origin (new branch, tip `fb95224`); gh-pages `778def1` (build of `fb95224`, bundle `index-BnGAk21D.js` + `index-BjKWzBLN.css` + `GLTFLoader-l9hW4zEb.js`, new `assets/posters/attract.mp4` + `assets/weapons/{pistol,shotgun}.jpg`). Live verified: index serves `index-BnGAk21D.js`, `attract.mp4` 200 video/mp4 2355208 B.
 - **v4 co-op parity round (Sep 28, branch `v4`)**: user report — "co-op zombies don't attack the player like single-player; co-op should match SP but allow extra players, with friendly fire + respawn." Diagnosis (headless probe): the SERVER already simulates co-op correctly (zombies target + damage the nearest alive player; a walker 1 m from a player drained 100→12 HP over 200 ticks, state `attack`), and respawn/match-end were already wired (`Game.onPlayerDeath`/`_respawnSelf`/`_wireMpHooks`). The gap was client-side presentation + two missing features. (1) **Remote zombies never showed an attack** — `RemoteZombie.sync` read the snapshot `state` only for death. Fix: track `state`, latch an attack edge, and drive a windup→swing arm pose + forward torso lean in `update(dt)` while `state==='attack'` (reuses `_armRest`, no new meshes → budget-neutral). (2) **No client hit feedback** — the server emits `{k:'hit',victim,dmg,by}` but `Multiplayer._sync` ignored it. Fix: a new `onSelfHit(dmg,by,ff)` hook fires when a `hit` event targets this pid; `Game._wireMpHooks` maps it to `hud.dmgFeedback` + `audio.hitPlayer` so a co-op hit reads + sounds like single-player (health itself was already adopted via MP-HEALTH). (3) **Friendly fire added (server-authoritative)** — new `MSG.FF` + `protocol.parseFF` (dmg clamp 0–200), `Match.applyFF(victim,dmg,by)` applies `FRIENDLY_FIRE=0.35` × damage to the victim's player + emits a `hit` event (`ff:true`), `Room.applyFF` dispatches it, `NetClient.sendFF` sends it. Client side: new `src/net/FFProxy.js` builds a weapon-target-shaped proxy per teammate (torso+head hitbox spheres, no-op `hitLimbAt`/`_chainShot`/`knockback`, `damage()`→`sendFF`); `Multiplayer.getPlayers()` returns them and `Game` WIRING:WEAPON concats them into `getZombies()` so the existing hit loop registers teammate hits (single-player stays zombies-only, byte-identical). Respawn-on-death already worked and is unchanged. Tests +7 (match applyFF + self/dead/unknown guards, server-room parseFF + Room.applyFF, multiplayer getPlayers/FF-proxy/onSelfHit/attack-pose) → **379/379**, verify 81/0/0, build ok, check-assets 41/0, secrets clean. Headless co-op probe `tools/_probe-coop-ff.mjs` PASS (FF 100→79, onSelfHit fires, teammate proxied, attack lean 0.18). NEXT: deploy v4 (gh-pages) when the user asks.
 - **v4 high-score XSS hardening (Sep 28, branch `v4`)**: user flagged an XSS attempt in the high score. A hostile name had landed in `server/highscore.json` as `{"name":"<img src=x onerror=alert","score":500}`. Root cause: `sanitizeName` (server + client `Score.js`) only stripped control chars + collapsed whitespace + clamped length — it did NOT strip HTML-significant characters, so `< > "` survived into storage and the GET payload. Not actually exploitable (every name render is `textContent`-only — grep confirmed zero `innerHTML`/`insertAdjacentHTML` in `src/`), but defense-in-depth warranted. Fix: both sanitizers now also strip `[<>&"']` (server `HS_MARKUP`, client `MARKUP_RE`) before whitespace-collapse/clamp, so a payload is neutralized at the source, not only at render. Cleaned the poisoned `server/highscore.json` in place (`<img src=x onerror=alert` → `img src=x onerror=alert(`). Updated 3 assertions that pinned the old keep-markup behavior (`test/highscore-api.test.mjs` hostile-name test, `test/score-hosted.test.mjs` adoptBest, `test/hud-screens.test.mjs` solo-name sanitize) + added an explicit XSS-strip assertion. **379/379**, verify 81/0/0, build ok, check-assets 41/0, secrets clean. Live API `GET /api/highscore` now returns `img src=x onerror=alert(` (no markup chars). Server restarted (job `bash-563`) to pick up the new sanitizer. **Provenance follow-up**: the payload was NOT an external attacker — it was written by the test suite itself. `test/highscore-api.test.mjs`'s hostile-name test (`listen({highScore:10})` + `POST {score:500, name:'<img src=x onerror=alert(1)>...'}`) wrote straight into the real `server/highscore.json` before the `HIGHSCORE_FILE`→temp-dir redirect was added in v7 (`fe5ad69`); since `highscore.json` is git-ignored it persisted. The LIVE production board (`~/zombie-app/server/highscore.json`, served by `zombie-game.service`) is clean (normal names). The server had ZERO request logging (no `remoteAddress`/`X-Forwarded-For`/access log — journald shows only start/stop banners), so no external IP was ever recorded.
@@ -2807,3 +2808,394 @@ the assistant turn; executing round-by-round on `v4`.
   62/0; secrets clean (301 files). Look-capture `.research/look/v28r2-breath.png` +
   `v28r2-frost.png`; VLM confirmed frost vignette visible ("Yes"); frost frame file
   size 1.1 MB vs breath 0.4 MB (screen-blend brightening).
+
+### v28 R3 — Winter audio bed + boss telegraph + headshot hit-stop (DONE)
+- **MusicEngine.js winter wind bed:** `_windBed(start,bar)` added to the AMBIENT
+  track only (combat/crisis stay dry). One lazily-built shared noise buffer
+  (deterministic LCG seed 0x5EED17, no Math.random) through a 520 Hz lowpass, gain
+  0.05 modulated by a slow per-bar LFO (±0.035) so the calm sections breathe like
+  cold air across rooftops. Loops (no scheduled stop); torn down via _kill on
+  fade/stop. `_noiseBuf` init added to constructor.
+- **Snow-vs-ice footsteps:** new `public/assets/audio/sfx/sfx_footstep_ice.wav`
+  (Wan2GP stable_audio3_sfx, trimmed to 0.3 s crisp ice-crack, loudnorm I=-16;
+  RMS 0.066 peak 0.84). `SfxSamples.js` maps `footstep_ice`. `AudioBank.footstep
+  (run, surface)` picks the ice vs default sample; ice synth fallback is a bright
+  2600 Hz bandpass crack. `updateGroans` alternates ice/snow per footfall via the
+  L/R `_stepFlip` (deterministic, no RNG); `playerState.surface` can force one.
+- **Boss telegraph (Lighting.js):** `telegraph()` fires a ~1.4 s streetlight
+  brownout — pool intensity dips/flickers (dip = 0.35+0.4p+0.25|sin|, deterministic
+  from the countdown, no RNG) then recovers to 82 cd. Game WIRING: `onBossIncoming`
+  now calls `lighting.telegraph()` + `audio.playBossIncoming()` (was banner-only).
+- **Headshot hit-stop (Game.js step):** `_hitStop` timer (init 0 in ctor + resetRun);
+  a fatal headshot sets it to 0.09 s; while active `update()` runs at 0.12× dt
+  (freeze-frame feel) while `timeInGame` keeps real-time so it always expires; HUD/
+  render stay on real dt. Trigger wired in the onKill headshot branch.
+- **Tests:** `test/audio.test.mjs` footstep-surface test (ice→footstep_ice, snow→
+  footstep, default→footstep); fake-ctx node gained `playbackRate`+`buffer`.
+  `test/lighting.test.mjs` telegraph dip→recover test. `test/headless-boot.test.mjs`
+  hit-stop: real clock full-speed + `_hitStop` decays to 0.
+- **Verification:** `node --test` 411/411; verify 81/0/0; build ok (index-CFU6xiYI.js);
+  check-assets 63/0 (ice wav counted); secrets clean (302 files). Look-capture
+  `.research/look/v28r3-aurora.png` (skyGroundDelta 23.7, detail 61.3 — aurora
+  renders, not black) + `v28r3-telegraph.png`.
+
+### v28 R4 — Stockholm landmarks + view-model frost + zombie shadows + light shafts (DONE, committed `0d6395e`)
+- **Landmarks (src/world/Landmarks.js, NEW):** three recognizable Stockholm
+  silhouettes on the far skyline ring (380 m, under the 520 far plane) so the
+  night city reads as Stockholm not a generic town — Kaknästornet (tapered
+  CylinderGeometry mast), Globen/Ericsson Globe (SphereGeometry dome), Gamla stan
+  spire (ConeGeometry needle). All share ONE dark fog-free MeshBasicMaterial
+  (0x141c28, same as the generic skyline boxes) so they blend into the lit-city
+  ring. Separate scene Group (not a Sky child) so the Sky group's fixed
+  child/mesh counts are untouched. Deterministic fixed positions, no RNG.
+  +3 meshes / +3 geos / +1 mat. `test/landmarks.test.mjs` (6 tests: 3 meshes in
+  one group, shared mat + distinct geos, under far plane, deterministic, dispose
+  via dispose EVENTS, headless). Wired into Game WIRING:SKY after `new Sky`;
+  dispose removes the group. fog.test dispose mesh-delta bumped 4→7 (landmarks
+  add 3 disposed meshes).
+- **View-model frost (src/world/ViewSnow.js, NEW):** standing still in the
+  falling snow lets a thin frost dusting settle on the near view-model region.
+  One additive Points cluster parented to the CAMERA (sits low-front of the
+  frame like a gun), fixed 40-flake pool, seeded LCG placement (no RNG). Idle
+  (low speed) accumulates flakes; moving shakes it off (emit 0). Flakes age out
+  over LIFE 6 s. `test/view-snow.test.mjs` (6 tests: additive Points on camera,
+  idle spawn→age-out, zero-intensity no-op, pool wrap ≤40, dispose via EVENTS,
+  headless). Wired into Game WIRING:VIEWSNOW (construct after breath; emit on
+  idle in the breath update block; dispose). Points +1 (well under 2500 budget).
+- **Zombie contact shadows (src/world/ZombieShadows.js, NEW):** one InstancedMesh
+  of dark radial-gradient discs laid flat just above the ground (y=0.02), one
+  instance per LIVE zombie, repositioned under each body every frame (same
+  technique as cityDressing addContactShadows, applied to moving actors).
+  `update(zombies)` sets `mesh.count` to the live count clamped to the 24 pool;
+  dead bodies get no shadow. Normal blending + depthWrite:false so the disc
+  DARKENS the pavement. Per-instance tint from a seeded LCG (AmmoDrops.js:96
+  shape); no per-frame allocation (module scratch Matrix4/Vector3/Color).
+  Headless-safe (canvas map only when `document` exists). +1 mesh.
+  `test/zombie-shadows.test.mjs` (7 tests). NOTE: fixed a double-rotation bug —
+  geometry is pre-rotated flat so the mesh itself stays unrotated.
+- **Volumetric light shafts (src/world/LightShafts.js, NEW):** one additive
+  InstancedMesh of open-ended cones hanging from each streetlight anchor
+  (city.streetlightAnchors, y=5.05) so the snowy night air reads hazy and the
+  lamp pools have volume. No new lights. Per-anchor length/alpha jitter from a
+  seeded LCG; static (update is a no-op). Additive + depthWrite:false. +1 mesh.
+  `test/light-shafts.test.mjs` (7 tests: additive InstancedMesh, count =
+  min(anchors,maxShafts), hangs between ground and lamp, deterministic, dispose
+  via EVENTS, headless). Wired into Game WIRING:ZSHADOWS/LAMPS + dispose.
+- **Verification (R4 complete):** `node --test` 436/436 (411 + landmarks 6 +
+  viewsnow 6 + zombie-shadows 7 + light-shafts 7 + R3 additions); verify 81/0/0;
+  build ok; check-assets 63/0; secrets clean (312 files). fog.test dispose
+  mesh-delta bumped 7→9 (zombieShadows + lightShafts InstancedMeshes count as
+  meshes). Look-capture `.research/look/v28r4-landmarks.png` (VLM: tall dark
+  silhouettes slender tower/dome/spire + greenish aurora glow) +
+  `v28r4-viewsnow.png` (detail 1546, bright lower region = frost cluster reads).
+
+## CTF capture-the-flag mode (branch `feat/ctf`, cut from v4 `0e7826c`)
+New game mode: two-team Capture-the-Flag, **Lovisedal school** (team `lovis`, base
+near -90/-90) vs **Kragstalund office** (team `krag`, base near +90/+90). Steal the
+enemy flag and bring it home → +1 point; first to **3** wins. A carrier who is hit
+dies and **drops the flag** in the field; anyone can pick a dropped flag up (enemy =
+steal, owner = return it home). Neutral zombie **swarms** chase the nearest live
+player across BOTH teams and focus the flag carrier. Bespoke map (train station
+chokepoint, forest, roads+cars), NOT the procedural 7×7 survival grid. Locked
+decisions: networked 2-team multiplayer, neutral hazard swarms, vertical slice.
+
+### Progress
+- **Scaffold committed `a4bc040`** (branch `feat/ctf`):
+  - `src/game/Flag.js` (208 lines) — pure-logic `FlagState` state machine (no three/DOM/RNG).
+    `WIN_SCORE=3`, `PICKUP_RADIUS=2.0`, `CAPTURE_RADIUS=4.0`, `TEAMS=['lovis','krag']`,
+    `BASE` (overridable via `opts.bases`). Methods: flagOf/enemyFlagOf/isOver/carrierOfTeam/
+    isCarrying/tryPickup/dropFlag/returnFlag/tryCapture/update/snapshot(2dp,copy)/dispose.
+    One-flag-per-carrier; capture only counts if caller carries the ENEMY flag and is within
+    CAPTURE_RADIUS of their OWN base; win-at-3 freezes mutation. `test/flag.test.mjs` 12/12.
+  - `Game.js` `this.mode` field (survival|ctf) alongside difficulty; `Screens.js` GAME MODE
+    picker row (SURVIVAL default / CAPTURE THE FLAG) + `_setMode` mirroring the difficulty
+    row. `test/hud-screens.test.mjs` +MODE block (difficulty `onCount` scoped to the 3 diff
+    toggles; makeGame stub gained `mode:'survival'`). Full suite **448/448**.
+- **SwarmDirector committed `d57c4a4`:** `src/game/SwarmDirector.js` (~150 lines) — continuous
+  neutral-zombie scheduler (no three/DOM/RNG). TYPES walker/shambler/screamer/brute,
+  `CARRIER_BIAS=0.6` (spawn anchor biased to the flag carrier, else nearest live player, else
+  base midpoint), `BASE_INTERVAL=4.0` compressing `SCORE_PRESSURE=0.55`/score down to
+  `MIN_INTERVAL=1.1`, `MAX_ALIVE=24` cap, seeded LCG. `test/swarm.test.mjs` 7/7 (cadence,
+  carrier clustering, cap, interval compression, determinism, dispose).
+- **FlagRender committed `5144319`:** `src/world/FlagRender.js` — client-side CTF flag render:
+  two base poles + carrier-tracking banners (above carrier / flat at drop / on pedestal when
+  home) + capture-zone ground rings; `sync(ctf, players)` from a snapshot ctf block, `update`
+  flutter, clean dispose. `test/flag-render.test.mjs` 5/5.
+- **HUD scoreboard committed `1da7a22`:** `HUD.js` `hud-ctf` block (LOVISEDAL x/3 green /
+  KRAGSTALUND y/3 amber rows + carrier banner line) + `setCtf(ctf, myTeam)` ("YOU CARRY THE
+  FLAG" / "ENEMY HAS YOUR FLAG" / "YOUR FLAG IS DOWN"); `styles.css` `.hud-ctf`. Hidden in
+  survival. `test/hud-screens.test.mjs` +setCtf block.
+- **Game CTF run flow committed `5a71c46`:** WIRING:PLAYER/CITY branch on `mode==='ctf'` →
+  CollisionWorld 220 + `CityCTF` + `FlagState` + `FlagRender`; WIRING:WAVES suppresses the
+  WaveManager in CTF; WIRING:SWARM builds `SwarmDirector`; WIRING:CTF in `update()` runs
+  `swarm.update` + `_updateCtfFlags` (drop-on-death, capture/pickup) then syncs render+HUD;
+  `startGame` restarts swarm + resets flag; `dispose()` tears down flag objects. Headless probe:
+  mode ctf boots, swarm spawns, full capture flow scores 1, dispose clean, meshes 259/lights 19.
+- **CityCTF map + server swarm committed `3cd608a`:** `src/world/CityCTF.js` (391 lines) —
+  bespoke 220 m two-base arena (Lovisedal school SW, Kragstalund office NE, central rail-
+  station chokepoint, forest InstancedMesh, roads+cars, perimeter walls, snow) with the
+  City-compatible surface (`(scene,collision,opts)`, `getSpawnPoints()`→2 base spawns, `bases`,
+  `streetlightAnchors`, `dispose`). Exports `CityCTF` + `CTF_BASES`. `Match.js` swaps
+  WaveManager→SwarmDirector in ctf mode + steps it in `_flow`; `test/city-ctf.test.mjs` 6/6,
+  `test/ctf-match.test.mjs` 6/6 (teams+flag, pickup, capture, drop-on-death, win-at-3, survival
+  no-flag). Child `20b3093e` was stopped mid-write; the test was authored directly.
+
+- **Hosted CTF client render committed `4aa9ffa`:** `Game._updateCtfFlags` branches on
+  `this.multiplayer.lastSnap.ctf` — hosted CTF adopts the server-owned flag state + this
+  client's team from the roster and renders FlagRender/HUD straight from the snapshot; solo
+  CTF keeps the local FlagState machine.
+- **Team tinting committed `fecea71`:** `RemotePlayer.setTeam(team)` overrides the per-instance
+  head/arm material color+emissive to the team tint (lovis `0x2f6b4a` / krag `0xb0663a`,
+  matching the HUD colors; null restores the per-id tint; the dead-swap still wins);
+  `Multiplayer._sync` calls `rp.setTeam(p.team)` per snapshot. `test/remote-player.test.mjs`
+  +setTeam test (7/7).
+
+- **Winter zombie faces committed `ff87aff`** (code widening `f21c5f3`): per-type face
+  variants widened 3→4 (FACEMAT 4 entries/type, loader loop 4, spawn-phase selector `%4`);
+  4 new faces generated via z_image + mattias LoRA (walker4/shambler4/screamer4/brute4 —
+  frost-dusted / frostbite winter looks) in `public/assets/faces/`. `test/zombie.test.mjs` 41/41.
+- **CTF arena look-capture (browser, prod :8080):** `tools/_ctf-look.mjs` boots the real game
+  in CTF mode, starts a run, places the player at the Kragstalund base + spawns 3 zombies →
+  `.research/look/ctf-arena.png`. sceneStats meshes 393 / lights 20 / points 7 / zombies 3 —
+  all within budget (≤800 / ≤40 / ≤2500 / ≤24). look-metrics meanY 55 / detail 1186 (valid
+  night arena).
+- **Drop-on-HIT committed `56381b9`:** the objective is "if a zombie hits them the flag is
+  dropped" — not just death. Both `Game._updateCtfFlags` (solo) and `Match._processFlags`
+  (server) now track the carrier's health across frames/ticks and drop the flag on ANY
+  decrease (a scratch, not only a kill). A one-frame re-grab grace (skip pickup for a player
+  who dropped this frame) stops a hit carrier from instantly re-snatching the flag at their
+  own feet. `test/ctf-solo.test.mjs` NEW (3/3: builds CTF map + suppresses waves, pickup→
+  capture, non-lethal-hit drop) + `test/ctf-match.test.mjs` drop-on-hit test (7/7).
+
+### CTF hang-on-start fix (DONE, commit `2ce75ef`)
+- Bug: picking CTF on the title screen then START **hung** (game stuck at title / per-frame
+  crash). Root cause: the Game is constructed ONCE with the survival world; the side is picked
+  AFTER construction, so the constructor's `mode==='ctf'` branch never ran → CityCTF/FlagState/
+  FlagRender/SwarmDirector were never built. `startGame` then ran `updateWorld` with the stale
+  survival WaveManager (crash `Cannot read properties of undefined (reading 'type')` at
+  WaveManager.js:296 via WorldCore) and a null swarm, and the intro `_pendingStart` never
+  resolved → stuck at `title/pending`.
+- Fix (`src/game/Game.js`): new `_buildCtfWorld()` swaps the survival world for the CTF arena at
+  run start — disposes survival City/WaveManager/lamps/windows/lightShafts, widens collision to
+  the 220 arena, builds CityCTF + FlagState + FlagRender + SwarmDirector + CTF lamps/windows/
+  shafts, re-points `lighting` (city/anchors/lamps + rebuilds its `scratch` array to the CTF
+  anchor count) and `this._ws` (wave=null, collision). Called in `startGame` BEFORE the
+  flag/swarm reset so those resets act on the fresh objects (previously the swarm was built but
+  never `start()`ed → 0 zombies). Idempotent (no-op when the constructor already built CTF, so
+  the headless tests are unchanged).
+- Test: +1 regression in `test/ctf-solo.test.mjs` — construct survival Game, flip `mode='ctf'`,
+  `startGame()`, assert flag/city.bases built, waveManager null, swarm present, 30 steps don't
+  throw, player at lovis base. **482/482** (was 481), verify 81/0/0, build ok. Browser probe
+  (`tools/_ctf-ws3.mjs`/`_ctf-ws4.mjs`) confirms PLAYING, no pageerror, player at base, zombies
+  spawning on the swarm cadence.
+
+### CTF team select + base spawn (DONE, commit `d57e937`)
+- User: "in capture the flag the player should pick a team/side at the beginning of the game and
+  spawn in the base location where the flag is." Implemented:
+  - **Title-screen side picker** (`src/game/Screens.js`): a single-choice TEAM row (LOVISEDAL /
+    KRAGSTALUND) reusing the `.difficulty-row`/`.toggle` styles, shown only in CTF mode (hidden
+    via `.hidden` in survival; revealed by `_setMode`). `_setTeam(name)` sets `game._myTeam`
+    ('lovis' default / 'krag'). No new CSS (reuses existing `.toggle`/`.hidden`).
+  - **Solo spawn at base** (`src/game/Game.js`): new `_spawnAtBase()` (WIRING:CTF helper, called
+    from `startGame` when `mode==='ctf' && !multiplayer`) places the player at their chosen base
+    and faces them toward the enemy base. Yaw formula: player forward moves along `(-sin yaw,
+    -cos yaw)`, so to aim at the enemy offset (dx,dz) use `yaw = atan2(-dx, -dz)` (a first cut
+    used `atan2(dx,-dz)` and faced the wrong diagonal — fixed).
+  - **Hosted spawn + respawn at team base** (`src/net/Match.js`): `addPlayer` now places a CTF
+    player at `city.bases[slot.team]` after team assignment (was the shared (0,12) survival
+    spawn); the respawn handler repositions a revived CTF player to their own base too.
+- Tests: +2 solo spawn tests (`test/ctf-solo.test.mjs` — lovis/krag base position + facing
+  quadrant), +2 match tests (`test/ctf-match.test.mjs` — players spawn at own base; dead player
+  respawns at own base), +team-picker assertions in `test/hud-screens.test.mjs`. The two existing
+  drop tests now `place(m,'b',0,0)` first — with the krag owner now spawning AT the krag base, a
+  flag dropped there is instantly recovered by that owner, so the tests move 'b' off-base to keep
+  the drop observable. **481/481** (was 477), verify 81/0/0, build ok.
+
+### Verification (all green at `d57e937`)
+- `npm test` **477/477**; `npm run verify` **81 ok / 0 fail / 0 skipped**; `npm run build` ok;
+  `node tools/check-assets.mjs` **63/0**; `node tools/secrets-scan.mjs` clean (323 files).
+
+### Deploy + server (DONE)
+- **gh-pages deploy DONE (`498e4dc`):** `npm run pages` → base-prefixed bundle
+  `index-DGMzIXjw.js` + new CSS `index-DQkjeW5_.css` + 4 winter faces; copied `dist/*` into
+  the `.deploy-ghpages` worktree, committed, pushed `origin gh-pages` (tip now `498e4dc`,
+  prior `5b41afb`). Removed worktree, rebuilt clean root-base dist (`index-BO2n39DB.js`),
+  committed the dist snapshot to `feat/ctf` (`a0fd2f7`) and pushed.
+- **Prod server LAUNCHED on :8080** (`PORT=8080 NODE_ENV=production node server/server.js`,
+  log `.research/_prod8080.log`): serves the CTF build — `/` → `index-BO2n39DB.js`, bundle
+  200, `assets/faces/walker4-face.jpg` 200. CTF smoke via `tools/_ctf-look.mjs` against the
+  live server: sceneStats meshes 393 / lights 20 / points 7 / zombies 3 (all within budget),
+  `.research/look/ctf-arena.png` valid (meanY 55 / detail 1188).
+
+### v29 highscore purge + title-screen lobby browser (DONE, pending commit)
+- **User request:** "Remove the xxs payload from the highscore and make sure it is not restored when
+  redeploying the server. On the title screen show the number of online players and the lobby name
+  eg the room name so that other players can click them to join the game."
+- **XSS payload purge (`server/server.js`):** the persisted `server/highscore.json` held a leftover
+  injection probe (`img srcx onerroralert1bz`, score 500) plus an empty-name junk row. `cleanEntry`
+  now rejects any name matching `HS_XSS_PROBE` (`onerror|onload|alert|script|img\s*src`), so a probe
+  already persisted is dropped on read AND never rewritten; the on-disk file was reset to
+  `{"top":[]}` so the board reseeds to the clean DEFAULT_TOP ladder. Because `highscore.json` is
+  git-ignored, a git-based redeploy never restores the payload. The old XSS test was rewritten to
+  assert the probe is REJECTED (not stored as inert text).
+- **`GET /api/lobby` (`server/server.js`):** new `serveLobby` route (root + Pages base path) reads
+  the live `rooms` Map (attached as `req._rooms`) and returns `{rooms:[{room,players,max}],players}`
+  sorted by player count, omitting empty rooms. `req._rooms` set in the http handler.
+- **Title-screen LOBBIES browser (`src/game/Screens.js` + `src/styles.css`):** a LOBBIES row under the
+  CO-OP field shows `ONLINE: N` + one clickable `.lobby-entry` button per open room (`CODE · n/max`),
+  each calling `_joinRoom(code)` → sets the room input + `_joinCoop()` → `startMultiplayer`. Rows are
+  textContent-only (XSS-safe). `_refreshLobby` polls `GET /api/lobby` every 3 s while the title is up
+  (`_startLobbyPoll`/`_stopLobbyPoll`, stopped in `_hideAll` + `dispose`); a fetch failure keeps the
+  last list. `_apiBase` mirrors Score's. Statics `LOBBY_POLL_MS`/`MAX_LOBBY_ROWS`.
+- **`vite.config.js`:** added `/api/lobby` to the dev proxy → :8080 (alongside `/api/highscore`).
+- **Tests:** `test/highscore-api.test.mjs` +2 (lobby listing root+base path with live WS joins; probe
+  purge on read); `test/hud-screens.test.mjs` +2 (lobby render + click-to-join; empty/failure path).
+  Full suite 484/484, verify 81/0/0, build ok, check-assets 63/0, secrets clean. E2E 17/18 — the
+  `pickup restores ammo` FAIL is a pre-existing SwiftShader flake (reproduces identically, gameplay
+  stage, untouched by v29). Prod :8080 restarted → serves clean seed ladder + `/api/lobby`.
+
+### v30 game-mode switch fix (DONE, pending commit)
+- **User report:** switching mode kept the old mode — play single then pick co-op (and vice-versa),
+  or pick CTF then switch to single, the run stayed on the previous mode.
+- **Root cause:** `this.multiplayer` + `this._mpOpts` were never cleared when leaving a co-op run.
+  `update()` branches purely on `if (this.multiplayer)` (server-authoritative co-op branch), and solo
+  CTF's arena swap is guarded by `!this.multiplayer` — so a controller left over from a prior co-op
+  game kept later SURVIVAL/CTF runs on the co-op path and blocked the CTF arena from building.
+  `_endCoopRun` (game-over) also left the controller set.
+- **Fix (`src/game/Game.js`):** new `_teardownMultiplayer()` (dispose controller + null it, clear
+  `_mpOpts`, restore the pre-coop lighting/postfx tier). `startGame()` calls it when `state === TITLE`
+  and this is NOT a co-op join (`startMultiplayer` sets a transient `_mpStarting` flag, cleared right
+  after). A game-over RESTART is left untouched so a co-op run can resume its own room.
+- **Tests:** `test/mode-switch.test.mjs` +4 (co-op→survival clears controller; co-op→CTF builds solo
+  arena; survival→CTF→co-op clean chain incl. `_mpStarting` cleared; game-over co-op restart keeps the
+  controller). Full suite 488/488, verify 81/0/0, build ok, check-assets 63/0, secrets clean.
+
+### v31 footstep SFX fix (DONE, pending commit)
+- **User report:** the walking/running footstep sound "sounds weird" and is not the same as before;
+  asked to change it back or generate new boots-walking / boots-running sounds.
+- **Root cause:** commit `ceeaf04` had regenerated `sfx_footstep.wav` lower/damper/quieter, AND
+  running was just the walk sample pitch-shifted up 1.12x (`rate: run ? 1.12 : 1`), which reads as a
+  weird chipmunky step rather than a real run footfall.
+- **Fix:** generated two fresh Stable-Audio-3 boot-foley clips (GPU 2, `tools/audio-specs/sfx/
+  sfx_footstep.json` + new `sfx_footstep_run.json`), trimmed to the active transient (walk 0.26s,
+  run 0.36s), faded out, loudnorm I=-20/TP=-2, installed into `public/assets/audio/sfx/` (build
+  copies them to `dist/`). `AudioBank.footstep()` now picks `footstep_run` for running at natural
+  rate 1 (no pitch-shift) and keeps `footstep` for walking / `footstep_ice` for ice; the headless
+  synth fallback brightens + shortens for running. `SfxSamples.js` registers `footstep_run`.
+- **Tests:** `test/audio.test.mjs` footstep-selection block updated to assert the three-way choice
+  (ice→footstep_ice, run→footstep_run, walk→footstep). Full suite 488/488, verify 81/0/0, build ok,
+  check-assets 64/0 (new run sample referenced + present in public & dist), secrets clean, E2E 17/18
+  (the lone `pickup restores ammo` FAIL is the pre-existing SwiftShader flake, unrelated).
+
+### Branch + deployment topology (DONE)
+- **`main` = prod** (GitHub default), served on **:8080 / `zombie.p4pps3n.top`** from worktree
+  `/home/mgr/Workspace/Zombie-prod`. Cut from `bd26f00` so prod keeps the exact live build.
+- **`dev` = staging** (was `feat/ctf`), served on **:8090** from worktree `/home/mgr/Workspace/Zombie`.
+- Isolated git worktrees with separate `dist/`; each server runs with `DIST_DIR` pointing at its own
+  tree, so a dev `npm run build` never changes what prod serves (verified: dev rebuild flipped :8090's
+  bundle hash `BO2n39DB`→`lFBz1T0u` while :8080 stayed frozen). `Zombie-prod/node_modules` is a
+  symlink to `Zombie/node_modules` (server only needs `ws`).
+- **Graduate flow:** test on dev/:8090 → `git -C Zombie-prod merge dev` → `npm run build` in
+  Zombie-prod → restart :8080 → `push origin main`. Full details in `docs/DEPLOYMENT.md`.
+
+### v32 intro-autoplay hang + breath glimmer (DONE)
+- **CTF "hang" = stuck on title / never starts** — root cause: the v17 intro movie gates the
+  run behind an UNMUTED autoplay `<video>`. Browsers that DEFER unmuted autoplay (promise stays
+  pending, clip never fires `ended`/`error`) left `_introActive` true forever, so `_pendingStart`
+  (→ `startGame`) never ran and the title looked frozen. Affects both modes; hit in CTF. Fix:
+  `Screens._beginRun` now arms a 1500 ms watchdog (`_introTimer`) that calls `_endIntro()` if the
+  clip is still `paused`/`currentTime===0` after the grace window, so the run always starts. Timer
+  cleared in `_endIntro` + `dispose`. Verified: simulating deferred autoplay (paused video) →
+  `state playing` within the window, no manual skip.
+- **White glimmer following the player = breath plumes** (v28 R2 Breath.js additive near-white
+  Points emitted at the face). Tamed: fragment alpha 0.5→0.28, spawn y 1.55→1.42 and ahead
+  0.35→0.6 so puffs read as breath BELOW the crosshair instead of a bright additive glimmer at
+  dead-center. Sprint center-max dropped 243→198. Feature kept, not removed.
+- Tests **488/488**, verify 81/0/0, build ok, check-assets 64/0, secrets clean. Files:
+  `src/game/Screens.js`, `src/world/Breath.js`.
+
+### v33 co-op room default + RANDOM button (DONE)
+- Co-op room input now defaults to the shared **`public`** room (was `'default'`, then
+  overwritten by a random code). `_prefillRandomName` no longer overwrites the room — the
+  public default is intentional so a fresh session lands in the common lobby.
+- Added a **RANDOM** button next to the room field that fills a fresh zombie-themed code
+  (`randomRoomCode()` → `WORD_WORD_NN`) so players can spin up a private room without typing.
+- Tests updated: title button list now `['SETTINGS','START','JOIN CO-OP','RANDOM']`; room test
+  asserts default `public` + RANDOM click yields a `WORD_WORD_NN` code. Browser check: default
+  `public`, RANDOM → `EMBER_CRYPT_94`. Tests **488/488**, verify 81/0/0, build ok, secrets clean.
+- Files: `src/game/Screens.js`, `test/hud-screens.test.mjs`.
+
+### v34 co-op polish — respawn mouse, remote faces, friendly-fire toggle, lag (DONE)
+- User report: co-op is laggy; the mouse gets stuck after a player dies + respawns
+  (Escape→resume fixes it); remote co-op players have no eyes/nose/mouth so facing
+  is unreadable; add a settings toggle for friendly fire. Four fixes:
+- **(1) Stuck mouse on respawn** — co-op death (`Game.onPlayerDeath` + `mp.onSelfDeath`)
+  releases the pointer lock, but `_respawnSelf` never re-acquired it (respawn has no
+  user gesture, so a single `requestPointerLock` is rejected during the browser's
+  post-exit cooldown). Added `Game._reacquireLockAfterRespawn()`: retries
+  `input.requestLock()` every 250 ms for up to 1.5 s until the lock lands (headless /
+  no-canvas → no-op). Timer handle `_respawnLockTimer` cleared in `dispose`.
+- **(2) Remote-player faces** — `RemotePlayer` head had no features. Added shared
+  `GEO.eye/nose/mouth` + a module-level `FACE_MAT` (dark, never disposed) and mounted
+  two eyes + nose + mouth as children of `this.head` on the FRONT (-Z = yaw-0 facing)
+  side, so they rotate with the group yaw → facing is now readable. +4 meshes/avatar
+  (≤32 total, well under the 800 gate). `dispose()` detaches them from the head.
+- **(3) Friendly-fire toggle** — new `friendlyFire: true` setting (`Settings.js`
+  DEFAULTS + ENUMS) + a `Friendly fire` ON/OFF row in the settings panel
+  (`Screens.js`). `Multiplayer` takes a `getFriendlyFire` getter (wired at all 3
+  construction sites to `() => this.settings.get('friendlyFire')`); `getPlayers()`
+  returns `[]` when it's off, so shots pass straight through teammates. No getter →
+  defaults to enabled (back-compat).
+- **(4) Co-op lag** — the co-op perf guard only dropped postfx + lighting for
+  `quality === 'high'`; `'medium'` still ran postfx + heavier lighting and felt laggy.
+  Changed the guard to drop postfx + lighting to the light tier for ANY non-low quality
+  in co-op (restored from `_mpPrevQuality` on teardown). Netcode was already tuned
+  (20 Hz tick / 10 Hz snapshots / 30 Hz input + interpolation), so render cost was the lever.
+- Tests +3: `remote-player.test.mjs` (face features exist, front-side, inherit yaw,
+  detach on dispose); `multiplayer.test.mjs` (FF gate on/off/re-enable + default-on
+  with no getter; respawn re-acquires the pointer lock via a stubbed canvas).
+  Tests **491/491**, verify 81/0/0, build ok, check-assets 64/0, secrets clean,
+  E2E 17/18 (`pickup restores ammo` = pre-existing SwiftShader flake).
+- Files: `src/game/Game.js`, `src/game/RemotePlayer.js`, `src/game/Settings.js`,
+  `src/game/Screens.js`, `src/net/Multiplayer.js`, `test/remote-player.test.mjs`,
+  `test/multiplayer.test.mjs`.
+
+### Next
+- v34 co-op polish is SHIPPED: dev `13a2bc6` merged to main `cd9b8d8`, prod dist rebuilt +
+  :8080 restarted (pid 2101345) serving `index-CMPq492Z.js`; dev :8090 rebuilt to the same
+  bundle. Browser probe confirms the Friendly-fire toggle (default ON) + remote faces.
+- Optional: hosted-CTF end-to-end co-op probe (two pages, one room) to confirm the server
+  flag state drives both clients' render + HUD.
+
+### v35 CTF minimap + 3 s flag dwell (DONE, pending commit)
+- User request (CTF mode): (1) a minimap in the bottom-right corner showing the green
+  (Lovisedal) + red (Kragstalund) flag locations; (2) the flag is only picked up after the
+  player has STOOD in its ring for 3 s (was an instant grab); (3) returning to your own
+  team's flag ring scores a point.
+- **(1) Minimap** — new `.hud-minimap` canvas (160×160, hidden until a CTF match wires it)
+  built in `HUD._build`, drawn by `HUD._drawMinimap` from `setCtf`. World [-110,110]² maps
+  onto the canvas; green dot = lovis flag, red dot = krag flag, each at its base when home,
+  at the drop spot when down, or tracking the carrier (via `hud._mmCarriers`, an id→pos map
+  Game passes from the snapshot/swarm). A white chevron marks the local player + facing.
+  `Game._updateCtfFlags` passes `me = {x,z,yaw}` + `_mmCarriers` on both the hosted and solo
+  branches. CSS puts it bottom-right above the weapon row (right:28 bottom:96; 128px on
+  narrow screens). Canvas 2D → no meshes, S8 budget untouched; headless (no ctx) → no-op.
+- **(2) 3 s dwell** — `Flag.js` `PICKUP_DWELL = 3.0` + a `_dwell` map (playerId → {flag,t}).
+  `tryPickup(playerId, team, x, z, dt)` now accumulates dwell only while the SAME flag stays
+  the in-range target, resets on leaving the ring / target change / pick / drop / capture, and
+  lifts only once `t >= PICKUP_DWELL`. Omitting `dt` keeps the legacy instant grab (back-compat
+  for headless probes). Wired the tick/frame `dt` into both callers: `Match._processFlags(dt)`
+  (server 20 Hz tick) and `Game._updateCtfFlags` (frame dt).
+- **(3) Score on return** — already satisfied by `tryCapture`: a carrier who brings the ENEMY
+  flag inside `CAPTURE_RADIUS` of their OWN base scores +1 and resets the flag home. Confirmed
+  with a new test rather than adding new scoring.
+- Tests +4 in `flag.test.mjs` (dwell fills in 3 s, leaving resets it, no-dt instant grab,
+  capture-on-return scores) + a minimap block in `hud-screens.test.mjs` (canvas hidden→shown by
+  setCtf, green dot at lovis corner, red dot tracks carrier, null hides it). Updated the
+  existing CTF integration tests (`ctf-match`/`ctf-solo`) to dwell 3.2 s before pickup and to
+  clear the krag-owner from the base so a dropped flag isn't auto-returned mid-dwell.
+  Tests **495/495**, verify 81/0/0, build ok, check-assets 64/0, secrets clean,
+  E2E 17/18 (`pickup restores ammo` = pre-existing SwiftShader flake).
+- Files: `src/game/Flag.js`, `src/game/HUD.js`, `src/game/Game.js`, `src/net/Match.js`,
+  `src/styles.css`, `test/flag.test.mjs`, `test/hud-screens.test.mjs`, `test/ctf-match.test.mjs`,
+  `test/ctf-solo.test.mjs`.

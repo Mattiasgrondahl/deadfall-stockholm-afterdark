@@ -13,6 +13,12 @@ function bootCtf() {
   return game
 }
 
+// v35: standing in the flag ring for PICKUP_DWELL (3 s) is required to lift it,
+// so step enough frames to fill the dwell.
+function dwell(g) {
+  for (let i = 0; i < 200; i++) g.step(1 / 60) // ~3.3 s
+}
+
 test('solo CTF builds the CTF map + flag state and suppresses the wave manager', () => {
   const g = bootCtf()
   assert.equal(g.mode, 'ctf')
@@ -28,7 +34,7 @@ test('solo player picks up the enemy flag at the enemy base and captures at thei
   const lovis = g.city.bases.lovis
   // Solo client is lovis; walk onto the krag pedestal to steal it.
   g.debug.setPlayerPos(krag.x, krag.z)
-  g.step(1 / 60)
+  dwell(g)
   assert.equal(g.flag.flagOf('krag').carrier, 'p1', 'picked up the enemy flag')
   // Carry it home to the lovis base to score.
   g.debug.setPlayerPos(lovis.x, lovis.z)
@@ -42,7 +48,7 @@ test('a non-lethal hit drops the carried flag (drop-on-hit, not just death)', ()
   const g = bootCtf()
   const krag = g.city.bases.krag
   g.debug.setPlayerPos(krag.x, krag.z)
-  g.step(1 / 60)
+  dwell(g)
   assert.equal(g.flag.flagOf('krag').carrier, 'p1', 'carrying the enemy flag')
   // Move off the pedestal so the drop spot is not instantly re-grabbable, then
   // take a scratch hit — the flag must drop even though the player survives.

@@ -442,6 +442,19 @@ html, body {
 .ctf-krag { color: #d99a5b; }
 .ctf-carrier { font-size: 12px; letter-spacing: 0.14em; color: var(--banner); margin-top: 4px; min-height: 14px; }
 
+/* v35 CTF minimap: a small top-down radar in the bottom-right corner, stacked
+   above the weapon row so the two never overlap. Hidden until a CTF match wires
+   it via HUD.setCtf. */
+.hud-minimap {
+  position: absolute;
+  right: 28px; bottom: 96px;
+  width: 160px; height: 160px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.6);
+  pointer-events: none;
+}
+
 /* v6 visuals (8): second line of the two existing wave readouts — the
    intermission countdown + composition preview (inside the .hud-wave panel)
    and the cap-pressure line under the threat readout. Both are small, dim,
@@ -919,6 +932,7 @@ html, body {
   .hud-battery { left: 14px; bottom: 74px; width: 120px; }
   .hud-battery .bar { width: 120px; }
   .hud-score { right: 14px; top: 14px; }
+  .hud-minimap { right: 14px; bottom: 110px; width: 128px; height: 128px; }
   .hud-music-btn { right: 14px; top: 58px; font-size: 12px; padding: 5px 9px; }
   /* v4 UI: shrink the top-right leaderboard on narrow screens so it stays a
      compact corner block and doesn't crowd the centered panel. */

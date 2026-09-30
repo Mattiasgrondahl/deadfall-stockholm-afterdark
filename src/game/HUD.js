@@ -92,6 +92,17 @@ export class HUD {
     this._ctfBox = ctf
     this._hudRoot.appendChild(ctf)
 
+    // v35 CTF minimap (bottom-right, above the weapon row): a top-down radar of
+    // the arena showing where the green (Lovisedal) and red (Kragstalund) flags
+    // are plus the local player's marker + facing. Hidden until a CTF match
+    // wires it via setCtf. The canvas is drawn in 2D (no WebGL), so it costs
+    // nothing on the mesh/light budgets.
+    const mm = d.createElement('canvas'); mm.className = 'hud-minimap hidden'
+    mm.width = 160; mm.height = 160
+    this._minimap = mm
+    this._minimapCtx = mm.getContext ? mm.getContext('2d') : null
+    this._hudRoot.appendChild(mm)
+
     // Weapons (bottom-right, v2): one slot per bank weapon with name, ammo,
     // and reload indicator; the active slot is highlighted. A legacy
     // single-weapon slot is kept for non-bank weapons. Battery (flashlight)
@@ -419,10 +430,15 @@ export class HUD {
   /** CTF: update the scoreboard from a snapshot's ctf block. `ctf` is the
    *  { scores:{lovis,krag}, flags:{...}, winner } snapshot; `myTeam` is this
    *  client's team so the carrier line can say "YOU CARRY" vs "ENEMY HAS".
-   *  Passing null hides the whole block (survival mode). */
-  setCtf(ctf, myTeam) {
+   *  Passing null hides the whole block (survival mode). `me` is an optional
+   *  { x, z, yaw } for the local player so the minimap can plot their marker. */
+  setCtf(ctf, myTeam, me) {
     if (!this._ctfBox) return
-    if (!ctf) { this._ctfBox.classList.add('hidden'); return }
+    if (!ctf) {
+      this._ctfBox.classList.add('hidden')
+      if (this._minimap) this._minimap.classList.add('hidden')
+      return
+    }
     this._ctfBox.classList.remove('hidden')
     const s = ctf.scores || { lovis: 0, krag: 0 }
     const lv = 'LOVISEDAL ' + (s.lovis | 0) + ' / 3'
@@ -440,6 +456,62 @@ export class HUD {
       else if (myFlag && myFlag.dropped) msg = 'YOUR FLAG IS DOWN — RETURN IT'
     }
     if (this._ctfCarrier.textContent !== msg) this._ctfCarrier.textContent = msg
+    this._drawMinimap(ctf, myTeam, me)
+  }
+
+  /** v35: paint the bottom-right CTF minimap. World [-110,110]² maps onto the
+   *  160×160 canvas. Green dot = Lovisedal flag, red dot = Kragstalund flag;
+   *  each sits at its base when home, at the drop spot when down, or tracks the
+   *  carrier. A white chevron marks the local player + facing. No-op when the
+   *  canvas/2D context is unavailable (headless). */
+  _drawMinimap(ctf, myTeam, me) {
+    const cv = this._minimap, ctx = this._minimapCtx
+    if (!cv || !ctx) return
+    cv.classList.remove('hidden')
+    const W = cv.width, H = cv.height
+    const EXT = 110 // arena half-extent (CityCTF ground is 220×220)
+    const sx = (wx) => ((wx + EXT) / (2 * EXT)) * W
+    const sy = (wz) => ((wz + EXT) / (2 * EXT)) * H
+    ctx.clearRect(0, 0, W, H)
+    // Backdrop + border + faint centre cross so the arena reads as a map.
+    ctx.fillStyle = 'rgba(10,12,16,0.72)'
+    ctx.fillRect(0, 0, W, H)
+    ctx.strokeStyle = 'rgba(120,130,150,0.35)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke()
+    const flags = (ctf && ctf.flags) || {}
+    const carriers = this._mmCarriers || null
+    const drawFlag = (team, color) => {
+      const f = flags[team]
+      if (!f) return
+      let fx = f.home ? f.home.x : 0, fz = f.home ? f.home.z : 0
+      if (f.dropped) { fx = f.dropped.x; fz = f.dropped.z }
+      else if (f.carrier !== null && carriers && carriers.has(f.carrier)) {
+        const c = carriers.get(f.carrier); fx = c.x; fz = c.z
+      }
+      const px = sx(fx), py = sy(fz)
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.stroke()
+    }
+    drawFlag('lovis', '#5fd08a')  // green — Lovisedal
+    drawFlag('krag', '#e0604f')   // red — Kragstalund
+    // Local player marker + facing tick.
+    if (me && Number.isFinite(me.x) && Number.isFinite(me.z)) {
+      const px = sx(me.x), py = sy(me.z)
+      const yaw = Number.isFinite(me.yaw) ? me.yaw : 0
+      // Facing: yaw 0 looks down -Z (up on the map); rotate the chevron to match.
+      const dx = Math.sin(yaw), dz = Math.cos(yaw)
+      ctx.save()
+      ctx.translate(px, py)
+      ctx.rotate(Math.atan2(dz, -dx) + Math.PI / 2)
+      ctx.fillStyle = '#f2f4f8'
+      ctx.beginPath()
+      ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(0, 2); ctx.lineTo(-4, 5); ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
   }
 
   show() { this._hudRoot.classList.add('visible') }
