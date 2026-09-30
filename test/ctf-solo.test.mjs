@@ -83,3 +83,27 @@ test('solo CTF spawns a krag player at the krag base facing lovis', () => {
   assert.ok(Math.cos(g.player.yaw) > 0.5, 'facing -z toward the enemy base')
   g.dispose()
 })
+
+test('a survival-built game swaps to the CTF arena when a ctf run starts (regression: hang)', () => {
+  // The real browser path: the Game is constructed once (survival world) and the
+  // side is picked on the title screen AFTER construction, so mode flips to ctf
+  // without the constructor having built the CTF subsystems. startGame must swap
+  // the survival world out for the arena (no stale WaveManager crash, swarm on).
+  const g = new Game({ headless: true }) // default survival
+  g.start()
+  assert.ok(g.waveManager, 'survival world built a wave manager')
+  assert.equal(g.flag, undefined, 'no flag in the survival world')
+  g.mode = 'ctf' // chosen on the title screen
+  g.startGame()
+  assert.ok(g.flag, 'CTF flag state built on run start')
+  assert.ok(g.city && g.city.bases, 'CTF arena swapped in')
+  assert.equal(g.waveManager, null, 'survival wave manager disposed')
+  assert.ok(g.swarm, 'swarm built + started')
+  // Stepping must not throw (the old crash was WaveManager.update reading .type).
+  for (let i = 0; i < 30; i++) g.step(1 / 60)
+  assert.equal(g.state, 'playing', 'still playing after stepping')
+  const lovis = g.city.bases.lovis
+  assert.equal(g.player.position.x, lovis.x, 'spawned at the lovis base')
+  assert.equal(g.player.position.z, lovis.z, 'spawned at the lovis base')
+  g.dispose()
+})

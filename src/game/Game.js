@@ -781,6 +781,10 @@ export class Game {
     this.timeInGame = 0
     this._hitStop = 0 // v28 R3: clear any pending headshot freeze-frame on reset
     if (this.waveManager && this.mode !== 'ctf') this.waveManager.reset()
+    // CTF solo: the world was built for survival at construction; swap in the
+    // CTF arena (city + flags + swarm) now that a CTF run is starting, BEFORE
+    // resetting the flag/swarm below so those resets act on the fresh objects.
+    if (this.mode === 'ctf' && !this.multiplayer) this._buildCtfWorld()
     // CTF: reset the flag state + restart the neutral swarm for a fresh run.
     if (this.flag) this.flag.dispose()
     if (this.swarm) { this.swarm.dispose(); this.swarm.start() }
@@ -1226,6 +1230,59 @@ export class Game {
     p._eyeHeight = 1.7
     p.camera.position.set(p.position.x, p.position.y + p._eyeHeight, p.position.z)
     p.camera.rotation.set(0, p.yaw, 0)
+  }
+
+  /** CTF: the game is constructed once (survival world) and the mode is chosen on
+   *  the title screen AFTER construction, so the CTF subsystems are not built in
+   *  the constructor. This swaps the survival world out for the CTF arena when a
+   *  run starts in ctf mode: dispose the survival City + WaveManager + lamps +
+   *  windows + light shafts, build CityCTF + FlagState + FlagRender + SwarmDirector
+   *  + the CTF lamps/windows/shafts, and re-point the shared consumers (lighting,
+   *  world-core). Idempotent — a no-op once the CTF world is already in place. */
+  _buildCtfWorld() {
+    if (this.flag && this.city && this.city.bases) return // already CTF
+    // Tear down the survival-only subsystems that CTF replaces.
+    if (this.waveManager) { this.waveManager.dispose?.(); this.waveManager = null }
+    if (this.windows) { this.windows.dispose?.(); this.windows = null }
+    if (this.lamps) { this.lamps.dispose?.(); this.lamps = null }
+    if (this.lightShafts) { this.lightShafts.dispose?.(); this.lightShafts = null }
+    if (this.city) { this.city.dispose(); this.city = null }
+    // Widen the collision bounds to the 220×220 CTF arena (survival was 180).
+    if (this.collision) { this.collision.halfW = 110; this.collision.halfD = 110 }
+    // Build the CTF arena + flag state + flag render (same wiring as the
+    // constructor's ctf branch).
+    this.city = new CityCTF(this.scene, this.collision, this.env)
+    this.flag = new FlagState({ bases: this.city.bases })
+    this.flagRender = new FlagRender({ scene: this.scene, bases: this.city.bases, canvasFactory: this.env && this.env.canvasFactory })
+    // Re-point the lighting at the new arena's lamps + anchors (it holds them by
+    // reference from the survival city it was built with). Rebuild its nearest-
+    // anchor scratch array so it matches the CTF arena's anchor count.
+    if (this.lighting) {
+      this.lighting.city = this.city
+      this.lighting.anchors = this.city.streetlightAnchors
+      this.lighting.lamps = this.city.lamps || null
+      this.lighting.scratch = this.lighting.anchors.map(() => ({ i: 0, d2: 0 }))
+    }
+    // Rebuild the shootable lamps + windows + light shafts against the CTF arena.
+    this.lamps = new Lamps(this.city.lamps || [])
+    this.lamps.audio = this.audio
+    this.lamps.shards = this.glassShards
+    this.lamps.onBreak = () => { if (this.achievements) this.achievements.onLamp() }
+    this.windows = new Windows(this.city._windowMesh ? { mesh: this.city._windowMesh, windows: this.city.windows } : null)
+    this.windows.audio = this.audio
+    this.windows.shards = this.glassShards
+    this.lightShafts = new LightShafts(this.scene, this.city.streetlightAnchors || [], 12)
+    // The neutral hazard swarm replaces the wave manager.
+    this.swarm = new SwarmDirector({
+      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      players: () => this._swarmPlayers(),
+      flag: this.flag,
+      liveCount: () => this.zombies.filter((z) => !z.isDead).length,
+      bases: this.city.bases
+    })
+    // The world core drives zombies + collision off the shared arrays; drop the
+    // (now-null) wave reference so updateWorld skips it.
+    if (this._ws) { this._ws.wave = null; this._ws.collision = this.collision }
   }
 
   /** CTF: advance the flag state + push positions to the render + HUD.
