@@ -80,8 +80,10 @@ test('atmosphere: ground haze adds 2 fog-free additive meshes, no lights/points'
   // v3 T13: dispose also removes the footprint InstancedMesh (1 more mesh).
   // v28 R1: dispose also removes the aurora curtain (1 more mesh) -> 4 total.
   // v28 R2: breath is a Points pool, not a mesh, so the mesh delta stays 4.
+  // v28 R4: dispose also removes the 3 landmark meshes -> 7 total.
+  // v28 R4: + zombie contact-shadow InstancedMesh + light-shaft InstancedMesh -> 9.
   const before = game.sceneStats().meshes
   game.dispose()
-  assert.equal(game.sceneStats().meshes, before - 4, 'dispose removes haze x2 + footprint + aurora')
+  assert.equal(game.sceneStats().meshes, before - 9, 'dispose removes haze x2 + footprint + aurora + landmarks x3 + zombieShadows + lightShafts')
   assert.equal(game.haze, null, 'haze reference cleared')
 })

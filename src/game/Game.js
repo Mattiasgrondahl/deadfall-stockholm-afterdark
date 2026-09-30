@@ -7,6 +7,10 @@ import { City } from '../world/City.js'
 import { Lighting } from '../world/Lighting.js'
 import { Sky } from '../world/sky.js'
 import { Aurora } from '../world/Aurora.js'
+import { Landmarks } from '../world/Landmarks.js'
+import { ZombieShadows } from '../world/ZombieShadows.js'
+import { LightShafts } from '../world/LightShafts.js'
+import { ViewSnow } from '../world/ViewSnow.js'
 import { Breath } from '../world/Breath.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
@@ -387,6 +391,15 @@ export class Game {
     // (not a Sky child) so the sky group's child count is unchanged. Intensity
     // is driven from the tension value below (gentle baseline, swells on crisis).
     this.aurora = new Aurora(this.scene)
+    // v28 R4: recognizable Stockholm landmarks on the far skyline (Kaknästornet,
+    // Globen, Gamla stan spire) so the night city reads as Stockholm. Separate
+    // scene object (not a Sky child) so the Sky group's counts are untouched.
+    this.landmarks = new Landmarks(this.scene)
+    // v28 R4: soft contact shadows under live zombies (one InstancedMesh of dark
+    // discs following the actors) + volumetric light shafts under the streetlights
+    // (additive cones from each lamp head). Both are separate scene objects.
+    this.zombieShadows = new ZombieShadows(this.scene, 24)
+    this.lightShafts = new LightShafts(this.scene, this.city ? this.city.streetlightAnchors : [], 12)
     // v28 R1: let the lighting read the aurora's live intensity so the ambient
     // bounce tints green as the curtains swell.
     if (this.lighting) this.lighting.setAurora(this.aurora)
@@ -514,6 +527,10 @@ export class Game {
     // WIRING:BREATH (v28 R2): condensation puffs off the player's face when
     // sprinting in the cold. One Points pool; emitted from the update loop below.
     this.breath = new Breath(this.scene)
+    // WIRING:VIEWSNOW (v28 R4): a thin frost dusting that settles on the near
+    // view-model region while the player stands still in the snow, and shakes
+    // off when moving. Parented to the camera so it sits in the lower frame.
+    this.viewSnow = new ViewSnow(this.camera)
     // WIRING:LAMPS — shootable streetlamps that break dark and relight after 60 s.
     this.glassShards = new GlassShards(this.scene)
     this.lamps = new Lamps(this.city ? this.city.lamps : [])
@@ -957,7 +974,17 @@ export class Game {
       const strength = Math.max(0, Math.min(1, (speed - 1.2) / 3.0))
       if (strength > 0) this.breath.emit(this.player.position.x, this.player.position.z, this.player.yaw, strength * dt * 8)
       this.breath.update(dt)
+      // v28 R4: standing still lets frost settle on the view-model; moving shakes
+      // it off (no new flakes while running). Reuses the same speed signal.
+      if (this.viewSnow) {
+        const idle = Math.max(0, Math.min(1, (1.2 - speed) / 1.2))
+        if (idle > 0) this.viewSnow.emit(idle)
+        this.viewSnow.update(dt)
+      }
     }
+    // WIRING:ZSHADOWS (v28 R4): drop a soft contact shadow under every live
+    // zombie so the actors read as resting on the pavement, not floating.
+    if (this.zombieShadows) this.zombieShadows.update(this.zombies)
     // WIRING:LAMPS — advance relight timers + shard animation.
     if (this.lamps) this.lamps.update(dt)
     if (this.glassShards) this.glassShards.update(dt)
@@ -1200,6 +1227,13 @@ export class Game {
     if (this.aurora) { this.aurora.dispose(); this.aurora = null }
     // v28 R2: remove the breath puff pool + dispose its geometry/material.
     if (this.breath) { this.breath.dispose(); this.breath = null }
+    // v28 R4: remove the landmark silhouettes + dispose their geometries/material.
+    if (this.landmarks) { this.landmarks.dispose(); this.landmarks = null }
+    // v28 R4: remove the view-model frost cluster + dispose geo/mat.
+    if (this.viewSnow) { this.viewSnow.dispose(); this.viewSnow = null }
+    // v28 R4: remove the zombie contact-shadow pool + the light-shaft pool.
+    if (this.zombieShadows) { this.zombieShadows.dispose(); this.zombieShadows = null }
+    if (this.lightShafts) { this.lightShafts.dispose(); this.lightShafts = null }
   }
 
   render() {
