@@ -12,6 +12,10 @@ import { ZombieShadows } from '../world/ZombieShadows.js'
 import { LightShafts } from '../world/LightShafts.js'
 import { ViewSnow } from '../world/ViewSnow.js'
 import { Breath } from '../world/Breath.js'
+import { CityCTF } from '../world/CityCTF.js'
+import { FlagRender } from '../world/FlagRender.js'
+import { FlagState } from './Flag.js'
+import { SwarmDirector } from './SwarmDirector.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
@@ -139,6 +143,9 @@ export class Game {
     // can reassign it on the title screen; CTF swaps in CityCTF + FlagState +
     // SwarmDirector instead of the survival wave pipeline.
     this.mode = opts.mode === 'ctf' ? 'ctf' : 'survival'
+    // CTF: solo runs drive the lovis team locally; hosted CTF adopts the team
+    // from the server roster.
+    this._myTeam = 'lovis'
     this._lastTime = -1
 
     this.renderer = this.headless ? new StubRenderer() : null
@@ -369,13 +376,21 @@ export class Game {
       // at page load — browsers reject a lock request without a user gesture.
     }
     // WIRING:PLAYER (task A)
-    this.collision = new CollisionWorld(180, 180)
+    this.collision = new CollisionWorld(this.mode === 'ctf' ? 220 : 180, this.mode === 'ctf' ? 220 : 180)
     this.player = new Player(this.camera, this.inputState, this.collision, this.audio)
     this.player.sensMult = this.settings.get('sensitivity')
     this.player.setOnDeath(() => this.onPlayerDeath())
     // WIRING:CITY (task B): collision starts clean; City registers its own AABBs
     this.collision.clear()
-    this.city = new City(this.scene, this.collision, this.env)
+    // CTF: the bespoke two-base arena replaces the procedural survival grid, and
+    // the client renders the flags from the (server or local) flag state.
+    if (this.mode === 'ctf') {
+      this.city = new CityCTF(this.scene, this.collision, this.env)
+      this.flag = new FlagState({ bases: this.city.bases })
+      this.flagRender = new FlagRender({ scene: this.scene, bases: this.city.bases, canvasFactory: this.env && this.env.canvasFactory })
+    } else {
+      this.city = new City(this.scene, this.collision, this.env)
+    }
     // WIRING:LIGHTING
     this.lighting = new Lighting(this.scene, this.city, this.renderer, this.quality)
     // WIRING:MULTIPLAYER (Phase 5): opt-in client controller. Only built when
@@ -463,8 +478,9 @@ export class Game {
     this.flashlight = new Flashlight(this.camera, this.audio)
     // The flashlight burns breath: the player drains stamina while it is on.
     if (this.player) this.player.flashlight = this.flashlight
-    // WIRING:WAVES
-    this.waveManager = new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
+    // WIRING:WAVES — survival only. CTF drives zombies through the SwarmDirector
+    // instead, so no WaveManager is built (and none of its wave callbacks fire).
+    this.waveManager = this.mode === 'ctf' ? null : new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {
         if (this.screens) { this.screens.showBanner('WAVE ' + w); this.screens.onWaveStarted() }
         // Procedural soundtrack: the director picks the track for this wave
@@ -512,6 +528,19 @@ export class Game {
         if (this.audio && !this.audio._musicMuted) this.audio.playBossMusic(BOSS_TRACK, BOSS_TRACK_SECONDS)
       }
     }, { startWave: DIFFICULTY[this.difficulty]?.startWave ?? 1 })
+    // WIRING:SWARM (CTF): a continuous neutral hazard instead of discrete waves.
+    // The swarm chases the nearest live player and clusters on the flag carrier.
+    // Only built in ctf mode; survival keeps the WaveManager alone.
+    this.swarm = null
+    if (this.mode === 'ctf') {
+      this.swarm = new SwarmDirector({
+        spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+        players: () => this._swarmPlayers(),
+        flag: this.flag,
+        liveCount: () => this.zombies.filter((z) => !z.isDead).length,
+        bases: this.city.bases
+      })
+    }
     // WIRING:SCORE (V9)
     this.score = new Score(this.env, () => this.waveManager ? this.waveManager.wave : 1)
     // Hosted high score: seed the stored best from the backend so a fresh
@@ -751,7 +780,10 @@ export class Game {
     if (this._bossFightActive) { this._bossFightActive = false; if (this.audio) this.audio.stopBossMusic() }
     this.timeInGame = 0
     this._hitStop = 0 // v28 R3: clear any pending headshot freeze-frame on reset
-    if (this.waveManager) this.waveManager.reset()
+    if (this.waveManager && this.mode !== 'ctf') this.waveManager.reset()
+    // CTF: reset the flag state + restart the neutral swarm for a fresh run.
+    if (this.flag) this.flag.dispose()
+    if (this.swarm) { this.swarm.dispose(); this.swarm.start() }
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
     // v9: the procedural ambient wind bed (drone + gusts + city hum) is removed —
@@ -1011,6 +1043,14 @@ export class Game {
     } else {
       updateWorld(dt, this._ws)
     }
+    // WIRING:CTF: drive the neutral swarm + the local flag state machine, then
+    // push the flag positions to the render + HUD. In solo CTF the local
+    // FlagState is authoritative (no server); in hosted CTF the server snapshot
+    // would overwrite it (wired with Multiplayer later).
+    if (this.mode === 'ctf' && this.flag) {
+      if (this.swarm) this.swarm.update(dt)
+      this._updateCtfFlags(dt)
+    }
     // WIRING:GROANS (V8)
     if (this.audio) {
       const p = this.player
@@ -1155,6 +1195,39 @@ export class Game {
     return Math.max(0, Math.min(1, level))
   }
 
+  /** CTF: slot-shaped player list for the swarm director (nearest-player +
+   *  carrier lookups). Solo CTF has one entry; hosted CTF would add remotes. */
+  _swarmPlayers() {
+    const out = []
+    if (this.player) out.push({ id: 'p1', player: this.player })
+    return out
+  }
+
+  /** CTF: advance the local flag state from the local player's position each
+   *  frame — drop on death, capture at own base, pickup on contact — then push
+   *  the resulting positions to the flag render + HUD scoreboard. */
+  _updateCtfFlags(dt) {
+    const flag = this.flag
+    const p = this.player
+    if (!flag || !p) return
+    const me = 'p1'
+    const myTeam = this._myTeam || 'lovis'
+    // Drop the flag the frame the carrier dies.
+    if (p.isDead && flag.isCarrying(me)) flag.dropFlag(me, p.position.x, p.position.z)
+    if (!p.isDead) {
+      const x = p.position.x, z = p.position.z
+      if (flag.isCarrying(me) && flag.tryCapture(me, myTeam, x, z)) {
+        if (this.screens) this.screens.showBanner('FLAG CAPTURED!')
+      } else if (!flag.isCarrying(me)) {
+        flag.tryPickup(me, myTeam, x, z)
+      }
+    }
+    const snap = flag.snapshot()
+    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, this._swarmPlayers().map((s) => ({ id: s.id, x: s.player.position.x, y: s.player.position.y, z: s.player.position.z })))
+    if (this.flagRender) this.flagRender.update(dt, this.time || 0)
+    if (this.hud) this.hud.setCtf(snap, myTeam)
+  }
+
   /** Spawn a zombie (used by WaveManager and debug). */
   spawnZombie(type, x, z) {
     // WIRING:SPAWN (owned by task D: create zombie, push into this.zombies, return it)
@@ -1239,6 +1312,10 @@ export class Game {
     // v28 R4: remove the zombie contact-shadow pool + the light-shaft pool.
     if (this.zombieShadows) { this.zombieShadows.dispose(); this.zombieShadows = null }
     if (this.lightShafts) { this.lightShafts.dispose(); this.lightShafts = null }
+    // CTF: tear down the flag render + the local flag state.
+    if (this.flagRender) { this.flagRender.dispose(); this.flagRender = null }
+    if (this.flag) { this.flag.dispose(); this.flag = null }
+    if (this.swarm) this.swarm = null
   }
 
   render() {
