@@ -384,6 +384,9 @@ export class Screens {
       if (this._game.audio) this._game.audio.setMusicMuted(v)
       if (this._game.hud) this._game.hud.setMusicMuted(v)
     })
+    // v34: co-op friendly fire. ON = your shots damage teammates; OFF = shots
+    // pass through them. Read live by Multiplayer.getPlayers via the setting.
+    mkToggle('Friendly fire', 'friendlyFire')
     const backBtn = d.createElement('button'); backBtn.className = 'btn primary'; backBtn.textContent = 'BACK'
     backBtn.addEventListener('click', () => this._backFromSettings())
     panelS.appendChild(backBtn)

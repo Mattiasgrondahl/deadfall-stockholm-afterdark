@@ -20,7 +20,8 @@ export const DEFAULTS = {
   quality: 'high',     // 'low' | 'medium' | 'high' — lighting/shadow/snow/postfx
   flashlightEffects: true, // low-battery flicker + dim bursts
   reducedMotion: false,    // honor prefers-reduced-motion / explicit opt-in
-  blackoutBattery: false   // BLACKOUT difficulty: battery drains 3× faster
+  blackoutBattery: false,  // BLACKOUT difficulty: battery drains 3× faster
+  friendlyFire: true       // co-op: shots damage teammates when ON (v34)
 }
 
 const RANGES = {
@@ -37,7 +38,8 @@ const ENUMS = {
   reducedMotion: [true, false],
   blackoutBattery: [true, false],
   muted: [true, false],
-  musicMuted: [true, false]
+  musicMuted: [true, false],
+  friendlyFire: [true, false]
 }
 
 function clamp(v, [lo, hi]) { return Math.max(lo, Math.min(hi, v)) }

@@ -150,3 +150,19 @@ test('CTF: setTeam tints the avatar material to the team color', () => {
   assert.equal(rp._mat.color.getHex(), perId, 'null team restores the per-id tint')
   rp.dispose()
 })
+
+test('v34: remote avatars have facial features on the facing side (readable facing)', () => {
+  const scene = new THREE.Scene()
+  const rp = new RemotePlayer(scene, 'p0')
+  // Eyes + nose + mouth are parented to the head so they rotate with the yaw.
+  assert.equal(rp._faceParts.length, 4, 'two eyes + nose + mouth')
+  assert.equal(rp.head.children.length, 4, 'face features are children of the head')
+  // All features sit on the head's FRONT face (local -Z = the yaw-0 facing side).
+  for (const m of rp._faceParts) assert.ok(m.position.z < 0, 'feature on the front (-Z) face')
+  // Facing follows the group yaw, so the features turn with the avatar.
+  rp.apply({ id: 'p0', x: 0, y: 1.7, z: 0, yaw: 1.5, dead: false }, 1 / 60)
+  assert.equal(rp.group.rotation.y, 1.5, 'features inherit the group yaw via the head')
+  // Dispose detaches them (shared geometry/material are never disposed here).
+  rp.dispose()
+  assert.equal(rp.head.children.length, 0, 'face parts detached on dispose')
+})
