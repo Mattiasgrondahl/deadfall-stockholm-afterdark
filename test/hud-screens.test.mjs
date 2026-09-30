@@ -1098,4 +1098,89 @@ function fakeWave(o) {
   assert.ok(mm.classList.contains('hidden'), 'null snapshot hides the minimap')
 }
 
+// v36: the intro stall watchdog. A stalled-but-not-paused clip (currentTime frozen,
+// 'ended' never fires) must still release the run instead of trapping it behind the
+// overlay forever. Driven with a fake timer so no real clock elapses.
+{
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  // Replace the fake video (no play/currentTime) with a controllable stub: play()
+  // resolves, paused=false, currentTime frozen at 2.0, duration 5, never 'ended'.
+  const v = screens._introVideo
+  v.play = () => Promise.resolve()
+  v.paused = false
+  v.duration = 5
+  let ct = 2.0
+  Object.defineProperty(v, 'currentTime', { get: () => ct, configurable: true })
+
+  // Fake timers: capture the interval callback + fire it on demand.
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  let intervalCb = null, intervalMs = 0
+  globalThis.setInterval = (cb, ms) => { intervalCb = cb; intervalMs = ms; return 1 }
+  globalThis.clearInterval = (h) => { intervalCb = null }
+  const realNow = Date.now
+  let clock = 0
+  const origDateNow = Date.now
+  Date.now = () => clock
+
+  let started = false
+  screens._beginRun(() => { started = true })
+  assert.equal(screens._introActive, true, 'intro is active after _beginRun')
+  assert.equal(started, false, 'run held behind the intro')
+  assert.equal(intervalMs, 250, 'watchdog polls every 250 ms')
+
+  // Poll 1: first reading establishes the baseline (not yet stalled).
+  clock += 250; intervalCb()
+  assert.equal(started, false, 'first poll does not skip (baseline established)')
+  // Poll 2: currentTime unchanged => 1st stalled reading (still no skip).
+  clock += 250; intervalCb()
+  assert.equal(started, false, 'first stalled reading does not skip yet')
+  // Poll 3: still unchanged => 2nd consecutive stall => skip.
+  clock += 250; intervalCb()
+  assert.equal(started, true, 'stalled clip releases the run on the 2nd consecutive stall')
+  assert.equal(screens._introActive, false, 'intro deactivated after skip')
+
+  Date.now = origDateNow
+  globalThis.setInterval = realSetInterval
+  globalThis.clearInterval = realClearInterval
+  screens.dispose()
+}
+
+// v36: the hard cap releases the run even if the clip keeps advancing (never stalls).
+{
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screens = new Screens(doc.createElement('div'), game)
+  const v = screens._introVideo
+  v.play = () => Promise.resolve()
+  v.paused = false
+  v.duration = 5
+  let ct = 0
+  Object.defineProperty(v, 'currentTime', { get: () => ct, configurable: true })
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  let intervalCb = null
+  globalThis.setInterval = (cb) => { intervalCb = cb; return 1 }
+  globalThis.clearInterval = () => { intervalCb = null }
+  const origDateNow = Date.now
+  let clock = 0
+  Date.now = () => clock
+
+  let started = false
+  screens._beginRun(() => { started = true })
+  // Advance currentTime every poll so it never looks stalled, then cross the 9 s cap.
+  for (let i = 0; i < 40 && !started; i++) { ct += 0.25; clock += 250; intervalCb() }
+  assert.equal(started, true, 'the 9 s hard cap releases the run even for a non-stalled clip')
+
+  Date.now = origDateNow
+  globalThis.setInterval = realSetInterval
+  globalThis.clearInterval = realClearInterval
+  screens.dispose()
+}
+
 console.log('hud-screens OK')

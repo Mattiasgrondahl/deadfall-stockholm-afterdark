@@ -189,6 +189,7 @@ export class Game {
     this._mpOpts = opts.multiplayer || null
     this._respawning = false
     this._respawnLockTimer = 0 // v34: respawn pointer-lock retry handle
+    this._postIntroLockHandler = null // v36: one-shot post-intro pointer-lock gesture handler
     // State-transition listeners (Screens syncs its overlays through these).
     this._stateListeners = []
     // Live wave-5 boss (HUD bar target); null outside the boss fight.
@@ -373,7 +374,7 @@ export class Game {
       this.input = new Input(this, this.inputState)
       this.input.attach()
       this.input.on('unlock', () => this.handleUnlock())
-      this.input.on('lock', () => { if (this.state === GameState.PAUSED) this.setState(GameState.PLAYING) })
+      this.input.on('lock', () => { if (this.state === GameState.PAUSED) this.setState(GameState.PLAYING); this._disarmPostIntroLock() })
       // Pointer lock is requested on the START/Enter gesture (startGame), not
       // at page load — browsers reject a lock request without a user gesture.
     }
@@ -805,6 +806,12 @@ export class Game {
     if (this.mode === 'ctf' && !this.multiplayer) this._spawnAtBase()
     this.setState(GameState.PLAYING)
     if (this.input && !this.input.locked()) this.input.requestLock()
+    // v36: the intro movie now gates startGame behind the <video> 'ended' event, so
+    // the requestLock above fires WITHOUT a user gesture and the browser rejects it
+    // → the run starts unlocked and mouse-look is dead. Arm a one-shot gesture
+    // listener that re-requests the lock on the next click/key (the same unlock
+    // gesture the pause screen relies on). No-op when already locked / headless.
+    this._armPostIntroLock()
     // v9: the procedural ambient wind bed (drone + gusts + city hum) is removed —
     // the only background sound is now the mp3 soundtrack music. playStart is the
     // one-shot UI/UI-confirm blip, not a background loop, so it stays.
@@ -976,6 +983,43 @@ export class Game {
       if (Date.now() < deadline) this._respawnLockTimer = setTimeout(tryLock, 250)
     }
     tryLock()
+  }
+
+  /** v36: gesture-driven pointer-lock recovery. Every run start (START click,
+   *  Enter-on-title, RESTART, and the intro-gated path) funnels through
+   *  startGame(), but the intro movie defers startGame() to the <video>'s async
+   *  'ended' event (or the stall watchdog), so the requestLock() there fires
+   *  WITHOUT a user activation and the browser rejects it → the run begins
+   *  unlocked and mouse-look (Input._onMouseMove gates on locked()) is dead.
+   *  Arm a one-shot document pointerdown/keydown listener that re-requests the
+   *  lock on the player's first in-game gesture. Disarm happens on the 'lock'
+   *  event (requestPointerLock resolves async, so locked() is still false right
+   *  after the call — polling it here would re-fire across several clicks) or
+   *  when the run leaves PLAYING. Headless-safe (no input/canvas → no-op). */
+  _armPostIntroLock() {
+    if (!this.input || !this.canvas || this.headless) return
+    if (this.input.locked()) return
+    const doc = this.env && this.env.document
+    if (!doc || !doc.addEventListener) return
+    if (this._postIntroLockHandler) return // already armed
+    const handler = () => {
+      if (this.state !== GameState.PLAYING) return this._disarmPostIntroLock()
+      this.input.requestLock() // 'lock' event disarms on success
+    }
+    this._postIntroLockHandler = handler
+    doc.addEventListener('pointerdown', handler)
+    doc.addEventListener('keydown', handler)
+  }
+
+  _disarmPostIntroLock() {
+    const h = this._postIntroLockHandler
+    if (!h) return
+    const doc = this.env && this.env.document
+    if (doc && doc.removeEventListener) {
+      doc.removeEventListener('pointerdown', h)
+      doc.removeEventListener('keydown', h)
+    }
+    this._postIntroLockHandler = null
   }
 
   /** v12: the server ended the co-op match (wave-5 cleared / time cap / all
@@ -1502,6 +1546,7 @@ export class Game {
     if (this.flag) { this.flag.dispose(); this.flag = null }
     if (this.swarm) this.swarm = null
     if (this._respawnLockTimer) { clearTimeout(this._respawnLockTimer); this._respawnLockTimer = 0 }
+    this._disarmPostIntroLock() // v36: drop the post-intro pointer-lock gesture listener
   }
 
   render() {
