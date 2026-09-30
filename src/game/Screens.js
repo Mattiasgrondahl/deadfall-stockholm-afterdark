@@ -129,6 +129,20 @@ export class Screens {
     diffRow.appendChild(diffLabel); diffRow.appendChild(this._nightBtn); diffRow.appendChild(this._frenzyBtn); diffRow.appendChild(this._nightmareBtn)
     diffRow.appendChild(frenzyHint)
     panelT.appendChild(grid); panelT.appendChild(diffRow); panelT.appendChild(settingsBtn)
+    // CTF: GAME MODE picker — SURVIVAL (default wave loop) vs CAPTURE THE FLAG
+    // (two-team Lovisedal vs Kragstalund match on the CTF map). Single-choice,
+    // mirrors the difficulty row. The choice is stored on the game and read by
+    // startGame / the CTF wiring.
+    const modeRow = d.createElement('div'); modeRow.className = 'difficulty-row'
+    const modeLabel = d.createElement('div'); modeLabel.className = 'difficulty-label'; modeLabel.textContent = 'MODE'
+    this._survivalBtn = d.createElement('button'); this._survivalBtn.className = 'toggle on'; this._survivalBtn.textContent = 'SURVIVAL'
+    this._ctfBtn = d.createElement('button'); this._ctfBtn.className = 'toggle'; this._ctfBtn.textContent = 'CAPTURE THE FLAG'
+    const modeHint = d.createElement('div'); modeHint.className = 'tagline dim'; modeHint.textContent = 'SURVIVAL (default): survive escalating zombie waves. CAPTURE THE FLAG: steal the enemy flag from Kragstalund / Lovisedal and bring it home — first to 3 wins.'
+    this._survivalBtn.addEventListener('click', () => this._setMode('survival'))
+    this._ctfBtn.addEventListener('click', () => this._setMode('ctf'))
+    modeRow.appendChild(modeLabel); modeRow.appendChild(this._survivalBtn); modeRow.appendChild(this._ctfBtn)
+    modeRow.appendChild(modeHint)
+    panelT.appendChild(modeRow)
     // v11: ONE display name drives both modes. It is sanitized (control chars
     // stripped, whitespace collapsed, clamped to 24), attributed to a solo high
     // score AND sent to the co-op room, so the same generated handle appears on
@@ -506,6 +520,13 @@ export class Screens {
     this._nightBtn.classList.toggle('on', name === 'normal')
     this._frenzyBtn.classList.toggle('on', name === 'frenzy')
     this._nightmareBtn.classList.toggle('on', name === 'nightmare')
+  }
+
+  /** CTF: single-choice game-mode picker (SURVIVAL vs CAPTURE THE FLAG). */
+  _setMode(name) {
+    this._game.mode = name === 'ctf' ? 'ctf' : 'survival'
+    this._survivalBtn.classList.toggle('on', this._game.mode === 'survival')
+    this._ctfBtn.classList.toggle('on', this._game.mode === 'ctf')
   }
 
   /** JOIN CO-OP: read the room code + name from the title inputs and start a

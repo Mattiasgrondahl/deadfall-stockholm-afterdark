@@ -134,6 +134,11 @@ export class Game {
     // wave 3). Tests/tools that construct Game without opts.difficulty now
     // get frenzy — pass { difficulty: 'normal' } for the old baseline.
     this.difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'frenzy'
+    // CTF: run mode. 'survival' (default) is the wave-survival loop; 'ctf' is
+    // the two-team Capture-the-Flag match (Lovisedal vs Kragstalund). Screens
+    // can reassign it on the title screen; CTF swaps in CityCTF + FlagState +
+    // SwarmDirector instead of the survival wave pipeline.
+    this.mode = opts.mode === 'ctf' ? 'ctf' : 'survival'
     this._lastTime = -1
 
     this.renderer = this.headless ? new StubRenderer() : null

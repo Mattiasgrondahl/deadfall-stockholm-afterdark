@@ -111,6 +111,7 @@ function makeHUDWorld() {
 function makeGame(doc, hud) {
   return {
     state: 'title',
+    mode: 'survival',
     kills: 0,
     hud,
     waveManager: { wave: 1, remaining: 5 },
@@ -280,7 +281,10 @@ function makeGame(doc, hud) {
   const byName = (t) => toggles.find((b) => b.textContent === t)
   const night = byName('NIGHT'), frenzy = byName('FRENZY'), nightmare = byName('NIGHTMARE')
   assert.ok(night && frenzy && nightmare, 'all three difficulty toggles exist')
-  const onCount = () => toggles.filter((b) => b.classList.contains('on')).length
+  // CTF added a MODE row (SURVIVAL / CAPTURE THE FLAG) with its own single-choice
+  // 'on' state, so scope the difficulty assertions to the three difficulty buttons.
+  const DIFF = new Set(['NIGHT', 'FRENZY', 'NIGHTMARE'])
+  const onCount = () => toggles.filter((b) => DIFF.has(b.textContent) && b.classList.contains('on')).length
   // Default load: FRENZY is the shipped default and is the only selected option.
   assert.equal(frenzy.classList.contains('on'), true, 'frenzy selected by default')
   assert.equal(onCount(), 1, 'exactly one option selected on load')
@@ -295,6 +299,35 @@ function makeGame(doc, hud) {
   assert.equal(game.difficulty, 'normal')
   assert.equal(night.classList.contains('on'), true)
   assert.equal(onCount(), 1, 'night is the sole selection')
+  screens.dispose()
+}
+{
+  // CTF: the MODE picker is a single-choice control (SURVIVAL default vs CAPTURE
+  // THE FLAG) and sets game.mode.
+  const doc = makeDocument()
+  const hud = new HUD(doc.createElement('div'), doc.createElement('div'))
+  const game = makeGame(doc, hud)
+  const screensRoot = doc.createElement('div')
+  const screens = new Screens(screensRoot, game)
+  const title = screenWithText(screensRoot, 'DEADFALL')
+  const toggles = []
+  const collect = (el) => { for (const c of el.children) { if (c.classList.contains('toggle')) toggles.push(c); collect(c) } }
+  collect(title)
+  const byName = (t) => toggles.find((b) => b.textContent === t)
+  const survival = byName('SURVIVAL'), ctf = byName('CAPTURE THE FLAG')
+  assert.ok(survival && ctf, 'both mode toggles exist')
+  assert.equal(game.mode, 'survival', 'survival is the default mode')
+  assert.equal(survival.classList.contains('on'), true, 'survival selected by default')
+  const MODE = new Set(['SURVIVAL', 'CAPTURE THE FLAG'])
+  const onCount = () => toggles.filter((b) => MODE.has(b.textContent) && b.classList.contains('on')).length
+  assert.equal(onCount(), 1, 'exactly one mode selected on load')
+  ctf.click()
+  assert.equal(game.mode, 'ctf', 'game mode set to ctf')
+  assert.equal(ctf.classList.contains('on'), true, 'ctf selected')
+  assert.equal(survival.classList.contains('on'), false, 'survival not lit when ctf chosen')
+  assert.equal(onCount(), 1, 'still exactly one mode selected')
+  survival.click()
+  assert.equal(game.mode, 'survival')
   screens.dispose()
 }
 {
