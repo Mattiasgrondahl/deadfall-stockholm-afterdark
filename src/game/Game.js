@@ -1203,13 +1203,29 @@ export class Game {
     return out
   }
 
-  /** CTF: advance the local flag state from the local player's position each
-   *  frame — drop on death, capture at own base, pickup on contact — then push
-   *  the resulting positions to the flag render + HUD scoreboard. */
+  /** CTF: advance the flag state + push positions to the render + HUD.
+   *  Solo CTF runs the local FlagState machine (drop-on-death, capture/pickup);
+   *  hosted CTF adopts the server snapshot's ctf block + this client's team. */
   _updateCtfFlags(dt) {
-    const flag = this.flag
     const p = this.player
-    if (!flag || !p) return
+    if (!p) return
+    const mp = this.multiplayer
+    if (mp && mp.lastSnap && mp.lastSnap.ctf) {
+      // Hosted: the server owns the flags. Adopt my team from the roster and
+      // render straight from the snapshot; no local mutation.
+      const ctf = mp.lastSnap.ctf
+      for (const row of (mp.lastSnap.players || [])) {
+        if (row.id === mp.pid && row.team) { this._myTeam = row.team; break }
+      }
+      const carriers = []
+      for (const row of (mp.lastSnap.players || [])) carriers.push({ id: row.id, x: row.x, y: row.y || 1.7, z: row.z })
+      if (this.flagRender) this.flagRender.sync(ctf, carriers)
+      if (this.flagRender) this.flagRender.update(dt, this.time || 0)
+      if (this.hud) this.hud.setCtf(ctf, this._myTeam)
+      return
+    }
+    const flag = this.flag
+    if (!flag) return
     const me = 'p1'
     const myTeam = this._myTeam || 'lovis'
     // Drop the flag the frame the carrier dies.
