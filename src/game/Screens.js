@@ -277,7 +277,9 @@ export class Screens {
     introHint.textContent = 'click or press any key to skip'
     introBox.appendChild(introHint)
     this._intro = introBox
-    this._introTimer = 0 // v32: autoplay watchdog handle (cleared in _endIntro/dispose)
+    this._introTimer = 0 // v32/v36: autoplay+stall watchdog handle (cleared in _endIntro/dispose)
+    this._introLastT = -1 // v36: last observed intro currentTime for stall detection
+    this._introStalls = 0 // v36: consecutive polls with no currentTime advance
     this._root.appendChild(introBox)
     intro.addEventListener('ended', () => this._endIntro())
     intro.addEventListener('error', () => this._endIntro())
@@ -697,23 +699,39 @@ export class Screens {
     try { v.currentTime = 0 } catch (e) { /* headless/no-src */ }
     const p = v.play()
     if (p && p.catch) p.catch(() => { /* autoplay blocked — skip straight in */ this._endIntro() })
-    // v32: autoplay watchdog. Some browsers DEFER an unmuted autoplay instead of
-    // rejecting play(): the promise stays pending, the clip never fires 'ended'
-    // or 'error', and the run is trapped behind the overlay forever (the title
-    // looks frozen / the game "never starts"). If the clip hasn't actually begun
-    // advancing after a short grace window, skip it so the run always starts.
-    // _endIntro guards on _introActive, so a real 'ended'/'skip' can't double-fire.
-    if (this._introTimer) clearTimeout(this._introTimer)
-    this._introTimer = setTimeout(() => {
-      this._introTimer = 0
-      if (this._introActive && (v.paused || v.currentTime === 0)) this._endIntro()
-    }, 1500)
+    // v32/v36: autoplay + stall watchdog. Some browsers DEFER an unmuted autoplay
+    // instead of rejecting play(): the promise stays pending, the clip never fires
+    // 'ended'/'error', and the run is trapped behind the overlay forever (the title
+    // looks frozen / the game "never starts"). A stalled-but-not-paused clip (a
+    // SwiftShader / heavy-decode stall) also never fires 'ended'. The old v32 check
+    // only skipped when the clip was paused or at t=0, so a clip stuck mid-playback
+    // (paused=false, currentTime frozen) slipped through and hung the run. Poll
+    // every 250 ms: skip when the clip is paused, at t=0, has NOT advanced since
+    // the last poll (stalled), or the hard cap elapses. _endIntro guards on
+    // _introActive, so a real 'ended'/'skip' can't double-fire.
+    if (this._introTimer) { clearTimeout(this._introTimer); clearInterval(this._introTimer) }
+    this._introLastT = -1
+    this._introStalls = 0
+    const INTRO_CAP_MS = 9000
+    const t0 = (this._doc && this._doc.now && this._doc.now()) || Date.now()
+    this._introTimer = setInterval(() => {
+      if (!this._introActive) return
+      const now = (this._doc && this._doc.now && this._doc.now()) || Date.now()
+      const ct = typeof v.currentTime === 'number' ? v.currentTime : 0
+      const stalled = ct === this._introLastT
+      this._introLastT = ct
+      if (v.paused || ct === 0 || (stalled && ++this._introStalls >= 2) || now - t0 >= INTRO_CAP_MS) {
+        this._endIntro()
+      }
+    }, 250)
   }
 
   _endIntro() {
     if (!this._introActive) return
     this._introActive = false
-    if (this._introTimer) { clearTimeout(this._introTimer); this._introTimer = 0 }
+    if (this._introTimer) { clearTimeout(this._introTimer); clearInterval(this._introTimer); this._introTimer = 0 }
+    this._introLastT = -1
+    this._introStalls = 0
     this._intro.classList.remove('visible')
     if (this._doc.removeEventListener) this._doc.removeEventListener('keydown', this._introSkip)
     const v = this._introVideo
@@ -938,7 +956,7 @@ export class Screens {
       this._intro.removeEventListener('pointerdown', this._introSkip)
       if (this._doc.removeEventListener) this._doc.removeEventListener('keydown', this._introSkip)
     }
-    if (this._introTimer) { clearTimeout(this._introTimer); this._introTimer = 0 }
+    if (this._introTimer) { clearTimeout(this._introTimer); clearInterval(this._introTimer); this._introTimer = 0 }
     this._introActive = false
     this._pendingStart = null
     while (this._root.firstChild) this._root.removeChild(this._root.firstChild)
