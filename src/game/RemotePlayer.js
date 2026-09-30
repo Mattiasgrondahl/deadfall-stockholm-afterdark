@@ -31,6 +31,10 @@ const GEO = {
 // Per-id tint so players read as distinct; falls back to a neutral color.
 const PALETTE = [0x3f7fbf, 0xbf7f3f, 0x3fbf7f, 0xbf3f7f, 0x7f3fbf, 0xbfbf3f, 0x3fbfbe, 0xbe3fbf]
 const DEAD_MAT = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 1 })
+// CTF team tints (match the HUD scoreboard colors) so remote avatars read as
+// teammates vs opponents in a capture-the-flag match. Unknown/null team falls
+// back to the per-id tint.
+const TEAM_TINT = { lovis: 0x2f6b4a, krag: 0xb0663a }
 // The snapshot carries the player's EYE height (position.y, STAND_EYE = 1.7 when
 // standing). The avatar group origin is the FEET, so the eye height is subtracted
 // to plant the feet on the ground plane instead of hovering a body above it.
@@ -153,6 +157,25 @@ export class RemotePlayer {
   /** Light the muzzle flash (called by Multiplayer on a `shoot` event). */
   flash() {
     triggerMuzzleFlash(this._flash)
+  }
+
+  /** CTF: tint the avatar's per-instance head/arm material to its team color so
+   *  teammates are identifiable in a capture-the-flag match. Passing null (or an
+   *  unknown team) restores the per-id tint captured at construction. The dead
+   *  swap in apply() overrides every material to DEAD_MAT regardless, so a dead
+   *  avatar stays dark even when a team is set. */
+  setTeam(team) {
+    if (team === this._team) return
+    this._team = team
+    const color = TEAM_TINT[team]
+    if (!this._mat) return
+    if (color == null) {
+      this._mat.color.set(tintFor(this.id))
+      this._mat.emissive.copy(this._mat.color)
+    } else {
+      this._mat.color.set(color)
+      this._mat.emissive.copy(this._mat.color)
+    }
   }
 
   /**

@@ -158,6 +158,8 @@ export class Multiplayer {
         this.players.set(p.id, rp)
       }
       rp.apply(p, 1 / 60)
+      // CTF: tint the avatar to its team so teammates are identifiable.
+      if (rp.setTeam) rp.setTeam(p.team || null)
     }
     this.selfDead = selfDead
     // v9: authoritative self health/stamina for the local HUD + death detection.

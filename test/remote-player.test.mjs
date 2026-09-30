@@ -135,3 +135,18 @@ test('v25: a shoot event lights the shooter avatar muzzle flash and it decays', 
   assert.equal(rp._flash.visible, false, 'flash decays back off')
   rp.dispose()
 })
+
+test('CTF: setTeam tints the avatar material to the team color', () => {
+  const scene = new THREE.Scene()
+  const rp = new RemotePlayer(scene, 'p0')
+  const perId = rp._mat.color.getHex()
+  rp.setTeam('lovis')
+  assert.equal(rp._mat.color.getHex(), 0x2f6b4a, 'lovis team tint')
+  assert.equal(rp.head.material, rp._mat, 'head still uses the tinted material')
+  rp.setTeam('krag')
+  assert.equal(rp._mat.color.getHex(), 0xb0663a, 'krag team tint')
+  // Restoring a null team falls back to the per-id tint captured at construction.
+  rp.setTeam(null)
+  assert.equal(rp._mat.color.getHex(), perId, 'null team restores the per-id tint')
+  rp.dispose()
+})
