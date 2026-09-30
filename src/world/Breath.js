@@ -66,7 +66,7 @@ export class Breath {
         void main() {
           vec2 p = gl_PointCoord - vec2(0.5);
           float d = length(p);
-          float a = smoothstep(0.5, 0.1, d) * vA * 0.5; // soft, faint condensation
+          float a = smoothstep(0.5, 0.1, d) * vA * 0.28; // soft, faint condensation
           gl_FragColor = vec4(uColor, a);
         }
       `
@@ -100,11 +100,13 @@ export class Breath {
   _spawn(x, z, yaw) {
     const i = this._cursor
     this._cursor = (this._cursor + 1) % MAX_PUFFS
-    // A point just in front of and slightly below eye height, jittered.
+    // A point just ahead of and BELOW eye height, jittered. v32: pushed further
+    // ahead and lower so the puffs read as breath under the crosshair instead of
+    // a bright additive glimmer sitting dead-center in view.
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw) // player facing (-Z at yaw 0)
-    const ahead = 0.35 + this._rng() * 0.15
+    const ahead = 0.6 + this._rng() * 0.2
     this._pos[i * 3] = x + fx * ahead + (this._rng() - 0.5) * 0.1
-    this._pos[i * 3 + 1] = 1.55 + (this._rng() - 0.5) * 0.1
+    this._pos[i * 3 + 1] = 1.42 + (this._rng() - 0.5) * 0.1
     this._pos[i * 3 + 2] = z + fz * ahead + (this._rng() - 0.5) * 0.1
     this._vel[i * 3] = (this._rng() - 0.5) * SPREAD
     this._vel[i * 3 + 1] = RISE * (0.7 + this._rng() * 0.6)
