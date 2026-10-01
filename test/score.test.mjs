@@ -96,3 +96,26 @@ function envWith(storage) { return storage ? { localStorage: storage } : {} }
 }
 
 console.log('score OK')
+
+// v37 R3: headshot + difficulty multipliers.
+{
+  const s = new Score(null, () => 1)
+  // Headshot pays 1.5x the base+bonus, rounded.
+  assert.strictEqual(s.pointsFor('walker', 1, true), 90)      // round(60 * 1.5)
+  assert.strictEqual(s.pointsFor('shambler', 1, true), 98)    // round(65 * 1.5) = 97.5 -> 98
+  assert.strictEqual(s.pointsFor('walker', 1, false), 60)     // non-head unchanged
+  // Difficulty multipliers scale the whole payout.
+  s.setDifficulty('frenzy')
+  assert.strictEqual(s.pointsFor('walker', 1), 75)            // round(60 * 1.25)
+  assert.strictEqual(s.pointsFor('walker', 1, true), 113)     // round(60 * 1.5 * 1.25) = 112.5 -> 113
+  s.setDifficulty('nightmare')
+  assert.strictEqual(s.pointsFor('walker', 1), 90)            // round(60 * 1.5)
+  s.setDifficulty('normal')
+  assert.strictEqual(s.pointsFor('walker', 1), 60)            // back to identity
+  s.setDifficulty('bogus')
+  assert.strictEqual(s.pointsFor('walker', 1), 60)            // unknown -> 1x
+  // addKill honors the head flag on top of the difficulty mult.
+  s.setDifficulty('nightmare')
+  s.addKill('walker', 1, true)
+  assert.strictEqual(s.value, 135) // round(60 * 1.5 head * 1.5 nightmare)
+}

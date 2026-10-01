@@ -442,6 +442,23 @@ export class Screens {
     // next wave is loading).
     this._threatLine = d.createElement('div'); this._threatLine.className = 'threat-preview'
     this._root.appendChild(this._threatLine)
+    // v37 R3: intermission upgrade picker — three pickable cards + a skip hint,
+    // shown while an offer is active. Rendered via textContent only (no markup).
+    this._upgradeBox = d.createElement('div'); this._upgradeBox.className = 'upgrade-offer'
+    this._upgradeCards = []
+    for (let i = 0; i < 3; i++) {
+      const card = d.createElement('div'); card.className = 'upgrade-card'
+      const num = d.createElement('span'); num.className = 'upgrade-num'; num.textContent = String(i + 1)
+      const label = d.createElement('span'); label.className = 'upgrade-label'
+      const desc = d.createElement('span'); desc.className = 'upgrade-desc'
+      card.appendChild(num); card.appendChild(label); card.appendChild(desc)
+      this._upgradeBox.appendChild(card)
+      this._upgradeCards.push({ card, label, desc })
+    }
+    this._upgradeHint = d.createElement('div'); this._upgradeHint.className = 'upgrade-hint'
+    this._upgradeHint.textContent = 'pick one — 1 / 2 / 3, or F to skip'
+    this._upgradeBox.appendChild(this._upgradeHint)
+    this._root.appendChild(this._upgradeBox)
 
     this._syncSettings()
   }
@@ -921,6 +938,26 @@ export class Screens {
 
   clearThreatPreview() {
     if (this._threatLine) this._threatLine.classList.remove('show')
+  }
+
+  /** v37 R3: render the intermission upgrade offer (three cards). `choices` is
+   *  [{label, desc}] from Upgrades.state(); the countdown is shown in the hint. */
+  showUpgradeOffer(choices, timeLeft) {
+    if (!this._upgradeBox) return
+    for (let i = 0; i < this._upgradeCards.length; i++) {
+      const c = this._upgradeCards[i]
+      const ch = choices && choices[i]
+      c.card.style.display = ch ? '' : 'none'
+      if (ch) { c.label.textContent = ch.label; c.desc.textContent = ch.desc }
+    }
+    if (this._upgradeHint) {
+      this._upgradeHint.textContent = 'pick one — 1 / 2 / 3, or F to skip (' + Math.ceil(timeLeft || 0) + 's)'
+    }
+    this._upgradeBox.classList.add('show')
+  }
+
+  clearUpgradeOffer() {
+    if (this._upgradeBox) this._upgradeBox.classList.remove('show')
   }
 
   showBanner(text) {

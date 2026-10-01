@@ -151,11 +151,11 @@ export class Input {
         else if (code === 'KeyM') this._emit('musicMute')
         else if (code === 'KeyN') this._emit('mute')
         else if (code === 'KeyB') this._emit('musicSkip')
-        else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true }
+        else if (code === 'KeyF') { this.inputState.flashlight = true; this._edgeHeld.flashlight = true; this._emit('upSkip') }
         else if (code === 'Space') { this.inputState.jump = true; this._edgeHeld.jump = true }
-        else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true }
-        else if (code === 'Digit2') { this.inputState.switch2 = true; this._edgeHeld.switch2 = true }
-        else if (code === 'Digit3') { this.inputState.switch3 = true; this._edgeHeld.switch3 = true }
+        else if (code === 'Digit1') { this.inputState.switch1 = true; this._edgeHeld.switch1 = true; this._emit('up1') }
+        else if (code === 'Digit2') { this.inputState.switch2 = true; this._edgeHeld.switch2 = true; this._emit('up2') }
+        else if (code === 'Digit3') { this.inputState.switch3 = true; this._edgeHeld.switch3 = true; this._emit('up3') }
         else if (code === 'Digit4') { this.inputState.switch4 = true; this._edgeHeld.switch4 = true }
         else if (code === 'Digit5') { this.inputState.switch5 = true; this._edgeHeld.switch5 = true }
         else if (code === 'KeyQ') { this.inputState.zoom = true }

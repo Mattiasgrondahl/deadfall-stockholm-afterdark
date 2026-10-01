@@ -21,6 +21,7 @@ import { WeaponBank } from './WeaponBank.js'
 import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE, MEDKIT_HEAL } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
+import { Upgrades } from './Upgrades.js'
 import { Blood } from './Blood.js'
 import { BulletHoles } from './BulletHoles.js'
 import { Footprints } from './Footprints.js'
@@ -223,7 +224,7 @@ export class Game {
       shootOnce: () => { if (this.weapon) return this.weapon.shoot() },
       reloadWeapon: () => { if (this.weapon) return this.weapon.reload() },
       setInput: (partial) => Object.assign(this.inputState, partial),
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       killAllZombies: () => {
         for (const z of this.zombies) if (!z.isDead) z.damage(z.health + 10)
       },
@@ -487,6 +488,9 @@ export class Game {
     this.waveManager = this.mode === 'ctf' ? null : new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {
         if (this.screens) { this.screens.showBanner('WAVE ' + w); this.screens.onWaveStarted() }
+        // v37 R3: the intermission is over — drop any still-open upgrade offer.
+        if (this.upgrades) this.upgrades.skip()
+        if (this.screens) this.screens.clearUpgradeOffer()
         // Procedural soundtrack: the director picks the track for this wave
         // (boss waves -> crisis, opening waves -> ambient, else combat).
         if (this.musicDirector) this.musicDirector.onWaveStart(w)
@@ -498,6 +502,8 @@ export class Game {
         // the AudioBank tension drone/heartbeat bed is gone (see WIRING:TENSION).
         if (this.musicDirector) this.musicDirector.onWaveCleared(w)
         if (this.achievements) this.achievements.onWaveCleared() // v3 T12
+        // v37 R3: open the intermission upgrade offer (pick one of three, or skip).
+        if (this.upgrades) this.upgrades.offerNext()
         // v3 boss fight: the boss just fell, so leave the dedicated boss track
         // and resume the mp3 playlist where it paused.
         if (this._bossFightActive) {
@@ -516,7 +522,7 @@ export class Game {
           this.screens.showThreatPreview('NEXT: WAVE ' + p.wave + ' — ' + parts.join(', '))
         }
       },
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       onBossIncoming: () => {
         if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING')
         // v28 R3: telegraph the boss before it arrives — the streetlight pools
@@ -538,7 +544,7 @@ export class Game {
     this.swarm = null
     if (this.mode === 'ctf') {
       this.swarm = new SwarmDirector({
-        spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+        spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
         players: () => this._swarmPlayers(),
         flag: this.flag,
         liveCount: () => this.zombies.filter((z) => !z.isDead).length,
@@ -550,6 +556,24 @@ export class Game {
     // Hosted high score: seed the stored best from the backend so a fresh
     // browser still shows the global record (best-effort; silent offline).
     if (!this.headless) this.score.adoptBest()
+    // WIRING:UPGRADES (v37 R3): intermission pick-one progression. Offered on
+    // each wave clear; the player picks one of three (keys 1/2/3) or skips (F).
+    this.upgrades = new Upgrades()
+    // v37 R3: the offer is picked with keys 1/2/3 (up1/up2/up3) or skipped with
+    // F (upSkip). Only acts while an offer is active; otherwise the keys fall
+    // through to their normal weapon-switch / flashlight roles.
+    if (this.input) {
+      const pick = (i) => {
+        if (this.upgrades && this.upgrades.active) {
+          const up = this.upgrades.pick(i, this.player, this.weaponBank)
+          if (up && this.screens) this.screens.showBanner(up.label)
+        }
+      }
+      this.input.on('up1', () => pick(0))
+      this.input.on('up2', () => pick(1))
+      this.input.on('up3', () => pick(2))
+      this.input.on('upSkip', () => { if (this.upgrades && this.upgrades.active) this.upgrades.skip() })
+    }
     // WIRING:ACHIEVEMENTS (v3 T12): persistent unlock set + per-run counters.
     // A new unlock toasts on the Screens banner; the counters reset each run.
     this.achievements = new Achievements(this.env, (label) => {
@@ -644,7 +668,7 @@ export class Game {
       onKill: (z) => {
         this.kills++
         if (this.hud) this.hud.killMarker(z.lastHitHead ? 'head' : 'body')
-        if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
+        if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1, z.lastHitHead === true)
         if (this.audio) this.audio.playKill?.(z.lastHitHead === true)
         // v3 T12: feed the achievement counters (kills always; headshots when
         // the killing blow was to the head; bosses when the kill was a brute).
@@ -799,6 +823,7 @@ export class Game {
     if (this.headPool) this.headPool.clear()
     if (this.limbs) this.limbs.clear() // v3 T1: dropped limbs do not survive a restart
     if (this.achievements) this.achievements.resetRun() // v3 T12: per-run counters reset; unlocks persist
+    if (this.upgrades) this.upgrades.reset() // v37 R3: a new run starts with no pending offer
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
     // v3 boss fight: a restart ends any live boss fight and resumes the playlist.
@@ -853,6 +878,8 @@ export class Game {
     if (_diff && _diff.startAmmoMult && this.weaponBank) {
       this.weaponBank.scaleReserve(_diff.startAmmoMult)
     }
+    // v37 R3: the harder difficulties pay out more score per kill.
+    if (this.score) this.score.setDifficulty(this.difficulty)
     // v37 R2: under frenzy/nightmare the horde is denser and demand is higher,
     // so ammo drops pay out half as much. Normal keeps full yields.
     if (this.drops) this.drops.setDifficulty(_diff && _diff.speedMult > 1 ? 0.5 : 1)
@@ -1154,6 +1181,18 @@ export class Game {
     // pre-refactor update — they animate purely visual state)
     // WIRING:BLOOD (V10)
     if (this.blood) this.blood.update(dt)
+    // v37 R3: tick the intermission upgrade offer; it auto-skips when the
+    // countdown runs out so the next wave always starts on time.
+    if (this.upgrades) this.upgrades.update(dt)
+    // v37 R3: surface the offer on the intermission picker while it is active.
+    if (this.upgrades && this.screens) {
+      if (this.upgrades.active) {
+        const st = this.upgrades.state()
+        this.screens.showUpgradeOffer(st.choices, st.timeLeft)
+      } else {
+        this.screens.clearUpgradeOffer()
+      }
+    }
     // WIRING:DECAPITATE (Task E)
     if (this.headPool) this.headPool.update(dt)
     // WIRING:DISMEMBER (v3 T1): tumble + settle the limbs dropped this frame.
@@ -1436,7 +1475,7 @@ export class Game {
     this.lightShafts = new LightShafts(this.scene, this.city.streetlightAnchors || [], 12)
     // The neutral hazard swarm replaces the wave manager.
     this.swarm = new SwarmDirector({
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       players: () => this._swarmPlayers(),
       flag: this.flag,
       liveCount: () => this.zombies.filter((z) => !z.isDead).length,
@@ -1518,10 +1557,17 @@ export class Game {
   }
 
   /** Spawn a zombie (used by WaveManager and debug). */
-  spawnZombie(type, x, z) {
+  spawnZombie(type, x, z, elite) {
     // WIRING:SPAWN (owned by task D: create zombie, push into this.zombies, return it)
     const wave = this.waveManager ? this.waveManager.wave : 1
     const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
+    // v37 R3: an elite queue slot spawns a buffed zombie — +60% HP and +25%
+    // speed on top of the wave/difficulty scaling, so it reads as a mini-boss.
+    if (elite && !zombie.isBoss) {
+      zombie.maxHealth = zombie.health = Math.round(zombie.maxHealth * 1.6)
+      zombie.speed *= 1.25
+      zombie.elite = true
+    }
     // WIRING:DISMEMBER (v3 T1): the run's shared limb pool, so a severed arm
     // or leg drops as a tumbling clone instead of just vanishing.
     if (this.limbs) zombie.drops = this.limbs

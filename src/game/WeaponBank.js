@@ -256,4 +256,24 @@ export class WeaponBank {
       if (w && Number.isFinite(w.reserve)) w.reserve = Math.floor(w.reserve * mult)
     }
   }
+
+  /** v37 R3 (Upgrades): add `n` rounds to every ranged weapon's magazine AND
+   *  reserve so a bigger-magazine upgrade takes effect immediately. Melee has no
+   *  magazine and is skipped. */
+  bumpMagazine(n) {
+    if (!(n > 0)) return
+    for (const w of [this.shotgun, this.pistol, this.sniper]) {
+      if (!w) continue
+      w.magSize += n
+      w.ammo = Math.min(w.magSize, w.ammo + n)
+      if (Number.isFinite(w.reserve)) w.reserve += n
+    }
+  }
+
+  /** v37 R3 (Upgrades): add `n` rounds to one weapon's reserve by name. */
+  bumpReserve(name, n) {
+    if (!(n > 0)) return
+    const w = this[name]
+    if (w && Number.isFinite(w.reserve)) w.reserve += n
+  }
 }

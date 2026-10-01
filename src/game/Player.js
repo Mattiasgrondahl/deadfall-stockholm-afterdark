@@ -167,6 +167,14 @@ export class Player {
     this.camera.rotation.set(this.pitch + this._pitchKick, this.yaw, 0)
   }
 
+  /** v37 R3 (Upgrades): raise max health by `n` and heal the same amount, so a
+   *  vitality upgrade both grows the cap and tops the player up immediately. */
+  bumpMaxHealth(n) {
+    if (!(n > 0)) return
+    this.maxHealth += n
+    if (!this.isDead) this.health = Math.min(this.maxHealth, this.health + n)
+  }
+
   damage(amount, source) {
     if (this.isDead) return
     this.health -= amount
