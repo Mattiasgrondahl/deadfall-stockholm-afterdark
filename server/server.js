@@ -281,7 +281,7 @@ function serveLobby(req, res) {
     rooms.forEach((room, code) => {
       const players = room && room.sockets ? room.sockets.size : 0
       if (players <= 0) return // empty room -> nothing to join
-      out.push({ room: code, players, max: MAX_PLAYERS })
+      out.push({ room: code, players, max: MAX_PLAYERS, mode: room.mode || 'survival' })
       total += players
     })
   }
@@ -337,14 +337,17 @@ export class Room {
   // v4 co-op: co-op zombies default to NIGHTMARE speed (speedMult 3) to match the
   // single-player nightmare preset — the user found the old 'normal' (1×) horde
   // too slow/slow-moving in co-op. Callers can still override via opts.difficulty.
-  constructor(difficulty = 'nightmare') {
-    this.match = new Match({ difficulty })
+  // v37 R1: `mode` ('survival' | 'ctf') comes from the first joiner's hello so a
+  // hosted room can run a Capture-the-Flag match, not always survival.
+  constructor(difficulty = 'nightmare', mode = 'survival') {
+    this.mode = mode === 'ctf' ? 'ctf' : 'survival'
+    this.match = new Match({ difficulty, mode: this.mode })
     this.sockets = new Map() // socket -> playerId
     this._snapAccum = 0
   }
 
   /** Assign the next free player id (p0..p7) and add it to the Match. */
-  join(socket, name) {
+  join(socket, name, team) {
     if (this.sockets.size >= MAX_PLAYERS) return null
     let id = null
     for (let i = 0; i < MAX_PLAYERS; i++) {
@@ -352,7 +355,7 @@ export class Room {
       if (!this.match.getPlayer(cand)) { id = cand; break }
     }
     if (!id) return null
-    const slot = this.match.addPlayer(id, undefined, undefined, name)
+    const slot = this.match.addPlayer(id, undefined, undefined, name, team)
     if (!slot) return null
     this.sockets.set(socket, id)
     return id
@@ -450,10 +453,12 @@ export function startServer(opts = {}) {
   // returned `.room` (and legacy single-room tests) still resolve.
   const rooms = new Map()
   const hsStore = new Map()
-  const roomFor = (code) => {
+  const roomFor = (code, mode) => {
     const key = sanitizeRoom(code)
     let r = rooms.get(key)
-    if (!r) { r = new Room(opts.difficulty); r.code = key; rooms.set(key, r) }
+    // v37 R1: the first hello's mode fixes the room's mode. A later joiner with a
+    // different mode still lands in the same room (mode is whatever it started as).
+    if (!r) { r = new Room(opts.difficulty, mode); r.code = key; rooms.set(key, r) }
     return r
   }
   const defaultRoom = roomFor(DEFAULT_ROOM)
@@ -481,8 +486,8 @@ export function startServer(opts = {}) {
         // label remote avatars. buildHello already clamps to 24 chars.
         // v7: route the socket into the room its hello names (msg.room), so
         // distinct room codes are distinct sessions with distinct leaderboards.
-        room = roomFor(msg.room)
-        const id = room.join(socket, msg.name)
+        room = roomFor(msg.room, msg.mode)
+        const id = room.join(socket, msg.name, msg.team)
         if (id === null) { socket.close(); return }
         joined = true
         logWs('join', socket, `room=${room.code || DEFAULT_ROOM} id=${id} name=${JSON.stringify(msg.name || '')}`)

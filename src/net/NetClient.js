@@ -61,6 +61,10 @@ export class NetClient {
     this.url = opts.url || (typeof location !== 'undefined' ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws` : 'ws://localhost:8080/ws')
     this.name = opts.name || 'player'
     this.room = opts.room || 'default'
+    // v37 R1: game mode + CTF team chosen on the title screen, forwarded in the
+    // hello so the server builds the right Match. Undefined = server default.
+    this.mode = opts.mode === 'ctf' || opts.mode === 'survival' ? opts.mode : null
+    this.team = opts.team === 'lovis' || opts.team === 'krag' ? opts.team : null
     this.socket = new Ctor(this.url)
     this.pid = null
     this.connected = false
@@ -77,7 +81,7 @@ export class NetClient {
     this.pingMs = 0
     this._pingSentAt = 0
     this._pingAccum = 0
-    this.socket.onopen = () => { this.connected = true; this.socket.send(JSON.stringify(buildHello(this.name, this.room))) }
+    this.socket.onopen = () => { this.connected = true; this.socket.send(JSON.stringify(buildHello(this.name, this.room, this.mode, this.team))) }
     this.socket.onmessage = (ev) => this._onMessage(JSON.parse(ev.data))
     this.socket.onclose = () => { this.connected = false; this._emit('close', {}) }
     this.socket.onerror = () => { this.connected = false }

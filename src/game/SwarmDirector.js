@@ -17,6 +17,9 @@
 // Zombie types the swarm draws from, weighted by a deterministic LCG draw.
 const TYPES = ['walker', 'walker', 'walker', 'shambler', 'shambler', 'screamer', 'brute']
 const CARRIER_BIAS = 0.6 // fraction of spawns dropped near the carrier vs nearest player
+// v37 R1: when neither flag is carried, this fraction of spawns drops at the
+// losing team's base so the side behind the scoreline is forced to defend.
+const DEFENDER_BIAS = 0.35
 const BASE_INTERVAL = 4.0 // seconds between spawns at score 0
 const MIN_INTERVAL = 1.1 // floor once fully escalated
 const SCORE_PRESSURE = 0.55 // interval shrink per total capture scored by both teams
@@ -71,6 +74,18 @@ export class SwarmDirector {
   _anchor() {
     const carrier = this._carrier()
     if (carrier && this._rand() < CARRIER_BIAS) return carrier
+    // v37 R1: with no live carrier (both flags home), a slice of spawns drops at
+    // the LOSING team's base so the side behind the scoreline feels defensive
+    // pressure instead of a free run at the enemy flag. Ties / no score fall
+    // through to the nearest-player anchor.
+    if (!carrier && this._flag && this._flag.scores) {
+      const s = this._flag.scores
+      const behind = s.lovis < s.krag ? 'lovis' : s.krag < s.lovis ? 'krag' : null
+      if (behind && this._rand() < DEFENDER_BIAS) {
+        const b = this._bases[behind]
+        if (b) return { x: b.x, z: b.z }
+      }
+    }
     const np = this._nearestPlayer()
     if (np) return np
     return { x: (this._bases.lovis.x + this._bases.krag.x) / 2, z: (this._bases.lovis.z + this._bases.krag.z) / 2 }

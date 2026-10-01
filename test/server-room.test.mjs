@@ -185,3 +185,39 @@ test('v7: distinct room codes are distinct sessions (independent Matches)', asyn
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// v37 R1 — co-op CTF wiring on the server side.
+test('v37 R1: buildHello carries mode + team when they are valid', () => {
+  const ctf = buildHello('Ada', 'room', 'ctf', 'krag')
+  assert.equal(ctf.mode, 'ctf')
+  assert.equal(ctf.team, 'krag')
+  const surv = buildHello('Bo', 'room', 'survival')
+  assert.equal(surv.mode, 'survival')
+  assert.equal(surv.team, undefined, 'no team in survival')
+  // Junk mode/team are dropped so the server falls back to survival / round-robin.
+  const junk = buildHello('X', 'room', 'bogus', 'nonsense')
+  assert.equal(junk.mode, undefined)
+  assert.equal(junk.team, undefined)
+})
+
+test('v37 R1: a CTF Room builds a CTF Match and assigns teams on join', () => {
+  const room = new Room('nightmare', 'ctf')
+  assert.equal(room.mode, 'ctf')
+  assert.equal(room.match.mode, 'ctf')
+  assert.ok(room.match.flag, 'CTF room has authoritative flag state')
+  const a = room.join(fakeSocket(), 'Ada', 'krag')
+  const b = room.join(fakeSocket(), 'Bo')
+  assert.ok(a && b)
+  assert.equal(room.match.getPlayer(a).team, 'krag', 'explicit team honoured')
+  const bt = room.match.getPlayer(b).team
+  assert.ok(bt === 'lovis' || bt === 'krag', 'unset team round-robins to a valid side')
+})
+
+test('v37 R1: a survival Room ignores a CTF team and stays survival', () => {
+  const room = new Room('nightmare', 'survival')
+  assert.equal(room.mode, 'survival')
+  assert.equal(room.match.mode, 'survival')
+  assert.equal(room.match.flag, null, 'survival has no flag state')
+  const a = room.join(fakeSocket(), 'Ada', 'krag')
+  assert.ok(a)
+})

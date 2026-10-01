@@ -856,6 +856,9 @@ export class Game {
           scene: this.scene, env: this.env,
           name: this._mpOpts.name, room: this._mpOpts.room,
           url: this._mpOpts.url, Socket: this._mpOpts.Socket,
+          // v37 R1: forward the title-screen mode + CTF team so the server builds
+          // a CTF Match (not always survival) and spawns this client at its base.
+          mode: this.mode, team: this._myTeam,
           getFriendlyFire: () => this.settings.get('friendlyFire')
         })
         this._wireMpHooks(this.multiplayer)
@@ -1041,6 +1044,21 @@ export class Game {
     // highest-scoring player — first. finalScoreboard is sorted by score desc.
     const board = (this.multiplayer && this.multiplayer.finalScoreboard) || null
     const winner = board && board.length ? board[0].id : null
+    // v37 R1: a hosted CTF match ends on a capture-win or the time cap. Show the
+    // team scoreboard (LOVISEDAL n — KRAGSTALUND n + winning side) instead of the
+    // survival "Wave N — kills" line. The final ctf block rides the last snapshot.
+    const ctfSnap = (this.multiplayer && this.multiplayer.lastSnap && this.multiplayer.lastSnap.ctf) || null
+    if (this.mode === 'ctf' && ctfSnap) {
+      if (this.screens) this.screens.showGameOver({
+        wave, kills: this.kills,
+        score: this.score ? this.score.value : 0,
+        best: this.score ? this.score.best : 0,
+        name: this.score ? this.score.name : '',
+        record, scoreboard: board, winner,
+        ctf: { scores: ctfSnap.scores, winner: ctfSnap.winner, myTeam: this._myTeam }
+      })
+      return
+    }
     if (this.screens) this.screens.showGameOver({
       wave,
       kills: this.kills,
@@ -1079,6 +1097,23 @@ export class Game {
     mp.onSelfHit = (n, src, ff) => {
       if (this.hud) this.hud.dmgFeedback(n, src || (ff ? 'teammate' : 'zombie'))
       if (this.audio && this.audio.hitPlayer) this.audio.hitPlayer()
+    }
+    // v37 R1: hosted CTF objective feedback. The server emits flagPickup /
+    // flagDrop / flagCapture; without a consumer the objective was silent. Show
+    // the same banner solo CTF uses and fire a distinct sound per event so a
+    // steal / drop / capture is actually felt in co-op.
+    mp.onFlagEvent = (ev) => {
+      if (!ev) return
+      const mine = ev.team && ev.team === this._myTeam
+      if (ev.k === 'flagCapture') {
+        if (this.screens) this.screens.showBanner(mine ? 'FLAG CAPTURED!' : 'ENEMY FLAGGED!')
+        if (this.audio) this.audio.playKill?.(true)
+      } else if (ev.k === 'flagPickup') {
+        if (this.screens && ev.by === this.multiplayer?.pid) this.screens.showBanner('FLAG TAKEN — GET HOME!')
+        if (this.audio) this.audio.pickup?.()
+      } else if (ev.k === 'flagDrop') {
+        if (this.screens) this.screens.showBanner('FLAG DROPPED')
+      }
     }
     return mp
   }

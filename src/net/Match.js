@@ -350,7 +350,22 @@ export class Match {
     if (this.mode === 'ctf') {
       // CTF ends on a capture-win (handled above) or the time cap; the wave /
       // kill-target survival conditions do not apply.
-      if (this.time >= this.matchTimeCap) this._end('timecap')
+      // v37 R1: if the clock runs out with the teams TIED, do not end on a
+      // meaningless draw — enter sudden-death and keep playing until the next
+      // capture decides it (flag.winner is set by tryCapture at WIN_SCORE, but a
+      // tie at the cap means neither reached WIN_SCORE, so the next capture wins).
+      if (this.time >= this.matchTimeCap) {
+        const s = this.flag ? this.flag.scores : { lovis: 0, krag: 0 }
+        if (s.lovis === s.krag) {
+          if (!this._suddenDeath) {
+            this._suddenDeath = true
+            if (this.flag) this.flag.suddenDeath = true
+            this.events.push({ k: 'suddenDeath' })
+          }
+        } else {
+          this._end('timecap')
+        }
+      }
       return
     }
     if (this.wave && this.wave.wave >= BOSS_WAVE && this.wave.remaining === 0 && this.zombies.filter((z) => !z.isDead).length === 0) {

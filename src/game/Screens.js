@@ -594,7 +594,9 @@ export class Screens {
     // a co-op join can't carry a hostile name/room to the server either.
     const room = sanitizeName(this._roomInput && this._roomInput.value) || 'default'
     const name = sanitizeName(this._nameInput && this._nameInput.value) || 'player'
-    this._game.startMultiplayer({ room, name })
+    // v37 R1: forward the title-screen mode + CTF team so a hosted co-op room can
+    // run a Capture-the-Flag match, not always survival.
+    this._game.startMultiplayer({ room, name, mode: this._game.mode, team: this._game._myTeam })
   }
 
   /** v29: join a specific room straight from the lobby list — set the room input
@@ -860,9 +862,20 @@ export class Screens {
     else this.showTitle()
   }
 
-  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '', scoreboard = null, winner = null }) {
+  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '', scoreboard = null, winner = null, ctf = null }) {
     this._hideAll()
-    this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
+    // v37 R1: a CTF match shows the team result (LOVISEDAL n — KRAGSTALUND n) and
+    // names the winning side, not the survival "Wave N — kills" line.
+    if (ctf && ctf.scores) {
+      const lv = ctf.scores.lovis | 0, kg = ctf.scores.krag | 0
+      this._statText.textContent = 'LOVISEDAL ' + lv + '  \u2014  KRAGSTALUND ' + kg
+      const winTeam = ctf.winner || (lv > kg ? 'lovis' : kg > lv ? 'krag' : null)
+      this._endTitle.textContent = winTeam
+        ? ((winTeam === 'lovis' ? 'LOVISEDAL' : 'KRAGSTALUND') + ' WIN' + (ctf.myTeam === winTeam ? ' — YOU' : ''))
+        : 'DRAW'
+    } else {
+      this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
+    }
     // v3 T6: a new record is attributed to the player's name (textContent only).
     this._recordText.textContent = record ? (name ? 'NEW HIGH SCORE — ' + name + ' — ' + best : 'NEW HIGH SCORE — ' + best) : ''
     // v15: co-op end-game scoreboard. When the match ended with a per-player
