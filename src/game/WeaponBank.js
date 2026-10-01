@@ -245,4 +245,15 @@ export class WeaponBank {
     this.sword.dispose()
     this.sniper.dispose()
   }
+
+  /** v37 R2: scale every ranged weapon's starting reserve by `mult` (0..1).
+   *  NIGHTMARE halves it via the difficulty preset so a run starts lean. Melee
+   *  (axe/sword) have no reserve and are skipped. Called after reset() so it
+   *  scales the freshly-reset reserve down to the difficulty's start. */
+  scaleReserve(mult) {
+    if (!(mult > 0) || mult === 1) return
+    for (const w of [this.shotgun, this.pistol, this.sniper]) {
+      if (w && Number.isFinite(w.reserve)) w.reserve = Math.floor(w.reserve * mult)
+    }
+  }
 }

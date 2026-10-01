@@ -31,10 +31,12 @@ function makeZombie(type, x, z, wave = 1, difficulty = 'normal') {
 
 test('DIFFICULTY presets: normal is identity, frenzy doubles speed and flattens HP to 50', () => {
   assert.deepEqual(DIFFICULTY.normal, { speedMult: 1, hpBase: null, startWave: 1 })
-  assert.deepEqual(DIFFICULTY.frenzy, { speedMult: 2, hpBase: 50, startWave: 1 })
-  // v3 difficulty (1): nightmare stacks on frenzy — 3x speed, same flat HP,
-  // and the run opens at wave 3.
-  assert.deepEqual(DIFFICULTY.nightmare, { speedMult: 3, hpBase: 50, startWave: 3 })
+  // v37 R2: frenzy no longer flattens to a flat 50 — it ramps 50 -> 90 across
+  // the first five waves (hpRamp/hpMax) so later waves are tankier.
+  assert.deepEqual(DIFFICULTY.frenzy, { speedMult: 2, hpBase: 50, hpRamp: 10, hpMax: 90, startWave: 1 })
+  // v3 difficulty (1): nightmare stacks on frenzy — 3x speed, flat 50 HP, opens
+  // at wave 3. v37 R2 adds the survival modifiers (half start ammo, no regen).
+  assert.deepEqual(DIFFICULTY.nightmare, { speedMult: 3, hpBase: 50, startWave: 3, startAmmoMult: 0.5, regenOff: true })
 })
 
 test('normal zombies are unchanged: speed and HP come straight from TABLE', () => {
@@ -53,13 +55,18 @@ test('frenzy zombies: 2x speed and flat 50 HP for every type at wave 1', () => {
   }
 })
 
-test('frenzy wave scaling still applies on top of the flat base', () => {
+test('frenzy wave scaling ramps the base 50 -> 90 then applies on top', () => {
+  // v37 R2: the base ramps +10/wave up to the 90 cap, then 1.12^wave scales it.
   const { zombie: f2 } = makeZombie('shambler', 0, 0, 2, 'frenzy')
-  assert.equal(f2.maxHealth, 56) // Math.round(50 * 1.12)
+  assert.equal(f2.maxHealth, Math.round(60 * 1.12)) // base 60 at wave 2
   const { zombie: f3 } = makeZombie('walker', 0, 0, 3, 'frenzy')
-  assert.equal(f3.maxHealth, 63) // Math.round(50 * 1.12^2)
+  assert.equal(f3.maxHealth, Math.round(70 * 1.12 ** 2)) // base 70 at wave 3
   const { zombie: f4 } = makeZombie('walker', 0, 0, 4, 'frenzy')
-  assert.equal(f4.maxHealth, 70) // Math.round(50 * 1.12^3) = 70.25 -> 70
+  assert.equal(f4.maxHealth, Math.round(80 * 1.12 ** 3)) // base 80 at wave 4
+  const { zombie: f5 } = makeZombie('walker', 0, 0, 5, 'frenzy')
+  assert.equal(f5.maxHealth, Math.round(90 * 1.12 ** 4)) // base caps at 90
+  const { zombie: f6 } = makeZombie('walker', 0, 0, 6, 'frenzy')
+  assert.equal(f6.maxHealth, Math.round(90 * 1.12 ** 5)) // base holds at 90 past the cap
 })
 
 test('frenzy kill economy: 2 body shots or 1 headshot at wave 1', () => {

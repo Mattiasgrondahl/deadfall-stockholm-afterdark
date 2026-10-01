@@ -61,6 +61,10 @@ export class Player {
     this._bobPhase = 0
     this._bobAmp = 0
     this._regenDelay = 0 // s remaining before passive regen resumes (reset on damage)
+    // v37 R2: NIGHTMARE disables passive health regen entirely (no free healing
+    // between fights) — Game flips this false for that difficulty. Default true
+    // keeps every other mode (and every existing test) unchanged.
+    this.regenEnabled = true
     this._eyeHeight = STAND_EYE // camera eye offset above the body; lerps down when crouching
     this._crouching = false
     this._onDeath = null
@@ -138,7 +142,7 @@ export class Player {
 
     // Passive health regen: after REGEN_DELAY seconds without damage, health
     // trickles back at REGEN_RATE hp/s up to maxHealth. Dead players never heal.
-    if (!this.isDead && this.health < this.maxHealth) {
+    if (!this.isDead && this.regenEnabled && this.health < this.maxHealth) {
       if (this._regenDelay > 0) this._regenDelay = Math.max(0, this._regenDelay - dt)
       else this.health = Math.min(this.maxHealth, this.health + REGEN_RATE * dt)
     }

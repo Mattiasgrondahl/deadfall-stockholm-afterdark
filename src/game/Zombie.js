@@ -102,8 +102,14 @@ const CHARGE_TIME = 0.55
 // 50 HP dies to two rounds and simply ends the chain early, as designed.
 export const DIFFICULTY = {
   normal: { speedMult: 1, hpBase: null, startWave: 1 },
-  frenzy: { speedMult: 2, hpBase: 50, startWave: 1 },
-  nightmare: { speedMult: 3, hpBase: 50, startWave: 3 }
+  // v37 R2: frenzy no longer uses a flat 50 HP. It ramps 50 → 90 across the first
+  // five waves (hpRamp per wave, capped at hpMax) so early waves stay the shipped
+  // "2 pistol bodies / 1 headshot" contract but later waves are genuinely tankier.
+  frenzy: { speedMult: 2, hpBase: 50, hpRamp: 10, hpMax: 90, startWave: 1 },
+  // v37 R2: nightmare keeps the flat-50-HP identity but halves starting ammo and
+  // disables passive health regen (startAmmoMult / regenOff), so it is a genuine
+  // survival test rather than just 3× speed.
+  nightmare: { speedMult: 3, hpBase: 50, startWave: 3, startAmmoMult: 0.5, regenOff: true }
 }
 
 const ORDER = ['walker', 'shambler', 'screamer', 'brute']
@@ -1007,7 +1013,11 @@ export class Zombie {
     this.type = type
     this.scene = scene
     this.speed = TABLE[type].speed * diff.speedMult
-    const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    let baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    // v37 R2: a difficulty with hpRamp ramps its flat base HP upward per wave up
+    // to hpMax (frenzy 50→90 by wave 5), then the usual 1.12^wave scaling applies
+    // on top. A difficulty without hpRamp (nightmare, normal) is unchanged.
+    if (diff.hpRamp) baseHp = Math.min(diff.hpMax != null ? diff.hpMax : Infinity, baseHp + diff.hpRamp * (wave - 1))
     this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
     // v14: the wave-5 boss is 10× tankier (user request). Applied after wave
     // scaling so it holds in every difficulty (the flat-50 frenzy/nightmare HP

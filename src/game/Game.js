@@ -18,7 +18,7 @@ import { FlagState } from './Flag.js'
 import { SwarmDirector } from './SwarmDirector.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE, MEDKIT_HEAL } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
 import { Blood } from './Blood.js'
@@ -661,9 +661,22 @@ export class Game {
           // pickup is a choice — light vs ammo — so it restores a chunk, not
           // a full charge.
           if (this.flashlight) this.flashlight.recharge(BATTERY_RESTORE)
+        } else if (d && d.kind === 'medkit') {
+          // v37 R2: a medkit heals the player (capped at maxHealth) instead of
+          // restocking ammo — the scarce-health counterweight to the horde.
+          if (this.player && !this.player.isDead) {
+            this.player.health = Math.min(this.player.maxHealth, this.player.health + (d.amount || MEDKIT_HEAL))
+          }
         } else if (this.weapon) {
-          if (d && d.kind === 'bullets') this.weapon.pistol.reserve += BULLETS_PER_DROP
-          else this.weapon.shotgun.reserve += SHELLS_PER_DROP
+          // v37 R2: pay out the drop's difficulty-scaled amount (falls back to
+          // the normal constant if an old drop predates the amount field). A
+          // bullet drop also tops up the sniper reserve so the sniper — which
+          // otherwise never refills — stays usable across a long run.
+          const amt = d && Number.isFinite(d.amount) ? d.amount : (d && d.kind === 'bullets' ? BULLETS_PER_DROP : SHELLS_PER_DROP)
+          if (d && d.kind === 'bullets') {
+            this.weapon.pistol.reserve += amt
+            if (this.weapon.sniper) this.weapon.sniper.reserve += Math.max(1, Math.floor(amt / 2))
+          } else this.weapon.shotgun.reserve += amt
         }
         if (this.audio) this.audio.pickup?.()
       }
@@ -831,6 +844,18 @@ export class Game {
     } else if (this.difficulty === 'frenzy' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')
     }
+    // v37 R2: difficulty-driven survival modifiers. NIGHTMARE halves starting
+    // ammo and disables passive health regen, so it is a genuine survival test.
+    // Applied after the weapon/player reset above so the ammo scale lands on the
+    // fresh reserve; regenEnabled is a per-run flag reset() does not touch.
+    const _diff = DIFFICULTY[this.difficulty]
+    if (this.player) this.player.regenEnabled = !(_diff && _diff.regenOff)
+    if (_diff && _diff.startAmmoMult && this.weaponBank) {
+      this.weaponBank.scaleReserve(_diff.startAmmoMult)
+    }
+    // v37 R2: under frenzy/nightmare the horde is denser and demand is higher,
+    // so ammo drops pay out half as much. Normal keeps full yields.
+    if (this.drops) this.drops.setDifficulty(_diff && _diff.speedMult > 1 ? 0.5 : 1)
   }
 
   /**
