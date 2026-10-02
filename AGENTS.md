@@ -57,7 +57,9 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   `tools/verify-outline.mjs` (headless geometry proof for the zombie silhouette
   shell: containment per frame, rim width in metres, ≥1 px projection, culling
   coupling, boss exemption, dispose cleanliness — run it after touching
-  `ZombieOutline.js` / `Zombie.js` shell wiring).
+  `ZombieOutline.js` / `Zombie.js` shell wiring) and `tools/rim-contrast.mjs`
+  (photometric audit of that rim in the browser: what separation it actually
+  buys, and why width/colour are not levers).
 - `docs/` — ARCHITECTURE, V2-PLAN, V2-CHANGELOG (round history), V2-DECISIONS,
   perf-baseline, AGENT-ASSET-PIPELINE (this agent guide's asset companion).
   `docs/spec-*.md` are per-task implementation specs (git-ignored).
@@ -106,6 +108,15 @@ The sandbox exports `NODE_ENV=production`, so dev deps need
 7. Visual inspection: `tools/look-capture.mjs` → `.research/look/*.png`, then
    `tools/look-metrics.mjs` (quantitative) or `tools/mcpm_vision.py` (local
    VLM). See `docs/AGENT-ASSET-PIPELINE.md` for exact invocations and limits.
+   **Assert the subject is in frame before believing a verdict.** Scenes 01–08
+   teleport to fixed vantages and can capture an empty street; scene 09 spawns
+   zombies, aims at them, freezes the sim and exits 1 if fewer than 3 are in the
+   view cone. The local VLM will confidently describe outlines on a frame with
+   zero zombies in it, so: ask it to count the subjects first, and prefer the
+   quantitative probes for anything threshold-like. For the zombie silhouette
+   specifically, `tools/rim-contrast.mjs` is the authority — rim width and rim
+   colour are both measured non-levers (see its header), and the VLM's rim
+   verdict flips with camera range (yes at 4 m, "not discernible" at 6 m).
 
 **Headless drive pattern** (no browser needed):
 
@@ -204,11 +215,14 @@ writes need the wider sandbox mode.
    `assets/` + `index.html`, copy `dist/` contents in, `git add -A` (safe in
    the worktree), commit, push `origin gh-pages`, `git worktree remove`.
    Never `git add -A` in the main tree (stages node_modules/dist).
-4. CDN propagation is **not** reliably 60 s — measured 2.5–5 min (the new bundle
-   404s while the old one still serves 200). Poll the live hash in a loop
+4. **The Pages build itself is the slow part, not the CDN.** After pushing
+   `gh-pages`, `GET /repos/<user>/<repo>/pages/builds/latest` stays `building`
+   for **5–25 min** (measured: 20+ min with `updated_at` frozen, no log
+   endpoint) and the new bundle 404s the whole time while the old one serves
+   200. Poll that status **and** the live hash in a loop
    (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o
-   'index-[^"]*\.js'`) and treat a 404 on the new bundle as lag, not a bad
-   deploy — confirm with `git ls-tree -r origin/gh-pages --name-only`.
+   'index-[^"]*\.js'`); a 404 on the new bundle means lag, never a bad deploy —
+   confirm the branch content with `git ls-tree -r origin/gh-pages --name-only`.
    Note: `dist/` is git-ignored but ~98 files are force-tracked there (33 audio
    clips + the bundle snapshot) — keep them in sync with `public/assets/audio/`,
    and restore with `git checkout HEAD -- dist/` after `npm run pages`, which
