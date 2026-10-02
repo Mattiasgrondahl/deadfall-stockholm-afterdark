@@ -78,25 +78,28 @@ test('two RemotePlayers get distinct tints (stable per id)', () => {
   a.dispose(); b.dispose(); a2.dispose()
 })
 
-test('8 avatars + capped-alive zombies + city stay within the 640-mesh budget', () => {
+test('8 avatars + capped-alive zombies + city stay within the mesh budget', () => {
   const scene = new THREE.Scene()
   const collision = new CollisionWorld(180, 180)
   collision.clear()
   const city = new City(scene, collision, { canvasFactory: () => null })
   const base = countMeshes(scene)
-  // WaveManager caps ALIVE zombies at min(8+wave, 18) => 18 is the runtime
-  // ceiling (§12.5). The full 24-spawn wave total is never all alive at once.
-  const ALIVE_CAP = 18
+  // v37 R3: WaveManager's ALIVE cap climbs to 20 from wave 9 (capFor), so 20 is
+  // the runtime ceiling. The full 24-spawn wave total is never all alive at once.
+  const ALIVE_CAP = 20
   const zs = []
   for (let i = 0; i < ALIVE_CAP; i++) zs.push(new Zombie(scene, 'walker', i, 0, 1))
   const rps = []
   for (let i = 0; i < 8; i++) rps.push(new RemotePlayer(scene, 'p' + i))
   const total = countMeshes(scene)
-  assert.ok(total.meshes <= 640, `mesh budget: ${total.meshes} <= 640`)
+  // Gate mirrors tools/verify-game.mjs S8 (raised 640→800 in the v4 headroom
+  // round). v37 R5 adds 4 silhouette-shell meshes per non-boss body, so the
+  // worst case is 20 bodies x 4 = 80 extra shells.
+  assert.ok(total.meshes <= 800, `mesh budget: ${total.meshes} <= 800`)
   assert.ok(total.lights <= 40, `light budget: ${total.lights} <= 40`)
   // Avatars add 6 body meshes + a held-weapon silhouette (1-2 meshes) each.
   assert.ok(total.meshes >= base.meshes + ALIVE_CAP * 9 + 48, 'zombies + avatars present')
-  console.log(`[mp-budget] city=${base.meshes} +${ALIVE_CAP} alive zombies +8 avatars => meshes ${total.meshes}/640 lights ${total.lights}/40`)
+  console.log(`[mp-budget] city=${base.meshes} +${ALIVE_CAP} alive zombies +8 avatars => meshes ${total.meshes}/800 lights ${total.lights}/40`)
   for (const z of zs) z.dispose()
   for (const rp of rps) rp.dispose()
 })

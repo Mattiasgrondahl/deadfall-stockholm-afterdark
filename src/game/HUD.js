@@ -48,6 +48,7 @@ export class HUD {
 
     // Stamina
     const stamina = d.createElement('div'); stamina.className = 'hud-stamina'
+    this._staminaBox = stamina
     const sLabel = d.createElement('div'); sLabel.className = 'hud-label'; sLabel.textContent = 'Stamina'
     const sBar = d.createElement('div'); sBar.className = 'bar'
     this._staminaFill = d.createElement('div'); this._staminaFill.className = 'bar-fill'
@@ -206,6 +207,8 @@ export class HUD {
       const bar = d.createElement('div'); bar.className = 'ch-bar ' + b; ch.appendChild(bar)
     }
     ch.appendChild(dot)
+    this._crosshair = ch
+    this._chBars = ch.querySelectorAll ? Array.from(ch.querySelectorAll('.ch-bar')) : []
     this._hudRoot.appendChild(ch)
 
     // Hit marker + kill confirmation (V5P-1): single element, class-driven look.
@@ -278,6 +281,9 @@ export class HUD {
       const maxS = player.maxStamina || 100
       const sPct = Math.max(0, Math.min(1, (player.stamina !== undefined ? player.stamina : maxS) / maxS))
       this._staminaFill.style.width = (sPct * 100) + '%'
+      // v37 R4: when stamina runs low the bar pulses (a breath cue that the
+      // sprint meter is about to run dry). CSS drives the pulse animation.
+      this._staminaBox.classList.toggle('low', sPct < 0.25)
     }
 
     if (weapon) {
@@ -331,6 +337,27 @@ export class HUD {
         this._ammoValue.textContent = weapon.ammo + ' / ' + weapon.reserve
         this._ammoBox.classList.toggle('reloading', !!weapon.isReloading)
         this._ammoBox.classList.toggle('empty', weapon.ammo === 0)
+      }
+      // v37 R4: the crosshair opens with the CURRENT weapon's spread so the gap
+      // reads the true aim cone, and hides entirely when the sniper is scoped
+      // (the scope reticle replaces it). Spread is in radians; scale to pixels.
+      if (this._crosshair) {
+        const cur = weapon.current
+        const scoped = !!(cur && cur.scoped)
+        this._crosshair.classList.toggle('hidden', scoped)
+        if (!scoped && this._chBars && this._chBars.length === 4) {
+          const spread = cur && Number.isFinite(cur.spread) ? cur.spread : 0
+          // ~90 px per radian, clamped so a shotgun never covers the screen.
+          const gap = 10 + Math.min(26, Math.round(spread * 90))
+          const t = this._chBars[0], b = this._chBars[1], l = this._chBars[2], r = this._chBars[3]
+          if (this._chGap !== gap) {
+            this._chGap = gap
+            t.style.transform = `translate(-50%, ${-gap - 8}px)`
+            b.style.transform = `translate(-50%, ${gap}px)`
+            l.style.transform = `translate(${-gap - 8}px, -50%)`
+            r.style.transform = `translate(${gap}px, -50%)`
+          }
+        }
       }
     }
 

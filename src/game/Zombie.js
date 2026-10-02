@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { buildOutfitProps } from './ZombieOutfits.js'
+// v37 R5: dark silhouette shell (cost contract documented in ZombieOutline.js).
+import { attachOutline, detachOutline } from './ZombieOutline.js'
 
 /**
  * Zombie — boxy humanoid pursuer with chase / attack / corpse states.
@@ -1251,6 +1253,17 @@ export class Zombie {
     scene.add(this.group)
     this._parts = parts
     for (const p of parts) p.castShadow = true
+    // v37 R5: silhouette shell — one inverted-hull (BackSide) copy per body
+    // part, parented to that part and scaled 1.04x, so the camera sees the
+    // hull's inside as a thin black rim. Parenting is the point: the shell
+    // inherits the part's walk swing, attack lunge, death collapse and the
+    // group's boss scale, and hides with the part on dismemberment / the LOD
+    // body swap, with no per-frame bookkeeping. It carries no material of its
+    // own and no geometry of its own — the only per-zombie cost is 6 Mesh
+    // objects, and only non-boss bodies get one (a 2.5x/5x boss scale would
+    // fatten the rim into a black blob). Kept OUT of _parts so hit-flash /
+    // death never repaint it, and out of _silhouette/_outfitProps likewise.
+    this._outline = this.isBoss ? null : attachOutline(parts)
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
     this._restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
@@ -1504,6 +1517,10 @@ export class Zombie {
       this._skin.root.visible = false
       this._skinMesh.root.visible = true
       for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+      // v37 R5: nothing to do for the shells here. Each one is a child of its
+      // own part, so hiding the primitive torso/limbs above hides their rims
+      // with them, and the head's rim stays exactly as long as the primitive
+      // head (which carries the face) stays visible.
     } else {
       if (this._lodSkinned === false) return
       this._lodSkinned = false
@@ -2115,6 +2132,11 @@ export class Zombie {
    *  lazy, so dispose fully reverses. */
   dispose() {
     this.scene.remove(this.group)
+    // v37 R5: detach this body's shells and drop its reference to the shared
+    // shell material. The shells' geometry is the shared GEO2 pool, so nothing
+    // here may be disposed except the refcount-managed material.
+    detachOutline(this._outline)
+    this._outline = null
     // Release the per-instance mixer (stops its actions). The cloned skinned
     // mesh shares geometry with the shared loaded rig, so only the mixer and
     // this instance's cloned skeleton need cleanup — never the shared rig.

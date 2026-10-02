@@ -47,6 +47,15 @@ import { Achievements } from './Achievements.js'
 // so these constants are no longer wired — they remain as the documented asset
 // paths for the AudioBank mp3 API (exercised directly by test/audio.test.mjs).
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
+// v37 R6: module-level scratch reused every CTF frame so the per-frame swarm /
+// carrier / minimap-map rebuilds no longer allocate. The swarm is at most one
+// local player + a handful of remote players, so a fixed pool is enough.
+const _swarmScratch = []
+const _carrierScratch = []
+const _cmapScratch = new Map()
+const _swarmEntry = { id: 'p1', player: null }
+const _carrierEntry = { id: 'p1', x: 0, y: 1.7, z: 0 }
+const _meScratch = { x: 0, z: 0, yaw: 0 }
 export const LEVEL_TRACKS = [
   ASSET_BASE + 'assets/audio/soundtrack.mp3',
   ASSET_BASE + 'assets/audio/soundtrack2.mp3'
@@ -1407,9 +1416,15 @@ export class Game {
   /** CTF: slot-shaped player list for the swarm director (nearest-player +
    *  carrier lookups). Solo CTF has one entry; hosted CTF would add remotes. */
   _swarmPlayers() {
-    const out = []
-    if (this.player) out.push({ id: 'p1', player: this.player })
-    return out
+    // v37 R6: reuse the module scratch array/entry instead of allocating a new
+    // array + object every frame (this runs every frame via the swarm director
+    // and the CTF flag sync).
+    _swarmScratch.length = 0
+    if (this.player) {
+      _swarmEntry.player = this.player
+      _swarmScratch.push(_swarmEntry)
+    }
+    return _swarmScratch
   }
 
   /** CTF solo: place the player at their chosen base flag and face them toward
@@ -1500,17 +1515,27 @@ export class Game {
       for (const row of (mp.lastSnap.players || [])) {
         if (row.id === mp.pid && row.team) { this._myTeam = row.team; break }
       }
-      const carriers = []
-      for (const row of (mp.lastSnap.players || [])) carriers.push({ id: row.id, x: row.x, y: row.y || 1.7, z: row.z })
+      const carriers = _carrierScratch
+      carriers.length = 0
+      const rows = mp.lastSnap.players || []
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        let e = carriers[i]
+        if (!e) { e = { id: row.id, x: row.x, y: row.y || 1.7, z: row.z }; carriers[i] = e }
+        else { e.id = row.id; e.x = row.x; e.y = row.y || 1.7; e.z = row.z }
+      }
+      carriers.length = rows.length
       if (this.flagRender) this.flagRender.sync(ctf, carriers)
       if (this.flagRender) this.flagRender.update(dt, this.time || 0)
       if (this.hud) {
-        // Minimap needs carrier positions to follow a carried flag; pass them as
-        // an id->pos map plus the local player marker (position + facing).
-        const cmap = new Map()
-        for (const c of carriers) cmap.set(c.id, c)
+        // Minimap needs carrier positions to follow a carried flag; reuse the
+        // scratch map (cleared + refilled each frame, no new Map allocation).
+        const cmap = _cmapScratch
+        cmap.clear()
+        for (let i = 0; i < carriers.length; i++) { const c = carriers[i]; cmap.set(c.id, c) }
         this.hud._mmCarriers = cmap
-        this.hud.setCtf(ctf, this._myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+        _meScratch.x = p.position.x; _meScratch.z = p.position.z; _meScratch.yaw = p.yaw
+        this.hud.setCtf(ctf, this._myTeam, _meScratch)
       }
       return
     }
@@ -1546,13 +1571,26 @@ export class Game {
     }
     const snap = flag.snapshot()
     const swarm = this._swarmPlayers()
-    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, swarm.map((s) => ({ id: s.id, x: s.player.position.x, y: s.player.position.y, z: s.player.position.z })))
+    // v37 R6: reuse the carrier scratch array + entry objects for the flag-sync
+    // payload instead of allocating a mapped array of fresh objects each frame.
+    const cs = _carrierScratch
+    cs.length = 0
+    for (let i = 0; i < swarm.length; i++) {
+      const s = swarm[i]
+      let e = cs[i]
+      if (!e) { e = { id: s.id, x: 0, y: 0, z: 0 }; cs[i] = e }
+      e.id = s.id; e.x = s.player.position.x; e.y = s.player.position.y; e.z = s.player.position.z
+    }
+    cs.length = swarm.length
+    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, cs)
     if (this.flagRender) this.flagRender.update(dt, this.time || 0)
     if (this.hud) {
-      const cmap = new Map()
-      for (const s of swarm) cmap.set(s.id, { x: s.player.position.x, z: s.player.position.z })
+      const cmap = _cmapScratch
+      cmap.clear()
+      for (let i = 0; i < cs.length; i++) { const c = cs[i]; cmap.set(c.id, { x: c.x, z: c.z }) }
       this.hud._mmCarriers = cmap
-      this.hud.setCtf(snap, myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+      _meScratch.x = p.position.x; _meScratch.z = p.position.z; _meScratch.yaw = p.yaw
+      this.hud.setCtf(snap, myTeam, _meScratch)
     }
   }
 
