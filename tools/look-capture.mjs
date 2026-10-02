@@ -1,5 +1,7 @@
 // look-capture.mjs — headless Playwright screenshots of the live game for visual
-// assessment (no gameplay assertions; pure look diagnosis).
+// assessment (no gameplay assertions; pure look diagnosis — EXCEPT scene 09,
+// which asserts its subjects are in frame, because a readability probe that
+// captures an empty street reports a defect that does not exist).
 // Usage: node tools/look-capture.mjs  (requires the game running at :5173)
 // Outputs: .research/look/*.png
 import { chromium } from 'playwright-core';
@@ -77,6 +79,41 @@ await shoot();
 await page.waitForTimeout(300);
 await page.screenshot({ path: path.join(OUT, '08-muzzle.png') });
 console.log('08-muzzle captured');
+
+// Zombie-facing vantage. THE readability probe needs zombies IN FRAME, so this
+// scene spawns them deterministically, aims at them, freezes the sim (so the
+// frame is reproducible and the streetlight flicker cannot move between
+// captures) and then ASSERTS the subject count — a visual probe that silently
+// captures an empty street is how "the outline is not discernible" got reported
+// against a frame containing zero zombies.
+const face = await page.evaluate(() => {
+  const g = window.__game
+  g.debug.setPlayerPos(12, 12)
+  g.player.camera.rotation.order = 'YXZ'
+  g.player.camera.rotation.set(0, 0, 0) // yaw 0 looks toward -Z
+  const spots = [['walker', 12, 6], ['shambler', 8.5, 4], ['screamer', 15.5, 5], ['walker', 12, 1.5]]
+  for (const [t, x, z] of spots) g.debug.spawnZombie(t, x, z, false)
+  g.state = 'paused' // update() is gated on PLAYING; render() is not
+  const px = 12, pz = 12
+  const tan = Math.tan((g.player.camera.fov / 2) * Math.PI / 180)
+  const inView = g.zombies.filter((z) => {
+    const d = Math.hypot(z.position.x - px, z.position.z - pz)
+    return (pz - z.position.z) > 0 && d < 25
+  }).map((z) => {
+    const d = Math.hypot(z.position.x - px, z.position.z - pz)
+    return { d: +d.toFixed(1), px: +((z.group.scale.y * 1.7) / (2 * d * tan) * 1280).toFixed(0) }
+  }).sort((a, b) => a.d - b.d)
+  return { alive: g.zombies.length, inView }
+})
+await page.waitForTimeout(1200)
+await page.screenshot({ path: path.join(OUT, '09-zombies-facing.png') })
+const n = face.inView.length
+console.log(`09-zombies-facing captured: ${n} zombie(s) in view cone, nearest ${JSON.stringify(face.inView[0] || null)}`)
+if (n < 3) {
+  console.error(`LOOK-CAPTURE: readability scene has only ${n} subject(s) — the probe is testing nothing`)
+  await browser.close()
+  process.exit(1)
+}
 
 await browser.close();
 console.log('done:', OUT);
