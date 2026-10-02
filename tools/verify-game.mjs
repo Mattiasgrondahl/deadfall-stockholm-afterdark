@@ -448,7 +448,11 @@ stage('S10 flashlight toggle/battery + score increments', () => !!g.flashlight &
   g.debug.killAllZombies() // synchronous; the only live zombie is this walker
   step(30) // death + kill hook processing
   ok('kill increments score', z.isDead && g.score.value > s0, `${s0} -> ${g.score.value}`)
-  ok('wave-1 walker is worth 60 (10 + 50×1)', g.score.value === s0 + 60, `score ${g.score.value}`)
+  // v37 R3: the run's difficulty multiplies the payout (frenzy 1.25×, nightmare
+  // 1.5×). The default verify run is frenzy, so a wave-1 walker is worth
+  // round(60 × diffMult). Compute the expected value from the live multiplier.
+  const want = Math.round(60 * (g.score.diffMult || 1))
+  ok(`wave-1 walker is worth ${want} (10 + 50×1, ×${g.score.diffMult})`, g.score.value === s0 + want, `score ${g.score.value}`)
   ok('kill counter agrees', g.debug.kills() === 1, `kills ${g.debug.kills()}`)
 })
 

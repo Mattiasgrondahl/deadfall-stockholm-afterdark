@@ -70,6 +70,10 @@ export class Lighting {
     // incoming. Countdown of real seconds left; 0 = no telegraph active.
     this._telegraph = 0
     this._telegraphDur = 1.4
+    // v37 R6: nearest-anchor sort throttle state (see update()).
+    this._sortTick = 0
+    this._lastSortX = 0
+    this._lastSortZ = 0
 
     // Streetlight pool: fixed settings; positions assigned in update().
     this.lights = []
@@ -107,7 +111,19 @@ export class Lighting {
       s[i].i = i
       s[i].d2 = dx * dx + dz * dz
     }
-    s.sort((p, q) => p.d2 - q.d2)
+    // v37 R6: the nearest-first sort is throttled to ~5 Hz. The d2 values are
+    // recomputed every frame (cheap), but the O(n log n) sort only runs when the
+    // player has moved enough to plausibly reorder the anchors, or every 12
+    // frames as a backstop so a stationary player still re-sorts occasionally.
+    const ddx = playerPos.x - this._lastSortX
+    const ddz = playerPos.z - this._lastSortZ
+    this._sortTick = (this._sortTick + 1) % 12
+    if (ddx * ddx + ddz * ddz > 0.25 || this._sortTick === 0) {
+      s.sort((p, q) => p.d2 - q.d2)
+      this._lastSortX = playerPos.x
+      this._lastSortZ = playerPos.z
+      this._sortTick = 0
+    }
 
     const n = this.quality === 'high' ? POINTS_HIGH : POINTS_LOW
     // v28 R3: boss telegraph — while a telegraph is active the streetlight pools

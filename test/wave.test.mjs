@@ -208,3 +208,31 @@ test('large waves (shambler count > SAFE.length) build a valid queue, no crash',
     assert.deepEqual(wm.buildQueue(w), q) // deterministic
   }
 })
+
+test('v37 R3: cap climbs past 16 toward 20 after wave 8', () => {
+  const { wm } = make()
+  // Waves 1-8 keep the shipped cap curve (<= 16).
+  wm.wave = 8; assert.equal(wm.cap, 16)
+  // Past wave 8 the cap escalates instead of plateauing at 16, reaching 20 and
+  // holding there (still under the 24-zombie budget).
+  wm.wave = 10; assert.equal(wm.cap, 18)
+  wm.wave = 11; assert.equal(wm.cap, 19)
+  wm.wave = 12; assert.equal(wm.cap, 20)
+  wm.wave = 13; assert.equal(wm.cap, 20)
+  wm.wave = 20; assert.equal(wm.cap, 20) // capped at 20
+})
+
+test('v37 R3: every 8th queue slot from wave 3 is elite', () => {
+  const { wm } = make()
+  const q3 = wm.buildQueue(3)
+  assert.equal(q3[7].elite, true, 'slot 8 of wave 3 is elite')
+  assert.equal(q3[0].elite, false, 'slot 1 is not elite')
+  assert.equal(q3[6].elite, false, 'slot 7 is not elite')
+  // Wave 1-2 stay the pinned tutorial shape (no elites).
+  assert.ok(wm.buildQueue(1).every((e) => !e.elite), 'wave 1 has no elites')
+  assert.ok(wm.buildQueue(2).every((e) => !e.elite), 'wave 2 has no elites')
+  // Elites repeat every 8 slots on later waves.
+  const q10 = wm.buildQueue(10)
+  assert.equal(q10[7].elite, true)
+  assert.equal(q10[15].elite, true)
+})

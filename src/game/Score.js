@@ -12,6 +12,11 @@
 
 const VALUES = { walker: 10, shambler: 15, screamer: 25, brute: 150 }
 const WAVE_BONUS = 50
+// v37 R3: scoring multipliers. A headshot is worth 1.5× the kill's base+bonus,
+// and the harder difficulties pay out more per kill (frenzy 1.25×, nightmare
+// 1.5×) so the score reflects the survival pressure, not just the kill count.
+const HEAD_MULT = 1.5
+const DIFF_MULT = { normal: 1, frenzy: 1.25, nightmare: 1.5 }
 export const STORAGE_KEY = 'deadfall-highscore'
 export const NAME_KEY = 'deadfall-player-name'
 export const MAX_NAME = 24
@@ -69,6 +74,15 @@ export class Score {
     // by room, so a co-op run reads/writes its own room's board while solo play
     // stays on the shared 'default' board. Set via setRoom() from Game.
     this.room = 'default'
+    // v37 R3: difficulty score multiplier (set by Game from the run's difficulty
+    // preset). 1 = normal; frenzy/nightmare pay out more per kill.
+    this.diffMult = 1
+  }
+
+  /** v37 R3: set the difficulty score multiplier from the run's difficulty key
+   *  ('normal' | 'frenzy' | 'nightmare'). Unknown keys fall back to 1. */
+  setDifficulty(diff) {
+    this.diffMult = DIFF_MULT[diff] || 1
   }
 
   /** v7: set the active room code (co-op join). Sanitized defensively so a
@@ -123,14 +137,20 @@ export class Score {
     return this.name
   }
 
-  /** Points a kill of `type` on `wave` is worth. */
-  pointsFor(type, wave) {
-    return (VALUES[type] || 0) + WAVE_BONUS * (Number(wave) || 1)
+  /** Points a kill of `type` on `wave` is worth. `head` (v37 R3) applies the
+   *  headshot multiplier; the run's difficulty multiplier (this.diffMult) is
+   *  applied on top. Rounded to an integer so the HUD shows whole points. */
+  pointsFor(type, wave, head = false) {
+    let pts = (VALUES[type] || 0) + WAVE_BONUS * (Number(wave) || 1)
+    if (head) pts *= HEAD_MULT
+    pts *= this.diffMult
+    return Math.round(pts)
   }
 
-  /** Add a kill's points; returns the new run total. */
-  addKill(type, wave) {
-    this.value += this.pointsFor(type, wave)
+  /** Add a kill's points; returns the new run total. `head` (v37 R3) marks a
+   *  headshot kill for the extra multiplier. */
+  addKill(type, wave, head = false) {
+    this.value += this.pointsFor(type, wave, head)
     return this.value
   }
 

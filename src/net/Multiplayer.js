@@ -49,7 +49,8 @@ export class Multiplayer {
     this.env = opts.env || {}
     this.doc = this.env.document || null
     this.net = new NetClient({
-      url: opts.url, Socket: opts.Socket, name: opts.name, room: opts.room
+      url: opts.url, Socket: opts.Socket, name: opts.name, room: opts.room,
+      mode: opts.mode, team: opts.team
     })
     this.players = new Map() // id -> RemotePlayer (excludes self)
     this.zombies = new Map() // matchId -> { mesh }
@@ -74,6 +75,11 @@ export class Multiplayer {
     this.onMatchEnd = null
     this.matchEnded = false
     this.endReason = null
+    // v37 R1: CTF objective events (flagPickup / flagDrop / flagCapture) have no
+    // client consumer by default, so hosted CTF gave zero feedback for the
+    // objective. The Game wires this to the same banner + killfeed + capture sound
+    // solo CTF uses, so a steal / drop / return / capture is actually felt.
+    this.onFlagEvent = null
     // v34: friendly-fire toggle. The Game wires a getter that reads the persisted
     // 'friendlyFire' setting; when it returns false the local weapon builds no
     // FF proxies, so shots pass straight through teammates. Defaults to enabled
@@ -203,6 +209,12 @@ export class Multiplayer {
       if (ev.k === 'shoot') {
         const rp = this.players.get(ev.by)
         if (rp) rp.flash()
+      }
+      // v37 R1: forward CTF objective events to the Game for banner + killfeed +
+      // sound. ev.k is flagPickup (by/carrier), flagDrop (team + world pos), or
+      // flagCapture (team + running scores).
+      if (ev.k === 'flagPickup' || ev.k === 'flagDrop' || ev.k === 'flagCapture') {
+        if (this.onFlagEvent) this.onFlagEvent(ev)
       }
     }
     // Drop avatars that left the roster.

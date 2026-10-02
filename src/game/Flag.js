@@ -57,6 +57,9 @@ export class FlagState {
     this.winScore = Number.isFinite(opts.winScore) && opts.winScore > 0 ? opts.winScore : WIN_SCORE
     this.scores = { lovis: 0, krag: 0 }
     this.winner = null
+    // v37 R1: sudden-death. When the clock expires with the teams tied, the Match
+    // flips this true and the NEXT capture wins outright regardless of WIN_SCORE.
+    this.suddenDeath = false
     this.flags = { lovis: freshFlag(this.bases.lovis), krag: freshFlag(this.bases.krag) }
     // v35: per-player pickup dwell. playerId -> { flag: <flag object>, t: seconds
     // stood inside its ring }. Reset whenever the player leaves the ring, the
@@ -201,7 +204,7 @@ export class FlagState {
     foe.carriedBy = null
     foe.dropped = null
     foe.atBase = true
-    if (this.scores[team] >= this.winScore) this.winner = team
+    if (this.scores[team] >= this.winScore || this.suddenDeath) this.winner = team
     return true
   }
 
@@ -236,6 +239,7 @@ export class FlagState {
     this.scores.lovis = 0
     this.scores.krag = 0
     this.winner = null
+    this.suddenDeath = false
     this.flags.lovis = freshFlag(this.bases.lovis)
     this.flags.krag = freshFlag(this.bases.krag)
     this._dwell.clear()

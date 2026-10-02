@@ -131,15 +131,25 @@ test('shared geometry/materials; dispose detaches only the group', () => {
   const scene = new THREE.Scene()
   const a = new Zombie(scene, 'walker', 0, 0, 1)
   const b = new Zombie(scene, 'walker', 2, 0, 1)
-  assert.equal(a.group.children.length, 6) // torso, head, armL, armR, legL, legR
+  // v37 R5: the silhouette shell is ONE inverted-hull child per body part, so
+  // the group still holds exactly the 6 parts (the slot arithmetic in
+  // _regrowLimb depends on that) and the parts are read through _parts.
+  assert.equal(a._parts.length, 6) // torso, head, armL, armR, legL, legR
+  assert.equal(a.group.children.length, 6) // shells are children of the PARTS
+  assert.equal(a._outline.length, 6) // one shell per live part
+  assert.equal(a._outline[0].geometry, a._parts[0].geometry) // shell reuses GEO2
+  assert.equal(a._outline[0].parent, a._parts[0]) // parented to its own part
+  assert.equal(a._outline[0].material.side, THREE.BackSide) // inverted hull
+  assert.ok(a._outline.every((m) => m.material === a._outline[0].material), 'one shared shell material')
+  assert.ok(a._outline.every((m) => m.scale.x > 1 && m.castShadow === false), 'inflated, shadow-free')
   for (let i = 0; i < 6; i++) {
-    assert.equal(a.group.children[i].geometry, b.group.children[i].geometry)
+    assert.equal(a._parts[i].geometry, b._parts[i].geometry)
     // Materials all come from the small shared pool: same type -> same head
     // skin; clothing comes from the 3 shared top/bottom material pairs. These
     // two spawns pick different outfits, so per-part identity is NOT expected;
     // membership in the shared arrays is the shared-material guarantee.
-    const ma = a.group.children[i].material
-    const mb = b.group.children[i].material
+    const ma = a._parts[i].material
+    const mb = b._parts[i].material
     if (i === 1) {
       assert.equal(ma, MAT2.walker); assert.equal(mb, MAT2.walker)
     } else if (i === 2 || i === 3) {
@@ -193,8 +203,9 @@ test('face variant: deterministic per-zombie pick, distributed across the varian
 test('per-type bodies and anchors', () => {
   for (const type of ['walker', 'shambler', 'screamer']) {
     const { zombie } = makeZombie(type, 1, 1, 1)
-    const parts = zombie.group.children
-    assert.ok(parts.length >= 6, `${type} has ${parts.length} meshes`)
+    // v37 R5: body parts are read through _parts (the group also holds the outline).
+    const parts = zombie._parts
+    assert.equal(parts.length, 6, `${type} has ${parts.length} meshes`)
     assert.ok(Math.abs(parts[0].position.y - 1.2) < 1e-6, `${type} torso center y`)
     assert.ok(Math.abs(parts[1].position.y - 1.8) < 1e-6, `${type} head center y`)
   }
@@ -207,20 +218,24 @@ test('per-type bodies and anchors', () => {
 test('hit flash swaps to HITMAT then restores per-part rest materials', () => {
   const { zombie } = makeZombie('walker', 0, 0, 1)
   zombie.damage(10) // non-fatal
-  for (const m of zombie.group.children) assert.equal(m.material, HITMAT)
-  assert.ok(FACEMAT.walker.includes(zombie.group.children[1].children[0].material)) // face untouched by flash (a shared variant)
+  // Hit flash touches the 6 body parts only — the shell keeps its shared
+  // black BackSide material (it is not in _parts).
+  for (const m of zombie._parts) assert.equal(m.material, HITMAT)
+  assert.equal(zombie._outline[0].material.side, THREE.BackSide)
+  assert.ok(FACEMAT.walker.includes(zombie._parts[1].children[0].material)) // face untouched by flash (a shared variant)
   for (let i = 0; i < 10; i++) zombie.update(1 / 60, null, [zombie], null, null)
-  for (let i = 0; i < zombie.group.children.length; i++) {
-    assert.equal(zombie.group.children[i].material, zombie._restMats[i])
+  for (let i = 0; i < zombie._parts.length; i++) {
+    assert.equal(zombie._parts[i].material, zombie._restMats[i])
   }
-  assert.equal(zombie.group.children[1].material, MAT2.walker) // head keeps its skin color
+  assert.equal(zombie._parts[1].material, MAT2.walker) // head keeps its skin color
 })
 
 test('fatal hit switches every part to DEADMAT', () => {
   const { zombie } = makeZombie('shambler', 0, 0, 1)
   zombie.damage(zombie.maxHealth + 10)
   assert.ok(zombie.isDead)
-  for (const m of zombie.group.children) assert.equal(m.material, DEADMAT)
+  // v37 R5: the corpse repaint touches _parts only; the shell is untouched.
+  for (const m of zombie._parts) assert.equal(m.material, DEADMAT)
   assert.equal(zombie.group.children[1].children[0].material, DEADMAT) // face darkened with the corpse
 })
 
@@ -251,13 +266,16 @@ test('face portrait: no glowing eyes over it, enlarged disc, lifted off the tors
   for (const type of ['walker', 'shambler', 'screamer']) {
     const { zombie } = makeZombie(type, 1, 1, 1)
     const head = zombie.group.children[1]
-    assert.equal(zombie.group.children.length, 6, `${type}: body parts unchanged`)
+    assert.equal(zombie._parts.length, 6, `${type}: body parts unchanged`)
     // v26d: the glowing eye boxes are gone — the face portrait is now the first
     // head child, followed by hair and any head-mounted accessory / female
     // long-hair prop. So the count is 1 (face) + 1 (hair) + head props.
     const headAcc = zombie._acc && head.children.includes(zombie._acc) ? 1 : 0
     const headProps = (zombie._outfitProps || []).filter(p => head.children.includes(p)).length
-    assert.equal(head.children.length, 2 + headAcc + headProps, `${type}: face + hair count`)
+    // v37 R5: the head also carries its silhouette shell (a BackSide hull
+    // named 'outline'), so the decoration count excludes it.
+    const headShell = head.children.some((c) => c.name === 'outline') ? 1 : 0
+    assert.equal(head.children.length, 2 + headAcc + headProps + headShell, `${type}: face + hair count`)
     const face = head.children[0]
     assert.ok(FACEMAT[type].includes(face.material), `${type}: head child 0 is the face`)
     assert.deepEqual(face.position.toArray(), [0, 0.01, 0.155], `${type}: face lifted, proud of the head`)
@@ -389,7 +407,8 @@ test('outfits: deterministic clothing materials per spawn; flash/death logic int
   // Headless Node: no document, so no texture is ever attached
   for (const m of [...OUTFITMATS.tops, ...OUTFITMATS.bottoms]) assert.equal(m.map, null)
 
-  // Layout pin unchanged
+  // Layout pin: 6 body parts, and the v37 R5 shells are children of the parts.
+  assert.equal(a._parts.length, 6)
   assert.equal(a.group.children.length, 6)
 
   a.dispose(); b.dispose(); c.dispose()
@@ -409,7 +428,8 @@ test('v24 silhouette props + cloth roughness: collared/shouldered/belted garment
   assert.equal(padR.material, z._outfitMats[0])
   // Belt is the shared dark leather material (not per-instance).
   assert.equal(belt.material.color.getHex(), 0x1a1611)
-  // Props are children of the torso, so the group still has exactly 6 parts.
+  // Props are children of the torso; the group holds exactly the 6 parts
+  // (v37 R5: the silhouette shells are children of the parts, not the group).
   assert.equal(z.group.children.length, 6)
   assert.ok(z._silhouette.every(p => p.parent === z._parts[0]), 'props parented to torso')
   // Hit flash must NOT touch the props (they are not in _parts).

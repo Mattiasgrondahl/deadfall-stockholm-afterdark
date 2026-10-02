@@ -39,11 +39,17 @@ export const MAX_DROPS = 20
  *  between detouring for light and staying on the ammo path. */
 export const BATTERY_CHANCE = 0.18
 export const BATTERY_RESTORE = 0.35 // fraction of flashlight battery per pickup
+// v37 R2: a small slice of drops are medkits that heal the player instead of
+// restocking ammo/light. Rare enough that health stays a scarce resource, but
+// present enough that a long run has occasional heal opportunities.
+export const MEDKIT_CHANCE = 0.06
+export const MEDKIT_HEAL = 35 // hp restored per medkit pickup
 const DROP_Y = 0.1
 // Distinct visuals so the player can tell shells from bullets at a glance.
 const SHELL_COLOR = 0xffaa44, SHELL_EMISSIVE = 0x774400
 const BULLET_COLOR = 0x6fc2ff, BULLET_EMISSIVE = 0x1a4a77
 const BATTERY_COLOR = 0x9dff6a, BATTERY_EMISSIVE = 0x2a5a1a
+const MEDKIT_COLOR = 0xff5a5a, MEDKIT_EMISSIVE = 0x661414
 
 export class AmmoDrops {
   constructor(scene, audio, base = '') {
@@ -68,6 +74,14 @@ export class AmmoDrops {
     this._batteryMat = new THREE.MeshStandardMaterial({
       color: BATTERY_COLOR, emissive: BATTERY_EMISSIVE, emissiveIntensity: 0.8, roughness: 0.7
     })
+    // v37 R2: medkit crate — a red-tinted box so it reads as health, not ammo.
+    this._medkitMat = new THREE.MeshStandardMaterial({
+      color: MEDKIT_COLOR, emissive: MEDKIT_EMISSIVE, emissiveIntensity: 0.8, roughness: 0.7
+    })
+    // v37 R2: difficulty-scaled ammo yield. Under frenzy/nightmare the horde is
+    // denser and demand is higher, so drops pay out less (setDifficulty halves
+    // it) to keep the economy tense. 1 = normal.
+    this._yieldMult = 1
     this._crateTex = null
     this._loadCrate()
   }
@@ -83,7 +97,7 @@ export class AmmoDrops {
       tex.colorSpace = THREE.SRGBColorSpace
       tex.anisotropy = 4
       this._crateTex = tex
-      for (const m of [this._shellMat, this._bulletMat, this._batteryMat]) {
+      for (const m of [this._shellMat, this._bulletMat, this._batteryMat, this._medkitMat]) {
         m.map = tex
         m.needsUpdate = true
       }
@@ -110,12 +124,32 @@ export class AmmoDrops {
     // Third draw: a slice of drops are batteries (a brighter, larger box)
     // instead of ammo. The choice is the player's: grab light or grab ammo.
     if (this._rand() < BATTERY_CHANCE) kind = 'battery'
-    const mat = kind === 'bullets' ? this._bulletMat : kind === 'shells' ? this._shellMat : this._batteryMat
+    // v37 R2: a rare fourth draw turns the drop into a medkit (heals instead of
+    // restocking). Checked last so it doesn't disturb the existing battery/ammo
+    // distribution that the ammo-economy tests pin.
+    else if (this._rand() < MEDKIT_CHANCE) kind = 'medkit'
+    const mat = kind === 'bullets' ? this._bulletMat
+      : kind === 'shells' ? this._shellMat
+        : kind === 'battery' ? this._batteryMat : this._medkitMat
+    // v37 R2: ammo drops carry a difficulty-scaled amount so the pickup handler
+    // pays out the right count (battery/medkit carry their fixed restore).
+    let amount = 0
+    if (kind === 'bullets') amount = Math.max(1, Math.round(BULLETS_PER_DROP * this._yieldMult))
+    else if (kind === 'shells') amount = Math.max(1, Math.round(SHELLS_PER_DROP * this._yieldMult))
+    else if (kind === 'battery') amount = BATTERY_RESTORE
+    else if (kind === 'medkit') amount = MEDKIT_HEAL
     const mesh = new THREE.Mesh(this._geo, mat)
     mesh.position.set(x, DROP_Y, z)
     this.scene.add(mesh)
-    this._drops.push({ x, z, t: 0, mesh, kind })
+    this._drops.push({ x, z, t: 0, mesh, kind, amount })
     return kind
+  }
+
+  /** v37 R2: set the ammo-yield multiplier for the run's difficulty (1 = normal;
+   *  frenzy/nightmare pass 0.5 so drops pay out half as much against the denser,
+   *  faster horde). Only affects future spawns; existing drops keep their amount. */
+  setDifficulty(mult) {
+    this._yieldMult = Number.isFinite(mult) && mult > 0 ? mult : 1
   }
 
   /** Per frame: age, blink, expire, and pick up. onPickup(drop, player) per

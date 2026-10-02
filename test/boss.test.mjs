@@ -442,7 +442,8 @@ test('frenzy flattens the boss to 50 hp then the 10x boss mult, and doubles its 
   assert.equal(zombie.maxHealth, 500)
   assert.equal(zombie.speed, 3.0)
   const { zombie: f5 } = makeZombie('brute', 0, 0, 5, 'frenzy')
-  assert.equal(f5.maxHealth, Math.round(50 * Math.pow(1.12, 4)) * 10)
+  // v37 R2: the frenzy base ramps to 90 by wave 5, then 1.12^4, then the 10x boss mult.
+  assert.equal(f5.maxHealth, Math.round(90 * Math.pow(1.12, 4)) * 10)
 })
 // ---- shot-count requirement --------------------------------------------------
 

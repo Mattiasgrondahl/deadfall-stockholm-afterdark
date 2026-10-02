@@ -95,17 +95,18 @@ test('spawnInterval curve: 0.7 -> 0.45 floor, monotonic, above pistol rate', () 
   }
 })
 
-test('capFor: 8+wave to wave 9, +0.5/wave ramp to 16 ceiling', () => {
+test('capFor: 8+wave to wave 9, then climbs toward a 20 ceiling (v37 R3)', () => {
   const { wm } = make()
   const at = w => { wm.wave = w; return wm.cap }
   // Waves 1..9 = 9..17.
   for (let w = 1; w <= 9; w++) assert.equal(at(w), 8 + w, `cap wave ${w}`)
-  // Post-knee: min(16, floor(8 + 9 + 0.5*(w-9))). The code clamps to 16, so
-  // wave 10 (floor 17.5) and wave 12 (floor 18.5) both read the 16 ceiling.
-  assert.equal(at(10), 16) // min(16, floor(8 + 9 + 0.5))
-  assert.equal(at(12), 16) // min(16, floor(8 + 9 + 1.5))
-  assert.equal(at(20), 16) // ceiling holds
-  // cap + boss stays within the 24-zombie budget (cap <= 16, +1 boss <= 17).
+  // v37 R3: past the knee the cap escalates past the old 16 plateau toward 20
+  // (min(20, base + (w-8))). Wave 10 = 18, 11 = 19, 12+ = 20.
+  assert.equal(at(10), 18)
+  assert.equal(at(11), 19)
+  assert.equal(at(12), 20)
+  assert.equal(at(20), 20) // ceiling holds at 20
+  // cap + boss stays within the 24-zombie budget (cap <= 20, +1 boss <= 21).
   for (let w = 1; w <= 40; w++) assert.ok(at(w) + 1 <= 24, `wave ${w} cap+boss over budget`)
 })
 

@@ -186,6 +186,8 @@ html, body {
 }
 .hud-stamina .bar { width: 240px; height: 5px; }
 .hud-stamina .bar-fill { background: var(--stamina); }
+/* v37 R4: the stamina bar breathes when the sprint meter runs low. */
+.hud-stamina.low .bar-fill { animation: pulse 0.9s infinite; }
 
 /* ammo */
 .hud-ammo {
@@ -305,8 +307,9 @@ html, body {
   font-family: var(--mono);
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: var(--ink-dim);
-  opacity: 0.8;
+  color: var(--ink);
+  opacity: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   pointer-events: none;
   white-space: nowrap;
   text-align: right;
@@ -427,7 +430,10 @@ html, body {
    survival mode. */
 .hud-ctf {
   position: absolute;
-  top: 20px; right: 20px;
+  /* v37 R4: moved below the score + music-mute button (which occupy the
+     top-right corner in every mode) so the CTF scoreboard no longer overlaps
+     them. */
+  top: 110px; right: 20px;
   text-align: right;
   font-family: var(--mono);
   background: var(--panel);
@@ -581,6 +587,16 @@ html, body {
 /* reduced motion: no scale pops on markers/damage edge */
 .reduced-motion .hit-marker,
 .reduced-motion .dmg-edge { transition: none !important; }
+/* v37 R4: honor prefers-reduced-motion globally — kill the looping pulses
+   (ammo-empty, stamina-low, low-health) and screen transitions so nothing
+   flickers for motion-sensitive players. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-ammo.empty .hud-value,
+  .hud-stamina.low .bar-fill,
+  .fx-lowhealth,
+  .fx-damage { animation: none !important; }
+  .screen, .hit-marker, .dmg-edge { transition: none !important; }
+}
 
 /* ------------------------------------------------------------ Screens */
 #screens-root { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
@@ -901,6 +917,59 @@ html, body {
   transition: opacity 0.3s ease-out;
 }
 .threat-preview.show { opacity: 0.95; }
+/* v37 R3: intermission upgrade picker — three cards above the threat line,
+   shown only while an offer is active. */
+.upgrade-offer {
+  position: absolute;
+  top: 66%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease-out;
+}
+.upgrade-offer.show { opacity: 1; }
+.upgrade-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  padding: 10px 14px;
+  background: rgba(10, 12, 16, 0.82);
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  border-radius: 6px;
+  font-family: var(--mono);
+  color: #e8e2d4;
+}
+.upgrade-num {
+  position: absolute;
+  font-size: 11px;
+  color: #ffb020;
+  letter-spacing: 0.12em;
+}
+.upgrade-label {
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffd27a;
+  margin-top: 14px;
+}
+.upgrade-desc {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #b9b2a4;
+}
+.upgrade-hint {
+  flex-basis: 100%;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: #8f887a;
+  margin-top: 6px;
+}
 @keyframes banner-in {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
   12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }

@@ -89,9 +89,19 @@ export function buildWelcome(pid, roster) {
   return { t: MSG.WELCOME, pid, roster: Array.isArray(roster) ? roster.slice(0, MAX_PLAYERS) : [] }
 }
 
-/** Build a client->server hello (join) frame. */
-export function buildHello(name, room) {
-  return { t: MSG.HELLO, name: String(name || 'player').slice(0, 24), room: String(room || 'default').slice(0, 32) }
+/**
+ * Build a client->server hello (join) frame.
+ * v37 R1: `mode` ('survival' | 'ctf') and `team` ('lovis' | 'krag') carry the
+ * title-screen picker's choices to the server so a hosted room can actually run
+ * a Capture-the-Flag match instead of always being survival. Both are optional
+ * and validated server-side (an unknown/absent mode falls back to survival, an
+ * unknown team is ignored and assigned round-robin by the Match).
+ */
+export function buildHello(name, room, mode, team) {
+  const msg = { t: MSG.HELLO, name: String(name || 'player').slice(0, 24), room: String(room || 'default').slice(0, 32) }
+  if (mode === 'ctf' || mode === 'survival') msg.mode = mode
+  if (team === 'lovis' || team === 'krag') msg.team = team
+  return msg
 }
 
 /** True if `value` is a plain JSON-serializable object (no live THREE refs). */

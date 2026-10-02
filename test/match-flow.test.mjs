@@ -201,3 +201,56 @@ test('v15: killTarget is configurable and below-target matches do not end early'
   assert.equal(m.ended, true, 'the third kill ends it')
   assert.equal(m.endReason, 'killtarget')
 })
+
+// v37 R1 — co-op CTF wiring: a Match built with mode:'ctf' runs the two-team
+// Capture-the-Flag match (teams assigned, players spawned at their bases) and
+// ends on a capture-win or, on a tie at the clock, sudden-death.
+test('v37 R1: a CTF Match assigns teams and spawns players at their bases', () => {
+  const m = new Match({ mode: 'ctf', players: [{ id: 'p0' }, { id: 'p1' }] })
+  assert.equal(m.mode, 'ctf')
+  assert.ok(m.flag, 'CTF match has authoritative flag state')
+  const t0 = m.getPlayer('p0').team, t1 = m.getPlayer('p1').team
+  assert.ok(t0 && t1 && t0 !== t1, 'round-robin splits the two players across teams')
+  // Each player spawns at their own base, not the shared survival spawn.
+  const bases = m.city.bases
+  const p0 = m.getPlayer('p0')
+  assert.equal(Math.round(p0.player.position.x), Math.round(bases[t0].x))
+  assert.equal(Math.round(p0.player.position.z), Math.round(bases[t0].z))
+})
+
+test('v37 R1: a CTF capture-win sets the winner and ends the match', () => {
+  const m = new Match({ mode: 'ctf', players: [{ id: 'p0' }, { id: 'p1' }] })
+  const bases = m.city.bases
+  const p0 = m.getPlayer('p0'), t0 = p0.team
+  const foe = t0 === 'lovis' ? 'krag' : 'lovis'
+  // p0 steals the enemy flag, then walks it home and scores WIN_SCORE captures.
+  m.flag.tryPickup('p0', t0, bases[foe].x, bases[foe].z)
+  for (let i = 0; i < m.flag.winScore; i++) {
+    assert.equal(m.flag.tryCapture('p0', t0, bases[t0].x, bases[t0].z), true)
+    // Reset the flag home so p0 can carry it again for the next point.
+    m.flag.tryPickup('p0', t0, bases[foe].x, bases[foe].z)
+  }
+  m.step(TICK)
+  assert.equal(m.flag.winner, t0)
+  assert.equal(m.ended, true)
+  assert.equal(m.endReason, 'ctf')
+})
+
+test('v37 R1: a tie at the CTF clock enters sudden-death instead of ending', () => {
+  const m = new Match({ mode: 'ctf', players: [{ id: 'p0' }, { id: 'p1' }], matchTimeCap: 2.0 })
+  run(m, 2.0)
+  assert.equal(m.ended, false, 'a tied CTF match does not end on the clock')
+  assert.equal(m._suddenDeath, true, 'sudden-death flag set')
+  assert.equal(m.flag.suddenDeath, true, 'flag state carries sudden-death')
+  // Drain the suddenDeath event so the next snapshot does not re-report it.
+  m.snapshot()
+  // The next capture wins outright, below WIN_SCORE.
+  const p0 = m.getPlayer('p0'), t0 = p0.team
+  const foe = t0 === 'lovis' ? 'krag' : 'lovis'
+  m.flag.tryPickup('p0', t0, m.city.bases[foe].x, m.city.bases[foe].z)
+  assert.equal(m.flag.tryCapture('p0', t0, m.city.bases[t0].x, m.city.bases[t0].z), true)
+  assert.equal(m.flag.winner, t0, 'a single sudden-death capture decides the match')
+  m.step(TICK)
+  assert.equal(m.ended, true)
+  assert.equal(m.endReason, 'ctf')
+})

@@ -34,14 +34,19 @@ const INTERMISSION_STEP = 0.5
 const INTERMISSION_MAX = 5.0
 const BOSS_INTERMISSION = 7.0
 // Concurrency cap: 8 + wave up to wave 9, then a gentler +0.5/wave ramp that
-// tops out at 16 by wave 10 and holds there. The old min(8 + wave, 18) let the
-// cap saturate at 18 by wave 10 while `total` kept growing, so late waves were
-// a pure grind: 41 zombies against an 18 cap at a flat cadence meant ~16 s of
-// dead stall at the cap. 16 keeps wave 12 + boss inside the 24-zombie budget.
+// tops out at 16 by wave 10. v37 R3: past wave 8 the ceiling lifts to 20 so the
+// late waves escalate instead of plateauing — the extra pressure is still under
+// the 24-zombie budget (20 concurrent + a boss = 21). The old min(8 + wave, 18)
+// let the cap saturate at 18 by wave 10 while `total` kept growing, so late
+// waves were a pure grind.
 const CAP_BASE = 8
 const CAP_KNEE = 9
 const CAP_SLOPE = 0.5
 const CAP_MAX = 16
+// v37 R3: from wave 9 the cap climbs past the old 16 ceiling toward 20 (+1 per
+// wave, capped at 20) so late waves are genuinely harder. Wave 1-8 are unchanged.
+const CAP_LATE_START = 9
+const CAP_LATE_MAX = 20
 
 /** A boss stomps in at the end of every BOSS_EVERY-th wave (5, 10, 15, ...). */
 const BOSS_EVERY = 5
@@ -76,7 +81,10 @@ function spawnIntervalFor(wave) {
 function capFor(wave) {
   const w = Math.max(1, wave)
   if (w <= CAP_KNEE) return Math.floor(CAP_BASE + w)
-  return Math.min(CAP_MAX, Math.floor(CAP_BASE + CAP_KNEE + CAP_SLOPE * (w - CAP_KNEE)))
+  // v37 R3: past the knee the cap climbs toward 20 instead of plateauing at 16.
+  const base = Math.min(CAP_MAX, Math.floor(CAP_BASE + CAP_KNEE + CAP_SLOPE * (w - CAP_KNEE)))
+  if (w >= CAP_LATE_START) return Math.min(CAP_LATE_MAX, base + (w - CAP_LATE_START + 1))
+  return base
 }
 
 /** Type of queue slot `i` in `wave`. The composition rule is a curve of its
@@ -212,7 +220,12 @@ export class WaveManager {
     return types.map((t, i) => ({
       type: t,
       x: this.spawnPoints[pts[i]].x,
-      z: this.spawnPoints[pts[i]].z
+      z: this.spawnPoints[pts[i]].z,
+      // v37 R3: every 8th queue slot is an ELITE — a buffed zombie (extra HP +
+      // speed, applied by Game.spawnZombie) that reads as a mini-boss through
+      // the wave. Only from wave 3 up so the opening waves stay the pinned
+      // tutorial shape.
+      elite: wave >= 3 && i % 8 === 7
     }))
   }
 
@@ -293,7 +306,7 @@ export class WaveManager {
       this.timer -= dt
       if (this.timer <= 0) {
         const q = this.queue[this.spawned]
-        this.cb.spawnZombie(q.type, q.x, q.z)
+        this.cb.spawnZombie(q.type, q.x, q.z, q.elite)
         this.spawned++
         if (isBossWave(this.wave) && this.spawned >= this.total) this._bossArmed = true
         this.timer = spawnIntervalFor(this.wave)

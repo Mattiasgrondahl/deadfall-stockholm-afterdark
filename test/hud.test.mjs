@@ -23,6 +23,19 @@ function makeNode() {
       contains(c) { return classes.has(c) }
     },
     appendChild(c) { n.children.push(c); c.parent = n; return c },
+    // Minimal descendant query by class — enough for the crosshair bar lookup.
+    querySelectorAll(sel) {
+      const cls = String(sel).replace(/^\./, '').trim()
+      const out = []
+      const walk = (node) => {
+        for (const c of node.children) {
+          if (c.classList.contains(cls)) out.push(c)
+          walk(c)
+        }
+      }
+      walk(n)
+      return out
+    },
     get firstChild() { return n.children[0] || null },
     removeChild(c) {
       const i = n.children.indexOf(c)
@@ -218,6 +231,48 @@ const fakePlayer = { health: 50, maxHealth: 100, stamina: 80 }
   hud.setMusicMuted(true)
   assert.equal(btn.textContent, '♪ Music: Off', 'setMusicMuted relabels')
   assert.equal(fired, 'untouched', 'setMusicMuted does not fire the callback')
+  hud.dispose()
+}
+
+// --- v37 R4: crosshair spread follows the current weapon, hides when scoped ---
+{
+  const { hud, hudRoot } = makeHUD()
+  const ch = find(hudRoot, 'crosshair')
+  assert.ok(ch, 'crosshair mounted')
+  const bars = ch.children.filter((c) => c.classList.contains('ch-bar'))
+  assert.equal(bars.length, 4, 'four crosshair bars')
+  // A wide-spread weapon (shotgun) opens the gap beyond the 10 px base.
+  const wide = fakeBank('shotgun')
+  wide.current.spread = 0.3
+  hud.update(fakePlayer, wide, null)
+  const top = bars.find((c) => c.classList.contains('top'))
+  const gapOf = (t) => { const m = /translate\(-50%,\s*(-\d+)px\)/.exec(t); return m ? -parseInt(m[1], 10) : 0 }
+  const wideGap = gapOf(top.style.transform)
+  assert.ok(wideGap > 16, 'wide spread opens the gap past the base: ' + top.style.transform)
+  // A tight-spread weapon pulls the bars back in.
+  const tight = fakeBank('pistol')
+  tight.current.spread = 0.02
+  hud.update(fakePlayer, tight, null)
+  const tightGap = gapOf(top.style.transform)
+  assert.ok(tightGap < wideGap, 'low spread pulls the bars in: ' + top.style.transform)
+  // Scoped sniper hides the whole crosshair (the scope reticle replaces it).
+  const scoped = fakeBank('sniper')
+  scoped.current.spread = 0.01
+  scoped.current.scoped = true
+  hud.update(fakePlayer, scoped, null)
+  assert.equal(ch.classList.contains('hidden'), true, 'crosshair hidden while scoped')
+  hud.dispose()
+}
+
+// --- v37 R4: stamina bar gains the .low pulse class below 25% ---
+{
+  const { hud, hudRoot } = makeHUD()
+  const box = find(hudRoot, 'hud-stamina')
+  assert.ok(box, 'stamina box mounted')
+  hud.update({ health: 100, maxHealth: 100, stamina: 10 }, fakeBank('shotgun'), null)
+  assert.equal(box.classList.contains('low'), true, 'low stamina marks the box')
+  hud.update({ health: 100, maxHealth: 100, stamina: 90 }, fakeBank('shotgun'), null)
+  assert.equal(box.classList.contains('low'), false, 'healthy stamina clears the class')
   hud.dispose()
 }
 

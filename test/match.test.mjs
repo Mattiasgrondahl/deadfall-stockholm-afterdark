@@ -233,9 +233,9 @@ test('wave manager drives deterministic spawns in the match', () => {
   // Wave 1 queue: shamblers take the two nearest safe spawn points.
   const q = m.wave.queue
   assert.equal(q.length, 8)
-  assert.deepEqual(q[0], { type: 'shambler', x: -12, z: 12 })
-  assert.deepEqual(q[1], { type: 'walker', x: 85, z: 0 })
-  assert.deepEqual(q[5], { type: 'shambler', x: 12, z: 12 })
+  assert.deepEqual(q[0], { type: 'shambler', x: -12, z: 12, elite: false })
+  assert.deepEqual(q[1], { type: 'walker', x: 85, z: 0, elite: false })
+  assert.deepEqual(q[5], { type: 'shambler', x: 12, z: 12, elite: false })
   const a = m.getPlayer('A').player
   assert.equal(a.health, 100, 'shamblers are still 9+ m away after 3.5 s')
   const snap = m.snapshot()

@@ -442,6 +442,23 @@ export class Screens {
     // next wave is loading).
     this._threatLine = d.createElement('div'); this._threatLine.className = 'threat-preview'
     this._root.appendChild(this._threatLine)
+    // v37 R3: intermission upgrade picker — three pickable cards + a skip hint,
+    // shown while an offer is active. Rendered via textContent only (no markup).
+    this._upgradeBox = d.createElement('div'); this._upgradeBox.className = 'upgrade-offer'
+    this._upgradeCards = []
+    for (let i = 0; i < 3; i++) {
+      const card = d.createElement('div'); card.className = 'upgrade-card'
+      const num = d.createElement('span'); num.className = 'upgrade-num'; num.textContent = String(i + 1)
+      const label = d.createElement('span'); label.className = 'upgrade-label'
+      const desc = d.createElement('span'); desc.className = 'upgrade-desc'
+      card.appendChild(num); card.appendChild(label); card.appendChild(desc)
+      this._upgradeBox.appendChild(card)
+      this._upgradeCards.push({ card, label, desc })
+    }
+    this._upgradeHint = d.createElement('div'); this._upgradeHint.className = 'upgrade-hint'
+    this._upgradeHint.textContent = 'pick one — 1 / 2 / 3, or F to skip'
+    this._upgradeBox.appendChild(this._upgradeHint)
+    this._root.appendChild(this._upgradeBox)
 
     this._syncSettings()
   }
@@ -594,7 +611,9 @@ export class Screens {
     // a co-op join can't carry a hostile name/room to the server either.
     const room = sanitizeName(this._roomInput && this._roomInput.value) || 'default'
     const name = sanitizeName(this._nameInput && this._nameInput.value) || 'player'
-    this._game.startMultiplayer({ room, name })
+    // v37 R1: forward the title-screen mode + CTF team so a hosted co-op room can
+    // run a Capture-the-Flag match, not always survival.
+    this._game.startMultiplayer({ room, name, mode: this._game.mode, team: this._game._myTeam })
   }
 
   /** v29: join a specific room straight from the lobby list — set the room input
@@ -860,9 +879,20 @@ export class Screens {
     else this.showTitle()
   }
 
-  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '', scoreboard = null, winner = null }) {
+  showGameOver({ wave, kills, score = 0, best = 0, record = false, name = '', scoreboard = null, winner = null, ctf = null }) {
     this._hideAll()
-    this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
+    // v37 R1: a CTF match shows the team result (LOVISEDAL n — KRAGSTALUND n) and
+    // names the winning side, not the survival "Wave N — kills" line.
+    if (ctf && ctf.scores) {
+      const lv = ctf.scores.lovis | 0, kg = ctf.scores.krag | 0
+      this._statText.textContent = 'LOVISEDAL ' + lv + '  \u2014  KRAGSTALUND ' + kg
+      const winTeam = ctf.winner || (lv > kg ? 'lovis' : kg > lv ? 'krag' : null)
+      this._endTitle.textContent = winTeam
+        ? ((winTeam === 'lovis' ? 'LOVISEDAL' : 'KRAGSTALUND') + ' WIN' + (ctf.myTeam === winTeam ? ' — YOU' : ''))
+        : 'DRAW'
+    } else {
+      this._statText.textContent = 'Wave ' + wave + ' — ' + kills + ' kills — ' + score + ' pts'
+    }
     // v3 T6: a new record is attributed to the player's name (textContent only).
     this._recordText.textContent = record ? (name ? 'NEW HIGH SCORE — ' + name + ' — ' + best : 'NEW HIGH SCORE — ' + best) : ''
     // v15: co-op end-game scoreboard. When the match ended with a per-player
@@ -908,6 +938,26 @@ export class Screens {
 
   clearThreatPreview() {
     if (this._threatLine) this._threatLine.classList.remove('show')
+  }
+
+  /** v37 R3: render the intermission upgrade offer (three cards). `choices` is
+   *  [{label, desc}] from Upgrades.state(); the countdown is shown in the hint. */
+  showUpgradeOffer(choices, timeLeft) {
+    if (!this._upgradeBox) return
+    for (let i = 0; i < this._upgradeCards.length; i++) {
+      const c = this._upgradeCards[i]
+      const ch = choices && choices[i]
+      c.card.style.display = ch ? '' : 'none'
+      if (ch) { c.label.textContent = ch.label; c.desc.textContent = ch.desc }
+    }
+    if (this._upgradeHint) {
+      this._upgradeHint.textContent = 'pick one — 1 / 2 / 3, or F to skip (' + Math.ceil(timeLeft || 0) + 's)'
+    }
+    this._upgradeBox.classList.add('show')
+  }
+
+  clearUpgradeOffer() {
+    if (this._upgradeBox) this._upgradeBox.classList.remove('show')
   }
 
   showBanner(text) {

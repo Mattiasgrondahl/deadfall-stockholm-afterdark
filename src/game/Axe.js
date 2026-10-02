@@ -12,6 +12,9 @@ import * as THREE from 'three'
 const DMG = 25
 const HEAD_MULT = 2
 const HEAD_RANGE = 0.6 // headshot only within this horizontal distance
+// v37 R2: axe swings now cost stamina (lighter than the sword's 12) so the
+// starting melee can't be spammed through a whole horde without a breather.
+const STAMINA_COST = 8
 const RANGE = 2.1      // v3 T3: max horizontal reach of the swing (was 1.5)
 const ARC = 0.7        // half-width of the swing arc, radians
 const COOLDOWN = 0.18  // v4 co-op: rapid re-swing — a double-click lands two swings (was 0.6)
@@ -49,6 +52,7 @@ export class Axe {
     this.dmg = DMG
     this.headMultiplier = HEAD_MULT
     this.headRange = HEAD_RANGE
+    this.staminaCost = STAMINA_COST
     this.range = RANGE
     this.arc = ARC
     this.cooldown = COOLDOWN
@@ -151,6 +155,12 @@ export class Axe {
   /** One swing; returns false while on cooldown. */
   swing() {
     if (this._coolT > 0) return false
+    // v37 R2: a swing costs stamina; too little breath and the swing is refused
+    // (no cooldown, no animation) so melee-spam runs the player out. Guarded for
+    // headless / fake players without a numeric stamina.
+    const p0 = this.player
+    if (p0 && typeof p0.stamina === 'number' && p0.stamina < this.staminaCost) return false
+    if (p0 && typeof p0.stamina === 'number') p0.stamina = Math.max(0, p0.stamina - this.staminaCost)
     this._coolT = this.cooldown
     this._swingT = 0
     this._swinging = true

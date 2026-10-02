@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { buildOutfitProps } from './ZombieOutfits.js'
+// v37 R5: dark silhouette shell (cost contract documented in ZombieOutline.js).
+import { attachOutline, detachOutline } from './ZombieOutline.js'
 
 /**
  * Zombie — boxy humanoid pursuer with chase / attack / corpse states.
@@ -102,8 +104,14 @@ const CHARGE_TIME = 0.55
 // 50 HP dies to two rounds and simply ends the chain early, as designed.
 export const DIFFICULTY = {
   normal: { speedMult: 1, hpBase: null, startWave: 1 },
-  frenzy: { speedMult: 2, hpBase: 50, startWave: 1 },
-  nightmare: { speedMult: 3, hpBase: 50, startWave: 3 }
+  // v37 R2: frenzy no longer uses a flat 50 HP. It ramps 50 → 90 across the first
+  // five waves (hpRamp per wave, capped at hpMax) so early waves stay the shipped
+  // "2 pistol bodies / 1 headshot" contract but later waves are genuinely tankier.
+  frenzy: { speedMult: 2, hpBase: 50, hpRamp: 10, hpMax: 90, startWave: 1 },
+  // v37 R2: nightmare keeps the flat-50-HP identity but halves starting ammo and
+  // disables passive health regen (startAmmoMult / regenOff), so it is a genuine
+  // survival test rather than just 3× speed.
+  nightmare: { speedMult: 3, hpBase: 50, startWave: 3, startAmmoMult: 0.5, regenOff: true }
 }
 
 const ORDER = ['walker', 'shambler', 'screamer', 'brute']
@@ -1007,7 +1015,11 @@ export class Zombie {
     this.type = type
     this.scene = scene
     this.speed = TABLE[type].speed * diff.speedMult
-    const baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    let baseHp = diff.hpBase != null ? diff.hpBase : TABLE[type].hp
+    // v37 R2: a difficulty with hpRamp ramps its flat base HP upward per wave up
+    // to hpMax (frenzy 50→90 by wave 5), then the usual 1.12^wave scaling applies
+    // on top. A difficulty without hpRamp (nightmare, normal) is unchanged.
+    if (diff.hpRamp) baseHp = Math.min(diff.hpMax != null ? diff.hpMax : Infinity, baseHp + diff.hpRamp * (wave - 1))
     this.maxHealth = this.health = Math.round(baseHp * Math.pow(1.12, wave - 1))
     // v14: the wave-5 boss is 10× tankier (user request). Applied after wave
     // scaling so it holds in every difficulty (the flat-50 frenzy/nightmare HP
@@ -1241,6 +1253,17 @@ export class Zombie {
     scene.add(this.group)
     this._parts = parts
     for (const p of parts) p.castShadow = true
+    // v37 R5: silhouette shell — one inverted-hull (BackSide) copy per body
+    // part, parented to that part and scaled 1.04x, so the camera sees the
+    // hull's inside as a thin black rim. Parenting is the point: the shell
+    // inherits the part's walk swing, attack lunge, death collapse and the
+    // group's boss scale, and hides with the part on dismemberment / the LOD
+    // body swap, with no per-frame bookkeeping. It carries no material of its
+    // own and no geometry of its own — the only per-zombie cost is 6 Mesh
+    // objects, and only non-boss bodies get one (a 2.5x/5x boss scale would
+    // fatten the rim into a black blob). Kept OUT of _parts so hit-flash /
+    // death never repaint it, and out of _silhouette/_outfitProps likewise.
+    this._outline = this.isBoss ? null : attachOutline(parts)
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
     this._restMats = [topMat, mat, sleeveMat, sleeveMat, bottomMat, bottomMat]
@@ -1494,6 +1517,10 @@ export class Zombie {
       this._skin.root.visible = false
       this._skinMesh.root.visible = true
       for (const i of [0, 2, 3, 4, 5]) if (this._parts[i]) this._parts[i].visible = false
+      // v37 R5: nothing to do for the shells here. Each one is a child of its
+      // own part, so hiding the primitive torso/limbs above hides their rims
+      // with them, and the head's rim stays exactly as long as the primitive
+      // head (which carries the face) stays visible.
     } else {
       if (this._lodSkinned === false) return
       this._lodSkinned = false
@@ -2105,6 +2132,11 @@ export class Zombie {
    *  lazy, so dispose fully reverses. */
   dispose() {
     this.scene.remove(this.group)
+    // v37 R5: detach this body's shells and drop its reference to the shared
+    // shell material. The shells' geometry is the shared GEO2 pool, so nothing
+    // here may be disposed except the refcount-managed material.
+    detachOutline(this._outline)
+    this._outline = null
     // Release the per-instance mixer (stops its actions). The cloned skinned
     // mesh shares geometry with the shared loaded rig, so only the mixer and
     // this instance's cloned skeleton need cleanup — never the shared rig.

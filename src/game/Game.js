@@ -18,9 +18,10 @@ import { FlagState } from './Flag.js'
 import { SwarmDirector } from './SwarmDirector.js'
 import { bakeSkyEnvironment } from '../world/envmap.js'
 import { WeaponBank } from './WeaponBank.js'
-import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE } from './AmmoDrops.js'
+import { AmmoDrops, SHELLS_PER_DROP, BULLETS_PER_DROP, BATTERY_RESTORE, MEDKIT_HEAL } from './AmmoDrops.js'
 import { Flashlight } from './Flashlight.js'
 import { Score } from './Score.js'
+import { Upgrades } from './Upgrades.js'
 import { Blood } from './Blood.js'
 import { BulletHoles } from './BulletHoles.js'
 import { Footprints } from './Footprints.js'
@@ -46,6 +47,15 @@ import { Achievements } from './Achievements.js'
 // so these constants are no longer wired — they remain as the documented asset
 // paths for the AudioBank mp3 API (exercised directly by test/audio.test.mjs).
 const ASSET_BASE = (typeof document !== 'undefined' ? ((import.meta.env?.BASE_URL || '').replace(/\/$/, '') + '/') : '')
+// v37 R6: module-level scratch reused every CTF frame so the per-frame swarm /
+// carrier / minimap-map rebuilds no longer allocate. The swarm is at most one
+// local player + a handful of remote players, so a fixed pool is enough.
+const _swarmScratch = []
+const _carrierScratch = []
+const _cmapScratch = new Map()
+const _swarmEntry = { id: 'p1', player: null }
+const _carrierEntry = { id: 'p1', x: 0, y: 1.7, z: 0 }
+const _meScratch = { x: 0, z: 0, yaw: 0 }
 export const LEVEL_TRACKS = [
   ASSET_BASE + 'assets/audio/soundtrack.mp3',
   ASSET_BASE + 'assets/audio/soundtrack2.mp3'
@@ -223,7 +233,7 @@ export class Game {
       shootOnce: () => { if (this.weapon) return this.weapon.shoot() },
       reloadWeapon: () => { if (this.weapon) return this.weapon.reload() },
       setInput: (partial) => Object.assign(this.inputState, partial),
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       killAllZombies: () => {
         for (const z of this.zombies) if (!z.isDead) z.damage(z.health + 10)
       },
@@ -487,6 +497,9 @@ export class Game {
     this.waveManager = this.mode === 'ctf' ? null : new WaveManager(this.scene, this.city.getSpawnPoints(), this.collision, this.audio, {
       onWaveStart: (w) => {
         if (this.screens) { this.screens.showBanner('WAVE ' + w); this.screens.onWaveStarted() }
+        // v37 R3: the intermission is over — drop any still-open upgrade offer.
+        if (this.upgrades) this.upgrades.skip()
+        if (this.screens) this.screens.clearUpgradeOffer()
         // Procedural soundtrack: the director picks the track for this wave
         // (boss waves -> crisis, opening waves -> ambient, else combat).
         if (this.musicDirector) this.musicDirector.onWaveStart(w)
@@ -498,6 +511,8 @@ export class Game {
         // the AudioBank tension drone/heartbeat bed is gone (see WIRING:TENSION).
         if (this.musicDirector) this.musicDirector.onWaveCleared(w)
         if (this.achievements) this.achievements.onWaveCleared() // v3 T12
+        // v37 R3: open the intermission upgrade offer (pick one of three, or skip).
+        if (this.upgrades) this.upgrades.offerNext()
         // v3 boss fight: the boss just fell, so leave the dedicated boss track
         // and resume the mp3 playlist where it paused.
         if (this._bossFightActive) {
@@ -516,7 +531,7 @@ export class Game {
           this.screens.showThreatPreview('NEXT: WAVE ' + p.wave + ' — ' + parts.join(', '))
         }
       },
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       onBossIncoming: () => {
         if (this.screens) this.screens.showBanner('SOMETHING HUGE IS COMING')
         // v28 R3: telegraph the boss before it arrives — the streetlight pools
@@ -538,7 +553,7 @@ export class Game {
     this.swarm = null
     if (this.mode === 'ctf') {
       this.swarm = new SwarmDirector({
-        spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+        spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
         players: () => this._swarmPlayers(),
         flag: this.flag,
         liveCount: () => this.zombies.filter((z) => !z.isDead).length,
@@ -550,6 +565,24 @@ export class Game {
     // Hosted high score: seed the stored best from the backend so a fresh
     // browser still shows the global record (best-effort; silent offline).
     if (!this.headless) this.score.adoptBest()
+    // WIRING:UPGRADES (v37 R3): intermission pick-one progression. Offered on
+    // each wave clear; the player picks one of three (keys 1/2/3) or skips (F).
+    this.upgrades = new Upgrades()
+    // v37 R3: the offer is picked with keys 1/2/3 (up1/up2/up3) or skipped with
+    // F (upSkip). Only acts while an offer is active; otherwise the keys fall
+    // through to their normal weapon-switch / flashlight roles.
+    if (this.input) {
+      const pick = (i) => {
+        if (this.upgrades && this.upgrades.active) {
+          const up = this.upgrades.pick(i, this.player, this.weaponBank)
+          if (up && this.screens) this.screens.showBanner(up.label)
+        }
+      }
+      this.input.on('up1', () => pick(0))
+      this.input.on('up2', () => pick(1))
+      this.input.on('up3', () => pick(2))
+      this.input.on('upSkip', () => { if (this.upgrades && this.upgrades.active) this.upgrades.skip() })
+    }
     // WIRING:ACHIEVEMENTS (v3 T12): persistent unlock set + per-run counters.
     // A new unlock toasts on the Screens banner; the counters reset each run.
     this.achievements = new Achievements(this.env, (label) => {
@@ -644,7 +677,7 @@ export class Game {
       onKill: (z) => {
         this.kills++
         if (this.hud) this.hud.killMarker(z.lastHitHead ? 'head' : 'body')
-        if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1)
+        if (this.score) this.score.addKill(z.type, this.waveManager ? this.waveManager.wave : 1, z.lastHitHead === true)
         if (this.audio) this.audio.playKill?.(z.lastHitHead === true)
         // v3 T12: feed the achievement counters (kills always; headshots when
         // the killing blow was to the head; bosses when the kill was a brute).
@@ -661,9 +694,22 @@ export class Game {
           // pickup is a choice — light vs ammo — so it restores a chunk, not
           // a full charge.
           if (this.flashlight) this.flashlight.recharge(BATTERY_RESTORE)
+        } else if (d && d.kind === 'medkit') {
+          // v37 R2: a medkit heals the player (capped at maxHealth) instead of
+          // restocking ammo — the scarce-health counterweight to the horde.
+          if (this.player && !this.player.isDead) {
+            this.player.health = Math.min(this.player.maxHealth, this.player.health + (d.amount || MEDKIT_HEAL))
+          }
         } else if (this.weapon) {
-          if (d && d.kind === 'bullets') this.weapon.pistol.reserve += BULLETS_PER_DROP
-          else this.weapon.shotgun.reserve += SHELLS_PER_DROP
+          // v37 R2: pay out the drop's difficulty-scaled amount (falls back to
+          // the normal constant if an old drop predates the amount field). A
+          // bullet drop also tops up the sniper reserve so the sniper — which
+          // otherwise never refills — stays usable across a long run.
+          const amt = d && Number.isFinite(d.amount) ? d.amount : (d && d.kind === 'bullets' ? BULLETS_PER_DROP : SHELLS_PER_DROP)
+          if (d && d.kind === 'bullets') {
+            this.weapon.pistol.reserve += amt
+            if (this.weapon.sniper) this.weapon.sniper.reserve += Math.max(1, Math.floor(amt / 2))
+          } else this.weapon.shotgun.reserve += amt
         }
         if (this.audio) this.audio.pickup?.()
       }
@@ -786,6 +832,7 @@ export class Game {
     if (this.headPool) this.headPool.clear()
     if (this.limbs) this.limbs.clear() // v3 T1: dropped limbs do not survive a restart
     if (this.achievements) this.achievements.resetRun() // v3 T12: per-run counters reset; unlocks persist
+    if (this.upgrades) this.upgrades.reset() // v37 R3: a new run starts with no pending offer
     if (this.hud) { this.hud.clearMarker(); this.hud.boss = null }
     this._boss = null
     // v3 boss fight: a restart ends any live boss fight and resumes the playlist.
@@ -831,6 +878,20 @@ export class Game {
     } else if (this.difficulty === 'frenzy' && this.screens) {
       this.screens.showBanner('FRENZY — they run 2× faster; bodies take 2, headshots kill')
     }
+    // v37 R2: difficulty-driven survival modifiers. NIGHTMARE halves starting
+    // ammo and disables passive health regen, so it is a genuine survival test.
+    // Applied after the weapon/player reset above so the ammo scale lands on the
+    // fresh reserve; regenEnabled is a per-run flag reset() does not touch.
+    const _diff = DIFFICULTY[this.difficulty]
+    if (this.player) this.player.regenEnabled = !(_diff && _diff.regenOff)
+    if (_diff && _diff.startAmmoMult && this.weaponBank) {
+      this.weaponBank.scaleReserve(_diff.startAmmoMult)
+    }
+    // v37 R3: the harder difficulties pay out more score per kill.
+    if (this.score) this.score.setDifficulty(this.difficulty)
+    // v37 R2: under frenzy/nightmare the horde is denser and demand is higher,
+    // so ammo drops pay out half as much. Normal keeps full yields.
+    if (this.drops) this.drops.setDifficulty(_diff && _diff.speedMult > 1 ? 0.5 : 1)
   }
 
   /**
@@ -856,6 +917,9 @@ export class Game {
           scene: this.scene, env: this.env,
           name: this._mpOpts.name, room: this._mpOpts.room,
           url: this._mpOpts.url, Socket: this._mpOpts.Socket,
+          // v37 R1: forward the title-screen mode + CTF team so the server builds
+          // a CTF Match (not always survival) and spawns this client at its base.
+          mode: this.mode, team: this._myTeam,
           getFriendlyFire: () => this.settings.get('friendlyFire')
         })
         this._wireMpHooks(this.multiplayer)
@@ -1041,6 +1105,21 @@ export class Game {
     // highest-scoring player — first. finalScoreboard is sorted by score desc.
     const board = (this.multiplayer && this.multiplayer.finalScoreboard) || null
     const winner = board && board.length ? board[0].id : null
+    // v37 R1: a hosted CTF match ends on a capture-win or the time cap. Show the
+    // team scoreboard (LOVISEDAL n — KRAGSTALUND n + winning side) instead of the
+    // survival "Wave N — kills" line. The final ctf block rides the last snapshot.
+    const ctfSnap = (this.multiplayer && this.multiplayer.lastSnap && this.multiplayer.lastSnap.ctf) || null
+    if (this.mode === 'ctf' && ctfSnap) {
+      if (this.screens) this.screens.showGameOver({
+        wave, kills: this.kills,
+        score: this.score ? this.score.value : 0,
+        best: this.score ? this.score.best : 0,
+        name: this.score ? this.score.name : '',
+        record, scoreboard: board, winner,
+        ctf: { scores: ctfSnap.scores, winner: ctfSnap.winner, myTeam: this._myTeam }
+      })
+      return
+    }
     if (this.screens) this.screens.showGameOver({
       wave,
       kills: this.kills,
@@ -1080,6 +1159,23 @@ export class Game {
       if (this.hud) this.hud.dmgFeedback(n, src || (ff ? 'teammate' : 'zombie'))
       if (this.audio && this.audio.hitPlayer) this.audio.hitPlayer()
     }
+    // v37 R1: hosted CTF objective feedback. The server emits flagPickup /
+    // flagDrop / flagCapture; without a consumer the objective was silent. Show
+    // the same banner solo CTF uses and fire a distinct sound per event so a
+    // steal / drop / capture is actually felt in co-op.
+    mp.onFlagEvent = (ev) => {
+      if (!ev) return
+      const mine = ev.team && ev.team === this._myTeam
+      if (ev.k === 'flagCapture') {
+        if (this.screens) this.screens.showBanner(mine ? 'FLAG CAPTURED!' : 'ENEMY FLAGGED!')
+        if (this.audio) this.audio.playKill?.(true)
+      } else if (ev.k === 'flagPickup') {
+        if (this.screens && ev.by === this.multiplayer?.pid) this.screens.showBanner('FLAG TAKEN — GET HOME!')
+        if (this.audio) this.audio.pickup?.()
+      } else if (ev.k === 'flagDrop') {
+        if (this.screens) this.screens.showBanner('FLAG DROPPED')
+      }
+    }
     return mp
   }
 
@@ -1094,6 +1190,18 @@ export class Game {
     // pre-refactor update — they animate purely visual state)
     // WIRING:BLOOD (V10)
     if (this.blood) this.blood.update(dt)
+    // v37 R3: tick the intermission upgrade offer; it auto-skips when the
+    // countdown runs out so the next wave always starts on time.
+    if (this.upgrades) this.upgrades.update(dt)
+    // v37 R3: surface the offer on the intermission picker while it is active.
+    if (this.upgrades && this.screens) {
+      if (this.upgrades.active) {
+        const st = this.upgrades.state()
+        this.screens.showUpgradeOffer(st.choices, st.timeLeft)
+      } else {
+        this.screens.clearUpgradeOffer()
+      }
+    }
     // WIRING:DECAPITATE (Task E)
     if (this.headPool) this.headPool.update(dt)
     // WIRING:DISMEMBER (v3 T1): tumble + settle the limbs dropped this frame.
@@ -1308,9 +1416,15 @@ export class Game {
   /** CTF: slot-shaped player list for the swarm director (nearest-player +
    *  carrier lookups). Solo CTF has one entry; hosted CTF would add remotes. */
   _swarmPlayers() {
-    const out = []
-    if (this.player) out.push({ id: 'p1', player: this.player })
-    return out
+    // v37 R6: reuse the module scratch array/entry instead of allocating a new
+    // array + object every frame (this runs every frame via the swarm director
+    // and the CTF flag sync).
+    _swarmScratch.length = 0
+    if (this.player) {
+      _swarmEntry.player = this.player
+      _swarmScratch.push(_swarmEntry)
+    }
+    return _swarmScratch
   }
 
   /** CTF solo: place the player at their chosen base flag and face them toward
@@ -1376,7 +1490,7 @@ export class Game {
     this.lightShafts = new LightShafts(this.scene, this.city.streetlightAnchors || [], 12)
     // The neutral hazard swarm replaces the wave manager.
     this.swarm = new SwarmDirector({
-      spawnZombie: (type, x, z) => this.spawnZombie(type, x, z),
+      spawnZombie: (type, x, z, elite) => this.spawnZombie(type, x, z, elite),
       players: () => this._swarmPlayers(),
       flag: this.flag,
       liveCount: () => this.zombies.filter((z) => !z.isDead).length,
@@ -1401,17 +1515,27 @@ export class Game {
       for (const row of (mp.lastSnap.players || [])) {
         if (row.id === mp.pid && row.team) { this._myTeam = row.team; break }
       }
-      const carriers = []
-      for (const row of (mp.lastSnap.players || [])) carriers.push({ id: row.id, x: row.x, y: row.y || 1.7, z: row.z })
+      const carriers = _carrierScratch
+      carriers.length = 0
+      const rows = mp.lastSnap.players || []
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        let e = carriers[i]
+        if (!e) { e = { id: row.id, x: row.x, y: row.y || 1.7, z: row.z }; carriers[i] = e }
+        else { e.id = row.id; e.x = row.x; e.y = row.y || 1.7; e.z = row.z }
+      }
+      carriers.length = rows.length
       if (this.flagRender) this.flagRender.sync(ctf, carriers)
       if (this.flagRender) this.flagRender.update(dt, this.time || 0)
       if (this.hud) {
-        // Minimap needs carrier positions to follow a carried flag; pass them as
-        // an id->pos map plus the local player marker (position + facing).
-        const cmap = new Map()
-        for (const c of carriers) cmap.set(c.id, c)
+        // Minimap needs carrier positions to follow a carried flag; reuse the
+        // scratch map (cleared + refilled each frame, no new Map allocation).
+        const cmap = _cmapScratch
+        cmap.clear()
+        for (let i = 0; i < carriers.length; i++) { const c = carriers[i]; cmap.set(c.id, c) }
         this.hud._mmCarriers = cmap
-        this.hud.setCtf(ctf, this._myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+        _meScratch.x = p.position.x; _meScratch.z = p.position.z; _meScratch.yaw = p.yaw
+        this.hud.setCtf(ctf, this._myTeam, _meScratch)
       }
       return
     }
@@ -1447,21 +1571,41 @@ export class Game {
     }
     const snap = flag.snapshot()
     const swarm = this._swarmPlayers()
-    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, swarm.map((s) => ({ id: s.id, x: s.player.position.x, y: s.player.position.y, z: s.player.position.z })))
+    // v37 R6: reuse the carrier scratch array + entry objects for the flag-sync
+    // payload instead of allocating a mapped array of fresh objects each frame.
+    const cs = _carrierScratch
+    cs.length = 0
+    for (let i = 0; i < swarm.length; i++) {
+      const s = swarm[i]
+      let e = cs[i]
+      if (!e) { e = { id: s.id, x: 0, y: 0, z: 0 }; cs[i] = e }
+      e.id = s.id; e.x = s.player.position.x; e.y = s.player.position.y; e.z = s.player.position.z
+    }
+    cs.length = swarm.length
+    if (this.flagRender) this.flagRender.sync({ flags: snap.flags }, cs)
     if (this.flagRender) this.flagRender.update(dt, this.time || 0)
     if (this.hud) {
-      const cmap = new Map()
-      for (const s of swarm) cmap.set(s.id, { x: s.player.position.x, z: s.player.position.z })
+      const cmap = _cmapScratch
+      cmap.clear()
+      for (let i = 0; i < cs.length; i++) { const c = cs[i]; cmap.set(c.id, { x: c.x, z: c.z }) }
       this.hud._mmCarriers = cmap
-      this.hud.setCtf(snap, myTeam, { x: p.position.x, z: p.position.z, yaw: p.yaw })
+      _meScratch.x = p.position.x; _meScratch.z = p.position.z; _meScratch.yaw = p.yaw
+      this.hud.setCtf(snap, myTeam, _meScratch)
     }
   }
 
   /** Spawn a zombie (used by WaveManager and debug). */
-  spawnZombie(type, x, z) {
+  spawnZombie(type, x, z, elite) {
     // WIRING:SPAWN (owned by task D: create zombie, push into this.zombies, return it)
     const wave = this.waveManager ? this.waveManager.wave : 1
     const zombie = new Zombie(this.scene, type, x, z, wave, this.difficulty)
+    // v37 R3: an elite queue slot spawns a buffed zombie — +60% HP and +25%
+    // speed on top of the wave/difficulty scaling, so it reads as a mini-boss.
+    if (elite && !zombie.isBoss) {
+      zombie.maxHealth = zombie.health = Math.round(zombie.maxHealth * 1.6)
+      zombie.speed *= 1.25
+      zombie.elite = true
+    }
     // WIRING:DISMEMBER (v3 T1): the run's shared limb pool, so a severed arm
     // or leg drops as a tumbling clone instead of just vanishing.
     if (this.limbs) zombie.drops = this.limbs

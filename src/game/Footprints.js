@@ -26,6 +26,7 @@ export class Footprints {
     this._seed = SEED
     this._rng = () => (this._seed = (Math.imul(this._seed, 48271) >>> 0) % 65537) / 65537
     this.count = 0
+    this._dirty = false // v37 R6: set by _addPrint; gates update()
     this._pos = []
     this._quat = []
     this._age = []
@@ -116,10 +117,17 @@ export class Footprints {
     this._scale[i] = scale
     this._mesh.count = this.count
     this._mesh.visible = this.count > 0
+    this._dirty = true // v37 R6: a new print means update() must rewrite matrices
   }
 
   update(dt) {
+    // v37 R6: gate the whole update on a dirty flag. With no live prints and no
+    // new print added this frame there is nothing to age or rewrite, so skip the
+    // compaction + matrix pass entirely (and skip the redundant mesh.visible
+    // write). _dirty is set by _addPrint and cleared once the pool is empty.
+    if (this.count === 0 && !this._dirty) return
     if (this.count === 0) {
+      this._dirty = false
       if (this._mesh) this._mesh.visible = false
       return
     }
@@ -151,6 +159,9 @@ export class Footprints {
       this._mesh.instanceMatrix.needsUpdate = true
       this._mesh.visible = this.count > 0
     }
+    // v37 R6: the rewrite is done; clear the dirty flag so an idle pool (no new
+    // prints) skips the pass on subsequent frames until the next step() adds one.
+    this._dirty = false
   }
 
   clear() {
