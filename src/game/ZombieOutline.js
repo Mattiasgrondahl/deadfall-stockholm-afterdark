@@ -35,9 +35,24 @@
 //   - Headless-safe: pure THREE objects, no document/window/capabilities.
 import * as THREE from 'three'
 
-/** Rim width as a fraction of the body size. 4% of a 0.56 m torso is ~2 cm of
- *  visible edge — enough to separate the silhouette, not enough to fatten it. */
-export const OUTLINE_SCALE = 1.04
+// Module scratch for the construction-time rim arithmetic (no per-frame work,
+// but the repo reuses scratch objects rather than allocating temporaries).
+const _rimSize = new THREE.Vector3()
+
+/** Rim width in WORLD METRES, constant for every part on every axis.
+ *
+ * WHY NOT A FRACTION (v37 R5 measurement): the first cut scaled every shell by
+ * a flat 1.04. A uniform scale makes the rim width proportional to the part, so
+ * the 0.56 m torso got ~11 mm of edge while the 0.13 m arm got 2.6 mm. At the
+ * 75 deg FOV / 1280 px viewport one pixel spans ~6 mm at 5 m, i.e. the limb rim
+ * was 0.4 px — sub-pixel, invisible, and the local VLM probe on a live capture
+ * scored it "not discernible". A readability device that renders at a third of a
+ * pixel is inert, so the rim is now specified in metres and each shell's scale
+ * is derived from its own geometry's half-extents: scale = 1 + RIM/halfExtent
+ * per axis. Every part then shows the SAME ~15 mm edge (2.5 px at 5 m, 6 px at
+ * 2 m, fading below 1 px past ~15 m where the body is only ~30 px wide).
+ * 15 mm on a 13 cm arm widens the silhouette by 23 % — visible, not bloated. */
+export const OUTLINE_RIM = 0.015
 
 // The shared shell material. `fog: false` keeps the rim black at every
 // distance: FogExp2 would blend the shell toward the fog colour and the rim
@@ -68,8 +83,8 @@ export function releaseOutline() {
 /**
  * Attach one inverted-hull shell to each live body part.
  *
- * Each shell is added as a CHILD of its part at the part's own origin, scaled
- * by OUTLINE_SCALE relative to that part. Concentric + child of the part is
+ * Each shell is added as a CHILD of its part at the part's own origin, expanded
+ * by OUTLINE_RIM metres relative to that part. Concentric + child of the part is
  * the whole trick: the shell inherits the part's position, rotation and
  * per-type scale, so it tracks the walk cycle, the attack lunge, the corpse
  * collapse and the boss group scale for free, and it disappears with the part
@@ -87,7 +102,17 @@ export function attachOutline(parts) {
   for (const src of parts) {
     const m = new THREE.Mesh(src.geometry, mat)
     m.name = 'outline'
-    m.scale.setScalar(OUTLINE_SCALE)
+    // Constant world-space rim: expand by OUTLINE_RIM metres on each axis, so
+    // the thin arm gets the same visible edge as the wide torso. `boundingBox`
+    // is computed once and cached on the (shared) geometry by three.js, so this
+    // is construction-time arithmetic only — nothing runs per frame.
+    const geo = src.geometry
+    if (!geo.boundingBox) geo.computeBoundingBox()
+    const half = geo.boundingBox.getSize(_rimSize)
+    m.scale.set(
+      1 + OUTLINE_RIM / (half.x * 0.5),
+      1 + OUTLINE_RIM / (half.y * 0.5),
+      1 + OUTLINE_RIM / (half.z * 0.5))
     // The shell is a silhouette device only: it must not receive shadows
     // (a lit BackSide surface would break the flat black rim) and it never
     // casts one, so the shadow pass stays exactly as cheap as before.

@@ -142,6 +142,23 @@ test('shared geometry/materials; dispose detaches only the group', () => {
   assert.equal(a._outline[0].material.side, THREE.BackSide) // inverted hull
   assert.ok(a._outline.every((m) => m.material === a._outline[0].material), 'one shared shell material')
   assert.ok(a._outline.every((m) => m.scale.x > 1 && m.castShadow === false), 'inflated, shadow-free')
+  // v37 R5 rim width is measured in WORLD METRES, not as a fraction of the
+  // part: a flat 1.04 scale made the 0.13 m arm rim 2.6 mm (0.4 px at 5 m —
+  // sub-pixel, scored "not discernible" by the local VLM probe). Each shell's
+  // per-axis scale is 1 + OUTLINE_RIM / halfExtent, so every part shows the
+  // SAME edge width: (scale - 1) * halfExtent must equal OUTLINE_RIM.
+  const RIM = 0.015
+  const _sz = new THREE.Vector3()
+  for (let i = 0; i < 6; i++) {
+    const part = a._parts[i], shell = a._outline[i]
+    if (!part.geometry.boundingBox) part.geometry.computeBoundingBox()
+    part.geometry.boundingBox.getSize(_sz)
+    const w = [(shell.scale.x - 1) * _sz.x * 0.5, (shell.scale.y - 1) * _sz.y * 0.5, (shell.scale.z - 1) * _sz.z * 0.5]
+    for (const m of w) assert.ok(Math.abs(m - RIM) < 1e-9, `part ${i} rim ${m.toFixed(5)} m != ${RIM}`)
+  }
+  // The arm is the thin part the old uniform scale starved: the same metres
+  // cost a thin part proportionally more, so its factor must exceed the torso's.
+  assert.ok(a._outline[2].scale.x > a._outline[0].scale.x + 0.1, 'thin limbs get a larger scale factor than the torso')
   for (let i = 0; i < 6; i++) {
     assert.equal(a._parts[i].geometry, b._parts[i].geometry)
     // Materials all come from the small shared pool: same type -> same head

@@ -1254,15 +1254,18 @@ export class Zombie {
     this._parts = parts
     for (const p of parts) p.castShadow = true
     // v37 R5: silhouette shell — one inverted-hull (BackSide) copy per body
-    // part, parented to that part and scaled 1.04x, so the camera sees the
-    // hull's inside as a thin black rim. Parenting is the point: the shell
-    // inherits the part's walk swing, attack lunge, death collapse and the
-    // group's boss scale, and hides with the part on dismemberment / the LOD
-    // body swap, with no per-frame bookkeeping. It carries no material of its
-    // own and no geometry of its own — the only per-zombie cost is 6 Mesh
-    // objects, and only non-boss bodies get one (a 2.5x/5x boss scale would
-    // fatten the rim into a black blob). Kept OUT of _parts so hit-flash /
-    // death never repaint it, and out of _silhouette/_outfitProps likewise.
+    // part, parented to that part and expanded by a constant OUTLINE_RIM in
+    // metres, so the camera sees the hull's inside as a thin black rim.
+    // Parenting is the point: the shell inherits the part's walk swing, attack
+    // lunge, death collapse and the group's boss scale, and hides with the part
+    // on dismemberment / the LOD body swap, with no per-frame bookkeeping. It
+    // carries no material of its own and no geometry of its own — the only
+    // per-zombie cost is 6 Mesh objects. Bosses stay shell-free: the rim scales
+    // with the group, so a 2.5x/5x boss already shows a proportionally thick
+    // edge from its own size, and it is the one enemy the player cannot miss
+    // (charge telegraph + 2.5x silhouette) — a shell would only thicken it.
+    // Kept OUT of _parts so hit-flash / death never repaint it, and out of
+    // _silhouette/_outfitProps likewise.
     this._outline = this.isBoss ? null : attachOutline(parts)
     // Per-part rest materials (torso, head, armL, armR, legL, legR) so hit
     // flash / recovery can restore each part to its own material.
