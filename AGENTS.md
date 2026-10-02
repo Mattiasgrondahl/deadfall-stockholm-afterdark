@@ -223,6 +223,9 @@ writes need the wider sandbox mode.
    (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o
    'index-[^"]*\.js'`); a 404 on the new bundle means lag, never a bad deploy —
    confirm the branch content with `git ls-tree -r origin/gh-pages --name-only`.
+   **A build can also wedge**: measured one stuck at `building` for 32+ min with
+   `updated_at` frozen (the previous build took ~6 min). `gh api -X POST
+   repos/<user>/<repo>/pages/builds` re-queues it and it completes normally.
    Note: `dist/` is git-ignored but ~98 files are force-tracked there (33 audio
    clips + the bundle snapshot) — keep them in sync with `public/assets/audio/`,
    and restore with `git checkout HEAD -- dist/` after `npm run pages`, which
