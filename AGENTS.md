@@ -23,13 +23,16 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
 - **No per-frame allocation** in hot loops; reuse module-level scratch objects.
 - **`dispose()` must fully reverse** every side effect (meshes, lights,
   textures, listeners, audio nodes).
-- **Budgets** (pinned by `tools/verify-game.mjs` S8): meshes ≤ 640, lights ≤ 40,
-  points ≤ 2500, zombies ≤ 24. Internal caps: blood pool 300 (`Blood.js:17`),
-  stains 120, groan voices 4 (`AudioBank.js:16`), drops 20 (`AmmoDrops.js:25`),
-  snow 1800 (`snow.js:35`), wave concurrency cap ≤ 16 (`WaveManager.js`).
+- **Budgets** (pinned by `tools/verify-game.mjs` S8 — read the gate there, it is
+  the authority): **meshes ≤ 800**, lights ≤ 40, points ≤ 2500, zombies ≤ 24.
+  Internal caps: blood pool 300 (`Blood.js:17`), stains 120, groan voices 4
+  (`AudioBank.js:16`), drops 20 (`AmmoDrops.js:25`), snow 1800 (`snow.js:35`),
+  wave concurrency 8+wave to wave 9 then +0.5/wave toward **20** (`WaveManager.js`,
+  v37 R3). Watch mesh headroom when adding per-zombie objects: the silhouette
+  shell is +6 meshes per non-boss body, so the alive cap costs 6× that.
 - **New files stay under ~350 lines**; split a subsystem into helpers instead.
-  Several legacy files exceed this (Zombie.js 1315, AudioBank.js 1239,
-  Game.js 927, cityDressing.js 749) — do not grow them further; extract new
+  Several legacy files exceed this (Zombie.js ~2190, AudioBank.js ~1735,
+  Game.js ~1730, cityDressing.js ~995) — do not grow them further; extract new
   logic into a focused helper module with its own test.
 - In `src/game/Game.js` edit **only inside the `// WIRING:*` regions** unless
   you own the file.
@@ -49,8 +52,12 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   `server/highscore.json`; `HIGHSCORE_FILE` overrides).
 - `public/assets/` — all shipped binary assets (audio, faces, outfits,
   weapons, zombies/GLB, posters, facades, ground, ground).
-- `test/` — `node --test` suite (auto-discovered; 308 tests green at the time
-  of writing). `tools/` — manual probes (NOT auto-discovered).
+- `test/` — `node --test` suite (auto-discovered; **520 tests green** as of v37 R5b).
+  `tools/` — manual probes (NOT auto-discovered), including
+  `tools/verify-outline.mjs` (headless geometry proof for the zombie silhouette
+  shell: containment per frame, rim width in metres, ≥1 px projection, culling
+  coupling, boss exemption, dispose cleanliness — run it after touching
+  `ZombieOutline.js` / `Zombie.js` shell wiring).
 - `docs/` — ARCHITECTURE, V2-PLAN, V2-CHANGELOG (round history), V2-DECISIONS,
   perf-baseline, AGENT-ASSET-PIPELINE (this agent guide's asset companion).
   `docs/spec-*.md` are per-task implementation specs (git-ignored).
@@ -84,7 +91,7 @@ The sandbox exports `NODE_ENV=production`, so dev deps need
 
 ## Verification workflow (use all of it, in this order)
 
-1. `npm test` — must stay green (308/308 baseline).
+1. `npm test` — must stay green (520/520 baseline, v37 R5b).
 2. `npm run verify` — headless playthrough; must report 0 FAIL. Skipped stages
    are acceptable mid-project, not at acceptance.
 3. `npm run build` — bundler resolves everything.
@@ -158,6 +165,35 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
 - Known failure signatures (corrupted GLB image bufferViews →
   `tools/fix-glb-image-offsets.mjs`; numpy → use env_uv python).
 
+## Graduation (dev → prod)
+
+Prod is a **separate worktree** (`/home/mgr/Workspace/Zombie-prod` on `main`)
+that the systemd unit serves. It is outside the session workspace, so its
+writes need the wider sandbox mode.
+
+1. `git -C /home/mgr/Workspace/Zombie-prod merge dev`. The **only** conflicts
+   are in `dist`: `main` tracks `dist/index.html` as a pointer, not the bundles.
+   Resolve by `git rm --cached` the dev-side dist JS/CSS and delete them from
+   the worktree, keeping main's `dist/index.html`. **Keep** new
+   `dist/assets/audio/**` files — main tracks dist audio and a new runtime
+   asset must ship.
+2. Commit the merge, then in the prod worktree run `npm test`, `npm run verify`,
+   `node tools/check-assets.mjs`, `node tools/secrets-scan.mjs`, `npm run build`.
+3. The merge usually already carries the correct `dist/index.html` (main's side
+   unchanged from the merge base auto-merges). **Check**
+   `grep -o 'assets/[^"]*' dist/index.html` against the built filenames before
+   adding a pointer commit; `dist/` is git-ignored so `git add -f` is required.
+4. Restart the unit. `systemctl --user` is unreachable in this sandbox — use
+   `dbus-send --session --print-reply --dest=org.freedesktop.systemd1
+   /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager.RestartUnit
+   string:zombie-game.service string:replace`. (`Manager.ReloadUnit` fails with
+   `JobTypeNotApplicable`; for unit-file edits use `Manager.Reload` first.)
+5. Verify live: `curl -sS https://zombie.p4pps3n.top/ | grep -o 'index-[^"]*\.js'`
+   shows the new hash, and `/api/lobby`, `/api/highscore` return 200. The `/ws`
+   probe needs `curl --http1.1` (HTTP/2 gives 404) and `--max-time 5` (after the
+   101 handshake the stream stays open, so curl exits 28 — that is expected).
+6. `git push origin main`.
+
 ## Deploy procedure (GitHub Pages)
 
 1. `npm run pages` (build with base `/deadfall-stockholm-afterdark`).
@@ -168,10 +204,15 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
    `assets/` + `index.html`, copy `dist/` contents in, `git add -A` (safe in
    the worktree), commit, push `origin gh-pages`, `git worktree remove`.
    Never `git add -A` in the main tree (stages node_modules/dist).
-4. CDN propagation takes ~60 s; verify the bundle hash changed
-   (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o 'index-[^"]*\.js'`).
-   Note: `dist/` is git-ignored but three soundtrack mp3s are force-tracked
-   there — keep them in sync with `public/assets/audio/`.
+4. CDN propagation is **not** reliably 60 s — measured 2.5–5 min (the new bundle
+   404s while the old one still serves 200). Poll the live hash in a loop
+   (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o
+   'index-[^"]*\.js'`) and treat a 404 on the new bundle as lag, not a bad
+   deploy — confirm with `git ls-tree -r origin/gh-pages --name-only`.
+   Note: `dist/` is git-ignored but ~98 files are force-tracked there (33 audio
+   clips + the bundle snapshot) — keep them in sync with `public/assets/audio/`,
+   and restore with `git checkout HEAD -- dist/` after `npm run pages`, which
+   rewrites `dist/` with base-prefixed paths.
 
 ## Multiplayer quick facts
 
@@ -290,8 +331,14 @@ repeat a failed skill load with a changed description.
 
 ## Conventions for agents working here
 
-- Branch `v2` is the active line (`origin/v2`); `master`/`feat/iteration-2`
-  is the frozen v1. Commit messages: `v6 <area> (<n>): <summary>` style.
+- **`dev` is the active line** (`origin/dev`); **`main` is the production line**
+  — the systemd `zombie-game.service` serves the `main` worktree
+  `/home/mgr/Workspace/Zombie-prod` on :8080 → **https://zombie.p4pps3n.top**
+  (Caddy → `172.17.0.1:8080`). `gh-pages` is the Pages build. `v2` and
+  `master`/`feat/iteration-2` are the frozen v1/v2 history. Graduating dev →
+  prod is a documented flow; see the "Graduation (dev → prod)" section below.
+  Commit messages: `v37 <area> (<n>): <summary>` style (dist snapshots:
+  `chore(dist): ...`).
 - `TASKS.md` is git-ignored — add a dated round entry under its version
   heading with what changed plus the verification numbers, and edit stale
   claims in place (see "TASKS.md protocol" above).
