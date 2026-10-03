@@ -576,7 +576,16 @@ function loadFaceTextures() {
         mat.map = tex
         mat.emissiveMap = tex
         mat.emissive.set(0xffffff)
-        mat.emissiveIntensity = 0.5
+        // v37 R8: 0.8, the user's call. Measured at 2.03 m on a live head
+        // (tools/_face-emissive.mjs, camera placed + matrixWorld updated, face
+        // texture fingerprinted per frame): face-crop mean-abs-diff 6.25/255,
+        // 29.5 % of pixels brighter, crop mean 15.63 -> 15.77. A subtle lift in
+        // the face's own readability, not a glow-up — the face is a dark image
+        // and the tonemapped result stays far under the 0.72 bloom cut. Not
+        // asserted by any test (the screamer silhouette-contrast test reads the
+        // MAT2 BODY emissive, which is tuned for the 30 m contrast gate and
+        // stays at 0.5, as does the FACEMAT flat-face fallback that mirrors it).
+        mat.emissiveIntensity = 0.8
         // v17: clip the square portrait to a round head — the circular alphaMap
         // + alphaTest discard the corners so only the centered head shows.
         if (FACE_ALPHA) { mat.alphaMap = FACE_ALPHA; mat.alphaTest = 0.5; mat.transparent = true }
