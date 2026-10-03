@@ -716,7 +716,14 @@ export function addWantedPoster(group, building, env) {
     roughness: 0.92,
     metalness: 0.0,
     emissive: 0x2a2016,
-    emissiveIntensity: 0.25
+    // v37 R7: 0.8, measured. poster_v3.jpg is a darker source than the v2
+    // portrait it replaces (mean luma 90.7 vs 164.8), so at the old 0.25 the
+    // placard read as a regression in the dark: 20.4 rect luma / 11.9 text-band
+    // vs v2's 28.5 / 21.9. At 0.8 it is 27.8 / 19.4 — v2 parity — with the
+    // highest edge energy of the 0.25/0.5/0.8/1.2 sweep (tools/_poster-emissive
+    // .mjs). The lit case is spot-dominated and flat across the sweep, so this
+    // knob only buys the unlit read.
+    emissiveIntensity: 0.8
   })
   // Load the poster texture. The image map is assigned ONLY once it has decoded
   // (via the loader's onLoad callback) — assigning it up front makes the renderer
@@ -726,7 +733,7 @@ export function addWantedPoster(group, building, env) {
   const map = makePosterTexture(env, (tex) => {
     mat.map = tex
     mat.color.setHex(0xffffff)
-    mat.emissiveIntensity = 0.25
+    mat.emissiveIntensity = 0.8
     mat.needsUpdate = true
   })
   // Attach the map immediately when we already have a decoded image (canvas
@@ -738,7 +745,7 @@ export function addWantedPoster(group, building, env) {
   if (map) {
     mat.map = map
     mat.color.setHex(0xffffff)
-    mat.emissiveIntensity = 0.25
+    mat.emissiveIntensity = 0.8
   } else {
     mat.color.setHex(0xd8c9a0)
     mat.emissiveIntensity = 0.6
@@ -774,7 +781,12 @@ function makePosterTexture(env, onLoaded) {
   if (typeof document !== 'undefined') {
     try {
       const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/'
-      const url = base.replace(/\/$/, '') + '/assets/posters/poster_v2.jpg'
+      // v37 R7: the wanted poster is the generated skull plate (poster_v3.jpg).
+      // The filename is the cache key — the prod server sends
+      // Cache-Control immutable max-age=1yr, so a new image must ship under a new
+      // name (v25 shipped poster_v2.jpg the same way); replacing in place leaves
+      // clients on the cached picture. onError leaves the paper-tan fallback.
+      const url = base.replace(/\/$/, '') + '/assets/posters/poster_v3.jpg'
       // onLoad fires once the JPEG has decoded; that is when we attach it to the
       // material (see addWantedPoster). onError leaves the paper-tan fallback.
       const tex = new THREE.TextureLoader().load(url, (t) => { if (onLoaded) onLoaded(t) })
