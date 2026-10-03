@@ -23,13 +23,16 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
 - **No per-frame allocation** in hot loops; reuse module-level scratch objects.
 - **`dispose()` must fully reverse** every side effect (meshes, lights,
   textures, listeners, audio nodes).
-- **Budgets** (pinned by `tools/verify-game.mjs` S8): meshes ≤ 640, lights ≤ 40,
-  points ≤ 2500, zombies ≤ 24. Internal caps: blood pool 300 (`Blood.js:17`),
-  stains 120, groan voices 4 (`AudioBank.js:16`), drops 20 (`AmmoDrops.js:25`),
-  snow 1800 (`snow.js:35`), wave concurrency cap ≤ 16 (`WaveManager.js`).
+- **Budgets** (pinned by `tools/verify-game.mjs` S8 — read the gate there, it is
+  the authority): **meshes ≤ 800**, lights ≤ 40, points ≤ 2500, zombies ≤ 24.
+  Internal caps: blood pool 300 (`Blood.js:17`), stains 120, groan voices 4
+  (`AudioBank.js:16`), drops 20 (`AmmoDrops.js:25`), snow 1800 (`snow.js:35`),
+  wave concurrency 8+wave to wave 9 then +0.5/wave toward **20** (`WaveManager.js`,
+  v37 R3). Watch mesh headroom when adding per-zombie objects: the silhouette
+  shell is +6 meshes per non-boss body, so the alive cap costs 6× that.
 - **New files stay under ~350 lines**; split a subsystem into helpers instead.
-  Several legacy files exceed this (Zombie.js 1315, AudioBank.js 1239,
-  Game.js 927, cityDressing.js 749) — do not grow them further; extract new
+  Several legacy files exceed this (Zombie.js ~2190, AudioBank.js ~1735,
+  Game.js ~1730, cityDressing.js ~995) — do not grow them further; extract new
   logic into a focused helper module with its own test.
 - In `src/game/Game.js` edit **only inside the `// WIRING:*` regions** unless
   you own the file.
@@ -49,8 +52,16 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   `server/highscore.json`; `HIGHSCORE_FILE` overrides).
 - `public/assets/` — all shipped binary assets (audio, faces, outfits,
   weapons, zombies/GLB, posters, facades, ground, ground).
-- `test/` — `node --test` suite (auto-discovered; 308 tests green at the time
-  of writing). `tools/` — manual probes (NOT auto-discovered).
+- `test/` — `node --test` suite (auto-discovered; **520 tests green** as of v37 R5b).
+  `tools/` — manual probes (NOT auto-discovered), including
+  `tools/verify-outline.mjs` (headless geometry proof for the zombie silhouette
+  shell: containment per frame, rim width in metres, ≥1 px projection, culling
+  coupling, boss exemption, dispose cleanliness — run it after touching
+  `ZombieOutline.js` / `Zombie.js` shell wiring) and `tools/rim-contrast.mjs`
+  (photometric audit of that rim in the browser: what separation it actually
+  buys, and why width/colour are not levers) and `tools/rim-lit.mjs` (the lit
+  case at true camera ranges: the beam never lights the backdrop behind a target,
+  so the rim's payoff is the body-vs-rim edge, 29/255 unlit → 110/255 in the beam).
 - `docs/` — ARCHITECTURE, V2-PLAN, V2-CHANGELOG (round history), V2-DECISIONS,
   perf-baseline, AGENT-ASSET-PIPELINE (this agent guide's asset companion).
   `docs/spec-*.md` are per-task implementation specs (git-ignored).
@@ -60,7 +71,9 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   game-experience-density-optimizer, game-design-proposal-writer,
   paranoia-ai-system-evolver). Check `.hermes/deadfall-progress.md` before
   starting gameplay/visual/audio work — phases there may already cover it.
-- `TASKS.md` — git-ignored work log; see "TASKS.md protocol" below.
+- `TASKS.md` — work log; listed in `.gitignore` (line 30) but **force-tracked**
+  on both `dev` and `main`, so plain `git add TASKS.md` works (no `-f` needed)
+  and it is committed with the round. See "TASKS.md protocol" below.
 
 ## Commands (always run from the repo root)
 
@@ -84,7 +97,7 @@ The sandbox exports `NODE_ENV=production`, so dev deps need
 
 ## Verification workflow (use all of it, in this order)
 
-1. `npm test` — must stay green (308/308 baseline).
+1. `npm test` — must stay green (520/520 baseline, v37 R5b).
 2. `npm run verify` — headless playthrough; must report 0 FAIL. Skipped stages
    are acceptable mid-project, not at acceptance.
 3. `npm run build` — bundler resolves everything.
@@ -99,6 +112,26 @@ The sandbox exports `NODE_ENV=production`, so dev deps need
 7. Visual inspection: `tools/look-capture.mjs` → `.research/look/*.png`, then
    `tools/look-metrics.mjs` (quantitative) or `tools/mcpm_vision.py` (local
    VLM). See `docs/AGENT-ASSET-PIPELINE.md` for exact invocations and limits.
+   **Assert the subject is in frame before believing a verdict.** Scenes 01–08
+   teleport to fixed vantages and can capture an empty street; scene 09 spawns
+   zombies, aims at them, freezes the sim and exits 1 if fewer than 3 are in the
+   view cone. **Place the camera in any frozen capture.** `debug.setPlayerPos`
+   moves `player.position` only, and the camera syncs inside `update()`, which is
+   gated on `GameState.PLAYING` — so a screenshot taken with `g.state='paused'`
+   renders from the camera's *last* position, not the vantage you set. Measured:
+   scene 09's "nearest 6 m" frame was really 11.8 m, so every projected-pixel
+   claim from a paused frame was computed at ~2× the true range. Set
+   `camera.position` explicitly and call `camera.updateMatrixWorld(true)` before
+   `project()`, and print the camera position in the probe's output. The local
+   VLM will confidently describe outlines on a frame with zero zombies in it, so:
+   ask it to count the subjects first, and prefer the quantitative probes for
+   anything threshold-like. For the zombie silhouette specifically,
+   `tools/rim-contrast.mjs` is the authority — rim width and rim colour are both
+   measured non-levers (see its header), and the VLM's rim verdict tracks true
+   camera range (yes at 2.6 m / 4.8 px and at 6 m / 2.0 px, "not discernible" at
+   11.8 m / 1.2 px). `tools/rim-lit.mjs` covers the lit case: the flashlight
+   never lights the backdrop *behind* a target, so the rim's payoff is the
+   body-vs-rim edge (29/255 unlit → 110/255 in the beam), not backdrop contrast.
 
 **Headless drive pattern** (no browser needed):
 
@@ -158,6 +191,35 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
 - Known failure signatures (corrupted GLB image bufferViews →
   `tools/fix-glb-image-offsets.mjs`; numpy → use env_uv python).
 
+## Graduation (dev → prod)
+
+Prod is a **separate worktree** (`/home/mgr/Workspace/Zombie-prod` on `main`)
+that the systemd unit serves. It is outside the session workspace, so its
+writes need the wider sandbox mode.
+
+1. `git -C /home/mgr/Workspace/Zombie-prod merge dev`. The **only** conflicts
+   are in `dist`: `main` tracks `dist/index.html` as a pointer, not the bundles.
+   Resolve by `git rm --cached` the dev-side dist JS/CSS and delete them from
+   the worktree, keeping main's `dist/index.html`. **Keep** new
+   `dist/assets/audio/**` files — main tracks dist audio and a new runtime
+   asset must ship.
+2. Commit the merge, then in the prod worktree run `npm test`, `npm run verify`,
+   `node tools/check-assets.mjs`, `node tools/secrets-scan.mjs`, `npm run build`.
+3. The merge usually already carries the correct `dist/index.html` (main's side
+   unchanged from the merge base auto-merges). **Check**
+   `grep -o 'assets/[^"]*' dist/index.html` against the built filenames before
+   adding a pointer commit; `dist/` is git-ignored so `git add -f` is required.
+4. Restart the unit. `systemctl --user` is unreachable in this sandbox — use
+   `dbus-send --session --print-reply --dest=org.freedesktop.systemd1
+   /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager.RestartUnit
+   string:zombie-game.service string:replace`. (`Manager.ReloadUnit` fails with
+   `JobTypeNotApplicable`; for unit-file edits use `Manager.Reload` first.)
+5. Verify live: `curl -sS https://zombie.p4pps3n.top/ | grep -o 'index-[^"]*\.js'`
+   shows the new hash, and `/api/lobby`, `/api/highscore` return 200. The `/ws`
+   probe needs `curl --http1.1` (HTTP/2 gives 404) and `--max-time 5` (after the
+   101 handshake the stream stays open, so curl exits 28 — that is expected).
+6. `git push origin main`.
+
 ## Deploy procedure (GitHub Pages)
 
 1. `npm run pages` (build with base `/deadfall-stockholm-afterdark`).
@@ -168,10 +230,21 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
    `assets/` + `index.html`, copy `dist/` contents in, `git add -A` (safe in
    the worktree), commit, push `origin gh-pages`, `git worktree remove`.
    Never `git add -A` in the main tree (stages node_modules/dist).
-4. CDN propagation takes ~60 s; verify the bundle hash changed
-   (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o 'index-[^"]*\.js'`).
-   Note: `dist/` is git-ignored but three soundtrack mp3s are force-tracked
-   there — keep them in sync with `public/assets/audio/`.
+4. **The Pages build itself is the slow part, not the CDN.** After pushing
+   `gh-pages`, `GET /repos/<user>/<repo>/pages/builds/latest` stays `building`
+   for **5–25 min** (measured: 20+ min with `updated_at` frozen, no log
+   endpoint) and the new bundle 404s the whole time while the old one serves
+   200. Poll that status **and** the live hash in a loop
+   (`curl -s https://<user>.github.io/deadfall-stockholm-afterdark/ | grep -o
+   'index-[^"]*\.js'`); a 404 on the new bundle means lag, never a bad deploy —
+   confirm the branch content with `git ls-tree -r origin/gh-pages --name-only`.
+   **A build can also wedge**: measured one stuck at `building` for 32+ min with
+   `updated_at` frozen (the previous build took ~6 min). `gh api -X POST
+   repos/<user>/<repo>/pages/builds` re-queues it and it completes normally.
+   Note: `dist/` is git-ignored but ~98 files are force-tracked there (33 audio
+   clips + the bundle snapshot) — keep them in sync with `public/assets/audio/`,
+   and restore with `git checkout HEAD -- dist/` after `npm run pages`, which
+   rewrites `dist/` with base-prefixed paths.
 
 ## Multiplayer quick facts
 
@@ -183,12 +256,13 @@ See **docs/AGENT-ASSET-PIPELINE.md** — the full contract for:
 
 ## TASKS.md protocol (the round log agents read and write)
 
-`TASKS.md` is git-ignored and ~120 KB / 1600+ lines. It is the handoff between
+`TASKS.md` is ~320 KB / 3200+ lines and force-tracked (it is listed in
+`.gitignore`, so plain `git add TASKS.md` works). It is the handoff between
 rounds, so treat it as a database, not a novel:
 
 - **Read it via RAG, never whole.** `node tools/rag-query.mjs "deploy gh-pages"
   --filter TASKS.md` (or `--update` first) returns the located chunks. Reading
-  all 1685 lines burns context for nothing.
+  all 3200+ lines burns context for nothing.
 - **Update, don't just append.** A round entry goes *under* its version heading
   (`## v3 tasks`, `## Ralph continuation …`), and superseded claims are edited
   in place with `(Supersedes …)` — never leave a stale "DONE"/"IN PROGRESS"
@@ -198,7 +272,8 @@ rounds, so treat it as a database, not a novel:
   gh-pages commit, and anything awaiting the user.
 - **Open questions live in `## Open / awaiting user`**; delete them when the
   user answers. Long evidence dumps belong in `docs/` or `.research/`, not here.
-- Never `git add` it without `-f`.
+- Commit it with the round: plain `git add TASKS.md` works (the `.gitignore`
+  entry is inert because the file is tracked).
 
 ## DSH/Ralph recovery and context protocol
 
@@ -290,11 +365,18 @@ repeat a failed skill load with a changed description.
 
 ## Conventions for agents working here
 
-- Branch `v2` is the active line (`origin/v2`); `master`/`feat/iteration-2`
-  is the frozen v1. Commit messages: `v6 <area> (<n>): <summary>` style.
-- `TASKS.md` is git-ignored — add a dated round entry under its version
-  heading with what changed plus the verification numbers, and edit stale
-  claims in place (see "TASKS.md protocol" above).
+- **`dev` is the active line** (`origin/dev`); **`main` is the production line**
+  — the systemd `zombie-game.service` serves the `main` worktree
+  `/home/mgr/Workspace/Zombie-prod` on :8080 → **https://zombie.p4pps3n.top**
+  (Caddy → `172.17.0.1:8080`). `gh-pages` is the Pages build. `v2` and
+  `master`/`feat/iteration-2` are the frozen v1/v2 history. Graduating dev →
+  prod is a documented flow; see the "Graduation (dev → prod)" section below.
+  Commit messages: `v37 <area> (<n>): <summary>` style (dist snapshots:
+  `chore(dist): ...`).
+- `TASKS.md` is force-tracked (listed in `.gitignore`, plain `git add` works) —
+  add a dated round entry under its version heading with what changed plus the
+  verification numbers, and edit stale claims in place (see "TASKS.md protocol"
+  above).
 - Prefer `edit` (targeted) over full rewrites; keep comments dense — the code
   base documents itself with block comments explaining *why*.
 - When delegating (subagents): keep each child single-file / single-deliverable
