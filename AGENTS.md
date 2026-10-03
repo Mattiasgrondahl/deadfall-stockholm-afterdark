@@ -71,7 +71,9 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   game-experience-density-optimizer, game-design-proposal-writer,
   paranoia-ai-system-evolver). Check `.hermes/deadfall-progress.md` before
   starting gameplay/visual/audio work — phases there may already cover it.
-- `TASKS.md` — git-ignored work log; see "TASKS.md protocol" below.
+- `TASKS.md` — work log; listed in `.gitignore` (line 30) but **force-tracked**
+  on both `dev` and `main`, so plain `git add TASKS.md` works (no `-f` needed)
+  and it is committed with the round. See "TASKS.md protocol" below.
 
 ## Commands (always run from the repo root)
 
@@ -254,7 +256,8 @@ writes need the wider sandbox mode.
 
 ## TASKS.md protocol (the round log agents read and write)
 
-`TASKS.md` is git-ignored and ~320 KB / 3200+ lines. It is the handoff between
+`TASKS.md` is ~320 KB / 3200+ lines and force-tracked (it is listed in
+`.gitignore`, so plain `git add TASKS.md` works). It is the handoff between
 rounds, so treat it as a database, not a novel:
 
 - **Read it via RAG, never whole.** `node tools/rag-query.mjs "deploy gh-pages"
@@ -269,7 +272,8 @@ rounds, so treat it as a database, not a novel:
   gh-pages commit, and anything awaiting the user.
 - **Open questions live in `## Open / awaiting user`**; delete them when the
   user answers. Long evidence dumps belong in `docs/` or `.research/`, not here.
-- Never `git add` it without `-f`.
+- Commit it with the round: plain `git add TASKS.md` works (the `.gitignore`
+  entry is inert because the file is tracked).
 
 ## DSH/Ralph recovery and context protocol
 
@@ -369,9 +373,10 @@ repeat a failed skill load with a changed description.
   prod is a documented flow; see the "Graduation (dev → prod)" section below.
   Commit messages: `v37 <area> (<n>): <summary>` style (dist snapshots:
   `chore(dist): ...`).
-- `TASKS.md` is git-ignored — add a dated round entry under its version
-  heading with what changed plus the verification numbers, and edit stale
-  claims in place (see "TASKS.md protocol" above).
+- `TASKS.md` is force-tracked (listed in `.gitignore`, plain `git add` works) —
+  add a dated round entry under its version heading with what changed plus the
+  verification numbers, and edit stale claims in place (see "TASKS.md protocol"
+  above).
 - Prefer `edit` (targeted) over full rewrites; keep comments dense — the code
   base documents itself with block comments explaining *why*.
 - When delegating (subagents): keep each child single-file / single-deliverable
