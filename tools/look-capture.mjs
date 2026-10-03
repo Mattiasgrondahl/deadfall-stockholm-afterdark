@@ -91,24 +91,30 @@ const face = await page.evaluate(() => {
   g.debug.setPlayerPos(12, 12)
   g.player.camera.rotation.order = 'YXZ'
   g.player.camera.rotation.set(0, 0, 0) // yaw 0 looks toward -Z
+  // Place the camera EXPLICITLY. debug.setPlayerPos moves player.position only,
+  // and the camera syncs inside update(), which is gated on PLAYING — so a
+  // paused capture renders from the camera's last position, not the intended
+  // vantage. Distances below must come from the camera, or the "nearest
+  // subject" claim is fiction (measured: intended 6 m was really 11.8 m).
+  g.player.camera.position.set(12, 1.7, 12)
+  g.player.camera.updateMatrixWorld(true)
   const spots = [['walker', 12, 6], ['shambler', 8.5, 4], ['screamer', 15.5, 5], ['walker', 12, 1.5]]
   for (const [t, x, z] of spots) g.debug.spawnZombie(t, x, z, false)
   g.state = 'paused' // update() is gated on PLAYING; render() is not
-  const px = 12, pz = 12
+  g.player.camera.updateMatrixWorld(true)
+  const cam = g.player.camera.position
   const tan = Math.tan((g.player.camera.fov / 2) * Math.PI / 180)
-  const inView = g.zombies.filter((z) => {
-    const d = Math.hypot(z.position.x - px, z.position.z - pz)
-    return (pz - z.position.z) > 0 && d < 25
-  }).map((z) => {
-    const d = Math.hypot(z.position.x - px, z.position.z - pz)
+  const dist = (z) => Math.hypot(z.position.x - cam.x, z.position.z - cam.z)
+  const inView = g.zombies.filter((z) => dist(z) < 25 && (cam.z - z.position.z) > 0).map((z) => {
+    const d = dist(z)
     return { d: +d.toFixed(1), px: +((z.group.scale.y * 1.7) / (2 * d * tan) * 1280).toFixed(0) }
   }).sort((a, b) => a.d - b.d)
-  return { alive: g.zombies.length, inView }
+  return { alive: g.zombies.length, inView, cam: [+cam.x.toFixed(1), +cam.y.toFixed(1), +cam.z.toFixed(1)] }
 })
 await page.waitForTimeout(1200)
 await page.screenshot({ path: path.join(OUT, '09-zombies-facing.png') })
 const n = face.inView.length
-console.log(`09-zombies-facing captured: ${n} zombie(s) in view cone, nearest ${JSON.stringify(face.inView[0] || null)}`)
+console.log(`09-zombies-facing captured: ${n} zombie(s) in view cone, camera ${JSON.stringify(face.cam)}, nearest ${JSON.stringify(face.inView[0] || null)}`)
 if (n < 3) {
   console.error(`LOOK-CAPTURE: readability scene has only ${n} subject(s) — the probe is testing nothing`)
   await browser.close()

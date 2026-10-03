@@ -13,19 +13,24 @@
 // report the luma of the backdrop the rim *replaced*: a black rim only separates
 // a body where that backdrop was BRIGHT.
 //
-// MEASURED (v37 R5c, 1280x720, fov 75, zombies at 1.5-6 m):
-//   rim 0.015 m (2.1 px @6 m): 35519 rim px, backdrop luma 28, contrast 18,
-//                              lit-backdrop cuts 244, dark-backdrop cuts 35275
-//   rim 0.030 m (4.2 px @6 m): 24197 rim px, backdrop luma 30, contrast 22,
-//                              lit-backdrop cuts 383
-//   rim 0.045 m (6.3 px @6 m): 20094 rim px, backdrop luma 31, contrast 22,
-//                              lit-backdrop cuts 540
-// CONCLUSION: rim WIDTH is not the lever. Tripling it buys +4 luma of contrast,
-// because in a night scene the backdrop is already ~luma 28 and a black shell
-// has nothing to stand out against. The rim pays off only against LIT backdrop
-// (streetlight pools, flashlight cone) — which is exactly the combat-relevant
-// case, so 0.015 m is kept. If readability at range is ever raised again, the
-// lever is rim CONTRAST (rim colour/emissive vs the night floor), not scale.
+// MEASURED (v37 R5d, 1280x720, fov 75, camera placed explicitly at (12,1.7,12),
+// 5 zombies, nearest 6.2 m — see the camera note below; the R5c run below was
+// taken from the camera's stale position, i.e. ~2x the range it claimed):
+//   rim 0.015 m (2.0 px @6.2 m): 24279 rim px, backdrop luma 29, contrast 22,
+//                                lit-backdrop cuts 515, dark-backdrop cuts 23764
+//   rim 0.030 m (4.0 px @6.2 m): 59539 rim px, backdrop luma 28, contrast 20,
+//                                lit-backdrop cuts 1227, dark-backdrop cuts 58312
+//   rim 0.045 m (6.0 px @6.2 m): 57126 rim px, backdrop luma 30, contrast 21,
+//                                lit-backdrop cuts 1818, dark-backdrop cuts 55308
+// CONCLUSION: rim WIDTH is not the lever. Tripling it leaves contrast flat
+// (22 -> 20 -> 21) because in a night scene the backdrop is already ~luma 29 and
+// a black shell has nothing to stand out against. Widening does buy more
+// lit-backdrop cuts (515 -> 1818) — the shell spills past the body into lit
+// ground — at the cost of 2.4x the rim pixels and a fatter silhouette. The rim
+// pays off against LIT backdrop (streetlight pools, flashlight cone), which is
+// the combat-relevant case, so 0.015 m is kept. If readability at range is ever
+// raised again, the lever is rim CONTRAST, not scale — and see tools/rim-lit.mjs
+// for what lit actually means here.
 //
 // RIM COLOUR IS ALSO NOT A LEVER (measured, same vantage, mask = the
 // tonemap-invariant black-rim frame so flicker cannot pollute the metric):
@@ -70,18 +75,26 @@ await page.click('.screen .btn.primary');
 await page.waitForFunction(() => window.__game.debug && window.__game.debug.zombiesAlive() > 0, { timeout: 60000 });
 await page.waitForTimeout(1200);
 
-// Deterministic vantage: fixed player pos, fixed yaw, fixed spawns, frozen sim.
+// Deterministic vantage: fixed camera, fixed yaw, fixed spawns, frozen sim.
+// The camera is placed EXPLICITLY: debug.setPlayerPos moves player.position
+// only, and the camera syncs inside update(), which is gated on PLAYING — so a
+// paused capture renders from the camera's last position, not the intended
+// vantage. Distances and projected-pixel claims must come from the camera.
 const view = await page.evaluate(() => {
   const g = window.__game;
   g.debug.setPlayerPos(12, 12);
   g.player.camera.rotation.order = 'YXZ';
   g.player.camera.rotation.set(0, 0, 0);
+  g.player.camera.position.set(12, 1.7, 12);
+  g.player.camera.updateMatrixWorld(true);
   for (const [t, x, z] of [['walker', 12, 6], ['shambler', 8.5, 4], ['screamer', 15.5, 5], ['walker', 12, 1.5]]) {
     g.debug.spawnZombie(t, x, z, false);
   }
   g.state = 'paused'; // update() is gated on PLAYING; render() is not
+  g.player.camera.updateMatrixWorld(true);
+  const cam = g.player.camera.position;
   const tan = Math.tan((g.player.camera.fov / 2) * Math.PI / 180);
-  const near = Math.min(...g.zombies.map((z) => Math.hypot(z.position.x - 12, z.position.z - 12)));
+  const near = Math.min(...g.zombies.map((z) => z.position.distanceTo(cam)));
   return { alive: g.zombies.length, near, tan };
 });
 await page.waitForTimeout(900);

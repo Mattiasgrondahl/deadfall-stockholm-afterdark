@@ -59,7 +59,9 @@ Live site: GitHub Pages (`gh-pages` branch, base `/deadfall-stockholm-afterdark`
   coupling, boss exemption, dispose cleanliness — run it after touching
   `ZombieOutline.js` / `Zombie.js` shell wiring) and `tools/rim-contrast.mjs`
   (photometric audit of that rim in the browser: what separation it actually
-  buys, and why width/colour are not levers).
+  buys, and why width/colour are not levers) and `tools/rim-lit.mjs` (the lit
+  case at true camera ranges: the beam never lights the backdrop behind a target,
+  so the rim's payoff is the body-vs-rim edge, 29/255 unlit → 110/255 in the beam).
 - `docs/` — ARCHITECTURE, V2-PLAN, V2-CHANGELOG (round history), V2-DECISIONS,
   perf-baseline, AGENT-ASSET-PIPELINE (this agent guide's asset companion).
   `docs/spec-*.md` are per-task implementation specs (git-ignored).
@@ -111,12 +113,23 @@ The sandbox exports `NODE_ENV=production`, so dev deps need
    **Assert the subject is in frame before believing a verdict.** Scenes 01–08
    teleport to fixed vantages and can capture an empty street; scene 09 spawns
    zombies, aims at them, freezes the sim and exits 1 if fewer than 3 are in the
-   view cone. The local VLM will confidently describe outlines on a frame with
-   zero zombies in it, so: ask it to count the subjects first, and prefer the
-   quantitative probes for anything threshold-like. For the zombie silhouette
-   specifically, `tools/rim-contrast.mjs` is the authority — rim width and rim
-   colour are both measured non-levers (see its header), and the VLM's rim
-   verdict flips with camera range (yes at 4 m, "not discernible" at 6 m).
+   view cone. **Place the camera in any frozen capture.** `debug.setPlayerPos`
+   moves `player.position` only, and the camera syncs inside `update()`, which is
+   gated on `GameState.PLAYING` — so a screenshot taken with `g.state='paused'`
+   renders from the camera's *last* position, not the vantage you set. Measured:
+   scene 09's "nearest 6 m" frame was really 11.8 m, so every projected-pixel
+   claim from a paused frame was computed at ~2× the true range. Set
+   `camera.position` explicitly and call `camera.updateMatrixWorld(true)` before
+   `project()`, and print the camera position in the probe's output. The local
+   VLM will confidently describe outlines on a frame with zero zombies in it, so:
+   ask it to count the subjects first, and prefer the quantitative probes for
+   anything threshold-like. For the zombie silhouette specifically,
+   `tools/rim-contrast.mjs` is the authority — rim width and rim colour are both
+   measured non-levers (see its header), and the VLM's rim verdict tracks true
+   camera range (yes at 2.6 m / 4.8 px and at 6 m / 2.0 px, "not discernible" at
+   11.8 m / 1.2 px). `tools/rim-lit.mjs` covers the lit case: the flashlight
+   never lights the backdrop *behind* a target, so the rim's payoff is the
+   body-vs-rim edge (29/255 unlit → 110/255 in the beam), not backdrop contrast.
 
 **Headless drive pattern** (no browser needed):
 
