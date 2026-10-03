@@ -254,12 +254,12 @@ writes need the wider sandbox mode.
 
 ## TASKS.md protocol (the round log agents read and write)
 
-`TASKS.md` is git-ignored and ~120 KB / 1600+ lines. It is the handoff between
+`TASKS.md` is git-ignored and ~320 KB / 3200+ lines. It is the handoff between
 rounds, so treat it as a database, not a novel:
 
 - **Read it via RAG, never whole.** `node tools/rag-query.mjs "deploy gh-pages"
   --filter TASKS.md` (or `--update` first) returns the located chunks. Reading
-  all 1685 lines burns context for nothing.
+  all 3200+ lines burns context for nothing.
 - **Update, don't just append.** A round entry goes *under* its version heading
   (`## v3 tasks`, `## Ralph continuation …`), and superseded claims are edited
   in place with `(Supersedes …)` — never leave a stale "DONE"/"IN PROGRESS"
